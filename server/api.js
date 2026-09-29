@@ -1,9 +1,14 @@
 import express from 'express';
 import { isCapped, LIMITS, limitsToJSON } from '../shared/limits.js';
+import { BLOCK_ID_RE, formsOf, hasPageStructureErrors, normalizePage, validatePage } from '../shared/blocks.js';
+import { PAGE_TEMPLATES } from '../shared/page-templates.js';
 import { TEMPLATES } from '../shared/templates.js';
 import { hasStructureErrors, normalizeGraph, validateFlow } from '../shared/validate.js';
+import { toCsv } from './csv.js';
+import { SlugTakenError } from './db.js';
 import { FlowError } from './engine/errors.js';
 import { RateLimiter } from './engine/rate-limit.js';
+import { available as imagesAvailable, IMAGE_LIMITS } from './images.js';
 import { SNOWFLAKE } from './engine/resolve.js';
 
 export class HttpError extends Error {
@@ -13,7 +18,7 @@ export class HttpError extends Error {
 const avatarUrl = (u) => (u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png?size=64` : 'https://cdn.discordapp.com/embed/avatars/0.png');
 const iconUrl = (g) => (g.icon ? `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png?size=64` : null);
 
-export function createApi({ config, db, runtime, bot, sync, logger, auth }) {
+export function createApi({ config, db, runtime, bot, sync, logger, auth, uploads }) {
   const router = express.Router();
   const perUser = new RateLimiter(300, 60_000);
   const streams = new Map();
@@ -30,6 +35,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth }) {
       })),
       meta: {
         intents: config.intents, limits: limitsToJSON(), minPermission: config.minPermission,
+        uploads: { available: imagesAvailable(), publicBase: uploads.publicBase, maxBytes: Math.min(IMAGE_LIMITS.maxInputBytes, isCapped(LIMITS.uploadBytes) ? LIMITS.uploadBytes : Infinity) },
         templates: TEMPLATES.map((t) => ({ id: t.id, name: t.name, description: t.description })),
       },
     });
@@ -136,6 +142,111 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth }) {
     res.json({ ok: true });
   });
 
+  // ---- pages (website builder) --------------------------------------------------------------
+  const pagePath = (p) => `/s/${p.guildId}/${p.slug}`;
+  // `known` = the ids of this server's uploaded images, so a picture that was deleted since it was chosen shows up as an issue
+  const pageSummary = (p, known = db.uploadIds(p.guildId)) => ({
+    id: p.id, title: p.title, slug: p.slug, published: p.published, updatedAt: p.updatedAt, updatedBy: p.updatedBy,
+    blocks: p.blocks.length, forms: formsOf(p).length, issues: validatePage(p, { uploads: known }).length, path: pagePath(p), url: `${config.baseUrl}${pagePath(p)}`,
+  });
+  const pageFull = (p, known = db.uploadIds(p.guildId)) => ({ ...pageSummary(p, known), theme: p.theme, createdAt: p.createdAt, blocks: p.blocks, issues: validatePage(p, { uploads: known }) });
+  const pagesFull = (gid) => isCapped(LIMITS.pagesPerGuild) && db.countPages(gid) >= LIMITS.pagesPerGuild;
+  const findPage = (req) => {
+    const p = db.getPage(req.params.gid, req.params.pid); // scoped by server: another server's page id is simply a 404
+    if (!p) throw new HttpError(404, 'Page not found.');
+    return p;
+  };
+  const slugify = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'page';
+  const guardSlug = (fn) => { try { return fn(); } catch (err) { if (err instanceof SlugTakenError) throw new HttpError(409, err.message); throw err; } };
+  function checkedPage(input) {
+    const page = normalizePage(input);
+    const issues = validatePage(page);
+    if (hasPageStructureErrors(issues)) throw new HttpError(400, 'The page has problems and was not saved.', { issues: issues.filter((i) => i.kind === 'structure') });
+    return { page, issues };
+  }
+
+  guildRouter.get('/pages', (req, res) => { const known = db.uploadIds(req.params.gid); res.json(db.listPages(req.params.gid).map((p) => pageSummary(p, known))); });
+
+  guildRouter.post('/pages', (req, res) => {
+    const { gid } = req.params;
+    if (pagesFull(gid)) throw new HttpError(409, `A server can have at most ${LIMITS.pagesPerGuild} pages.`);
+    let input = req.body ?? {};
+    if (input.templateId) {
+      const t = PAGE_TEMPLATES.find((x) => x.id === input.templateId);
+      if (!t) throw new HttpError(400, 'Unknown template.');
+      input = { ...t.build(), ...(input.title ? { title: String(input.title) } : {}) };
+    }
+    const draft = normalizePage({ ...input, title: input.title || 'New page', published: false });
+    draft.slug = db.uniqueSlug(gid, draft.slug || slugify(draft.title)); // creating never fails on a taken address: it gets a free one
+    const { page } = checkedPage(draft);
+    const created = guardSlug(() => db.createPage({ guildId: gid, ...page, published: false, updatedBy: actor(req) }));
+    res.status(201).json({ page: pageFull(created) });
+  });
+
+  guildRouter.get('/pages/:pid', (req, res) => res.json({ page: pageFull(findPage(req)) }));
+
+  guildRouter.put('/pages/:pid', (req, res) => {
+    const cur = findPage(req);
+    const body = req.body ?? {};
+    const { page, issues } = checkedPage({ title: cur.title, slug: cur.slug, published: cur.published, theme: cur.theme, blocks: cur.blocks, ...Object.fromEntries(['title', 'slug', 'published', 'theme', 'blocks'].filter((k) => k in body).map((k) => [k, body[k]])) });
+    // never leave a page with a broken form live: content is saved, but publishing is switched back off
+    const broken = page.published && issues.some((i) => i.kind === 'config');
+    if (broken) page.published = false;
+    const updated = guardSlug(() => db.updatePage(req.params.gid, cur.id, page, actor(req)));
+    res.json({ page: pageFull(updated), unpublished: broken });
+  });
+
+  guildRouter.delete('/pages/:pid', (req, res) => {
+    const cur = findPage(req);
+    db.deletePage(req.params.gid, cur.id);
+    res.json({ ok: true });
+  });
+
+  guildRouter.post('/pages/:pid/duplicate', (req, res) => {
+    const { gid } = req.params;
+    const cur = findPage(req);
+    if (pagesFull(gid)) throw new HttpError(409, `A server can have at most ${LIMITS.pagesPerGuild} pages.`);
+    const copy = guardSlug(() => db.createPage({ guildId: gid, slug: db.uniqueSlug(gid, `${cur.slug}-copy`), title: `${cur.title} (copy)`.slice(0, 80), theme: cur.theme, blocks: cur.blocks, published: false, updatedBy: actor(req) }));
+    res.status(201).json({ page: pageFull(copy) });
+  });
+
+  /** Every form in every page: the flow trigger's picker and the variable chips read this. */
+  guildRouter.get('/forms', (req, res) => {
+    res.json(db.listPages(req.params.gid).flatMap((p) => formsOf(p).map((f) => ({
+      key: `${p.id}:${f.blockId}`, pageId: p.id, blockId: f.blockId, label: `${p.title} › ${f.title}`, fields: f.fields,
+    }))));
+  });
+
+  const formParam = (req) => {
+    const blockId = String(req.query.form ?? '');
+    if (!BLOCK_ID_RE.test(blockId)) throw new HttpError(400, 'Choose a form.');
+    return blockId;
+  };
+
+  guildRouter.get('/pages/:pid/responses', (req, res) => {
+    const page = findPage(req);
+    const blockId = formParam(req);
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 50));
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+    res.json({ total: db.countResponses(page.guildId, page.id, blockId), rows: db.listResponses(page.guildId, page.id, blockId, { limit, offset }) });
+  });
+
+  guildRouter.delete('/pages/:pid/responses/:rid', (req, res) => {
+    const page = findPage(req);
+    if (!db.deleteResponse(page.guildId, page.id, req.params.rid)) throw new HttpError(404, 'Response not found.');
+    res.json({ ok: true });
+  });
+
+  guildRouter.get('/pages/:pid/responses.csv', (req, res) => {
+    const page = findPage(req);
+    const blockId = formParam(req);
+    const form = page.blocks.find((b) => b.id === blockId && b.type === 'form');
+    const columns = (form?.data.fields || []).map((q) => ({ id: q.id, label: q.label }));
+    const rows = db.allResponses(page.guildId, page.id, blockId).map((r) => [new Date(r.createdAt).toISOString(), r.userId, r.userName, ...columns.map((c) => r.answers[c.id] ?? '')]);
+    res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="responses-${page.slug}.csv"`, 'Cache-Control': 'no-store' });
+    res.send(toCsv(['Submitted at', 'Discord user ID', 'Discord username', ...columns.map((c) => c.label)], rows));
+  });
+
   // ---- variables ----------------------------------------------------------------------------
   guildRouter.get('/variables', (req, res) => res.json(db.listVars(req.params.gid)));
   guildRouter.put('/variables', (req, res) => {
@@ -162,6 +273,9 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth }) {
     const heartbeat = setInterval(() => res.write(': ♥\n\n'), 25_000);
     req.on('close', () => { off(); clearInterval(heartbeat); streams.set(uid, Math.max(0, (streams.get(uid) ?? 1) - 1)); });
   });
+
+  // ---- uploaded images (see server/uploads.js) ------------------------------------------------
+  guildRouter.use('/uploads', uploads.api);
 
   router.use('/guilds/:gid', guildRouter);
   return router;

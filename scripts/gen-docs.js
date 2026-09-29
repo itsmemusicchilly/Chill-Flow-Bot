@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BLOCK_LIST, THEME_FIELDS } from '../shared/blocks.js';
 import { CATEGORIES, defaultsFor, getOutputs, NODE_LIST } from '../shared/catalog.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -15,6 +16,7 @@ function fieldRows(fields, indent = '') {
     if (f.required) notes.push('required');
     if (f.showIf) notes.push(`shown when \`${f.showIf.key}\` ${f.showIf.in ? `is ${f.showIf.in.map((v) => `\`${v}\``).join(' / ')}` : `is not ${f.showIf.notIn.map((v) => `\`${v}\``).join(' / ')}`}`);
     if (f.type === 'select' || f.type === 'multiselect') notes.push(`options: ${f.options.map((o) => o.label).join(', ')}`);
+    if (f.type === 'image' && !f.help) notes.push('a picture you uploaded, or a full https link');
     if (f.type === 'list' && Number.isFinite(f.max)) notes.push(`up to ${f.max} items`);
     else if (f.type !== 'list' && (f.min !== undefined || f.max !== undefined)) notes.push(`range ${f.min ?? '…'}–${f.max ?? '…'}`);
     if (f.help) notes.push(f.help);
@@ -54,3 +56,24 @@ for (const [key, cat] of Object.entries(CATEGORIES)) {
 fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
 fs.writeFileSync(path.join(root, 'docs/NODES.md'), `${out.join('\n')}\n`);
 console.log(`Wrote docs/NODES.md (${NODE_LIST.length} nodes)`);
+
+// ---- docs/BLOCKS.md -----------------------------------------------------------------------------------------------------
+const blocks = [
+  '# Page block reference',
+  '',
+  '> Generated from `shared/blocks.js` by `npm run docs` — do not edit by hand.',
+  '',
+  'Pages are made of blocks, top to bottom. Text fields accept a little formatting — `**bold**`, `*italic*`, `[link text](https://example.com)` —',
+  'and never raw HTML. Links must be full `https://` (or `http://`) addresses. Images are pictures you upload in the editor (**Choose…**) or full `https://` addresses.',
+  '',
+  '## Page settings',
+  '',
+  '| Field | Type | Notes |', '| --- | --- | --- |', ...fieldRows(THEME_FIELDS), '',
+];
+for (const b of BLOCK_LIST) {
+  blocks.push(`## ${b.icon} ${b.label}`, '', `\`${b.type}\` — ${b.description}`, '');
+  const rows = fieldRows(b.fields);
+  if (rows.length) blocks.push('| Field | Type | Notes |', '| --- | --- | --- |', ...rows, '');
+}
+fs.writeFileSync(path.join(root, 'docs/BLOCKS.md'), `${blocks.join('\n')}\n`);
+console.log(`Wrote docs/BLOCKS.md (${BLOCK_LIST.length} blocks)`);

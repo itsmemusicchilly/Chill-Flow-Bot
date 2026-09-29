@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { availableVariables, CATEGORIES, NODE_TYPES } from '@shared/catalog.js';
+import { useEditor } from '../context.js';
 import { FieldList } from './FieldEditor.jsx';
 
 function insertAtCaret(target, text) {
@@ -14,7 +15,8 @@ function insertAtCaret(target, text) {
 export default function Inspector({ node, nodes, edges, issues, onChange, onDuplicate, onDelete }) {
   const focusRef = useRef(null);
   const def = node ? NODE_TYPES[node.type] : null;
-  const vars = useMemo(() => (node ? availableVariables(nodes, edges, node.id) : []), [node, nodes, edges]);
+  const { guildData } = useEditor();
+  const vars = useMemo(() => (node ? availableVariables(nodes, edges, node.id, { forms: guildData.forms }) : []), [node, nodes, edges, guildData.forms]);
   if (!node || !def) return null;
   const cat = CATEGORIES[def.category];
 

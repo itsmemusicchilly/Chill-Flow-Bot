@@ -2,11 +2,14 @@
 // (see server/config.js); the editor receives the effective values from /api/me so both sides agree.
 //
 // Not limits, but physical ceilings that always remain: Discord's own API rules, process memory, the HTTP body
-// ceiling (LIMIT_REQUEST_BYTES), setTimeout's ~24.8 day maximum, and modalWaitMs (Discord interaction tokens live 15 min).
+// ceiling (LIMIT_REQUEST_BYTES), setTimeout's ~24.8 day maximum, modalWaitMs (Discord interaction tokens live 15 min) and the
+// image-processing ceilings in server/images.js (32 MB per upload, 64 megapixels).
 
 export const LIMIT_KEYS = [
   'flowsPerGuild', 'nodesPerFlow', 'edgesPerFlow', 'nodeDataBytes', 'graphBytes', 'varsPerGuild', 'varValueBytes',
   'runsPer10s', 'concurrentRuns', 'actionsPer10s', 'stepsPerRun', 'loopIterations', 'waitSeconds', 'componentStateDays',
+  'pagesPerGuild', 'blocksPerPage', 'responsesPerGuild',
+  'uploadBytes', 'uploadsPerGuild', 'storageBytesPerGuild',
 ];
 
 /** The live limits object. Mutated in place by applyLimits(), so every importer always sees current values. */

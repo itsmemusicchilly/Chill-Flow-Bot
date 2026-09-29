@@ -4,11 +4,13 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { createApi, HttpError } from './api.js';
 import { createAuth } from './auth.js';
+import { createPublic } from './public.js';
+import { createUploads } from './uploads.js';
 import { FlowError } from './engine/errors.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-export function createApp({ config, db, runtime, bot, sync, logger, fetchImpl, distDir = path.join(ROOT, 'dist') }) {
+export function createApp({ config, db, runtime, bot, sync, logger, fetchImpl, uploads = createUploads({ config, db, logger }), distDir = path.join(ROOT, 'dist') }) {
   const app = express();
   app.disable('x-powered-by');
   if (config.trustProxy) app.set('trust proxy', config.trustProxy);
@@ -18,7 +20,7 @@ export function createApp({ config, db, runtime, bot, sync, logger, fetchImpl, d
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'same-origin',
-      'Content-Security-Policy': "default-src 'self'; img-src 'self' https://cdn.discordapp.com data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      'Content-Security-Policy': "default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     });
     next();
   });
@@ -27,13 +29,15 @@ export function createApp({ config, db, runtime, bot, sync, logger, fetchImpl, d
   const auth = createAuth({ config, db, fetchImpl, log: (m) => logger.log(null, 'warn', m) });
   app.use(auth.router);
   app.get('/healthz', (_req, res) => res.json({ ok: true, botReady: Boolean(bot.ready) }));
-  app.use('/api', createApi({ config, db, runtime, bot, sync, logger, auth }));
+  app.use('/s', createPublic({ config, db, runtime, bot, logger, auth }).router); // public pages: no dashboard session, own CSP
+  app.use('/i', uploads.files); // uploaded pictures: public, read-only, no session
+  app.use('/api', createApi({ config, db, runtime, bot, sync, logger, auth, uploads }));
 
   const indexHtml = path.join(distDir, 'index.html');
   if (fs.existsSync(indexHtml)) {
     app.use(express.static(distDir, { index: false, maxAge: '1h' }));
     app.use((req, res, next) => {
-      if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/auth')) return next();
+      if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/s/') || req.path.startsWith('/i/')) return next();
       res.set('Cache-Control', 'no-cache');
       return res.sendFile(indexHtml);
     });

@@ -1,11 +1,9 @@
 // Graph normalisation + validation, shared by the editor (live warnings) and the server (authoritative).
-import { NODE_TYPES, getOutputs, isTriggerType, isVisible, VAR_NAME_RE } from './catalog.js';
+import { NODE_TYPES, getOutputs, isTriggerType } from './catalog.js';
+import { checkFields } from './fields.js';
 import { isCapped, LIMITS } from './limits.js';
-import { isBlank } from './util.js';
 
 export const ID_RE = /^[A-Za-z0-9_-]{1,12}$/;
-const isTemplate = (v) => typeof v === 'string' && v.includes('{{');
-const num = (v) => (typeof v === 'number' ? v : Number(v));
 
 /** Keep only the keys we persist (React Flow adds `selected`, `measured`, … at runtime). */
 export function normalizeGraph(input) {
@@ -26,33 +24,6 @@ export function normalizeGraph(input) {
     };
   });
   return { nodes, edges };
-}
-
-function checkFields(fields, data, prefix, push) {
-  for (const f of fields) {
-    if (!isVisible(f, data)) continue;
-    const v = data[f.key];
-    const name = `${prefix}“${f.label}”`;
-    if (f.type === 'list') {
-      const items = Array.isArray(v) ? v : [];
-      if (items.length > (f.max ?? Infinity)) push(`${name}: at most ${f.max} items.`);
-      items.forEach((item, i) => checkFields(f.item.fields, item || {}, `${prefix}${f.label} #${i + 1} · `, push));
-      continue;
-    }
-    if (f.required && (f.type === 'multiselect' ? !(v || []).length : isBlank(v))) { push(`${name} is required.`); continue; }
-    if (isBlank(v)) continue;
-    if (f.type === 'text' && f.pattern === 'var' && !isTemplate(v) && !VAR_NAME_RE.test(v)) {
-      push(`${name} must be letters, numbers, - or _ (max 32) and not start with a number.`);
-    }
-    if (f.type === 'number' && !isTemplate(v)) {
-      const n = num(v);
-      if (!Number.isFinite(n)) push(`${name} must be a number.`);
-      else if ((f.min !== undefined && n < f.min) || (f.max !== undefined && n > f.max)) {
-        push(`${name} must be between ${f.min ?? '−∞'} and ${f.max ?? '∞'}.`);
-      }
-    }
-    if (f.type === 'select' && !f.options.some((o) => o.value === v)) push(`${name} has an invalid value.`);
-  }
 }
 
 /**

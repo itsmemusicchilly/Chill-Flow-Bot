@@ -23,7 +23,8 @@
     "discord.js": "^14.27.0",
     "express": "^5.2.1",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.1",

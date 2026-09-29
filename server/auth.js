@@ -7,6 +7,9 @@ import { RateLimiter } from './engine/rate-limit.js';
 
 const DISCORD = 'https://discord.com';
 const API = `${DISCORD}/api/v10`;
+// Where a visitor may be sent back to after logging in: only a public page of this site (never an arbitrary URL).
+export const NEXT_RE = /^\/s\/\d{5,25}\/[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
+const VISITOR_TTL_MS = 24 * 3600 * 1000;
 const ADMINISTRATOR = 1n << 3n;
 const MANAGE_GUILD = 1n << 5n;
 
@@ -35,9 +38,19 @@ export function createAuth({ config, db, fetchImpl = fetch, log = () => {} }) {
   function attachSession(req, _res, next) {
     const sid = parseCookies(req.headers.cookie).fc_session;
     const s = sid ? db.getSession(sid) : null;
-    if (s) req.session = { id: sid, userId: s.userId, data: s.data };
+    if (s && !s.data.visitor) req.session = { id: sid, userId: s.userId, data: s.data }; // a visitor session is never a dashboard session
     next();
   }
+  /** Public-page visitors: a separate cookie and session kind that can never reach /api. */
+  function attachVisitor(req, _res, next) {
+    const sid = parseCookies(req.headers.cookie).fc_visitor;
+    const s = sid ? db.getSession(sid) : null;
+    if (s?.data.visitor === true) req.visitor = { sessionId: sid, id: s.userId, name: s.data.user.name, avatar: s.data.user.avatar };
+    next();
+  }
+  /** Form token bound to this visitor session, page and form (not guessable without the server secret). */
+  const csrfToken = (sessionId, pageId, blockId) => crypto.createHmac('sha256', config.clientSecret).update(`${sessionId}|${pageId}|${blockId}`).digest('hex');
+  const csrfValid = (token, sessionId, pageId, blockId) => typeof token === 'string' && safeEqual(token, csrfToken(sessionId, pageId, blockId));
   function requireSession(req, res, next) {
     if (!req.session) return res.status(401).json({ error: 'Not signed in.' });
     return next();
@@ -67,9 +80,24 @@ export function createAuth({ config, db, fetchImpl = fetch, log = () => {} }) {
     return res.redirect(url.toString());
   });
 
+  router.get('/auth/visitor/login', (req, res) => {
+    if (!attempts.take(req.ip)) return res.status(429).send('Too many login attempts. Try again in a few minutes.');
+    const state = `v.${crypto.randomBytes(16).toString('hex')}`; // the "v." marks this as a visitor login
+    const next = typeof req.query.next === 'string' && NEXT_RE.test(req.query.next) ? req.query.next : '/';
+    res.append('Set-Cookie', `fc_state=${state}; ${attrs(600)}`);
+    res.append('Set-Cookie', `fc_next=${encodeURIComponent(next)}; ${attrs(600)}`);
+    const url = new URL(`${DISCORD}/oauth2/authorize`);
+    // visitors only share their identity — no server list
+    url.search = new URLSearchParams({ client_id: config.clientId, redirect_uri: redirectUri, response_type: 'code', scope: 'identify', state, prompt: 'none' }).toString();
+    return res.redirect(url.toString());
+  });
+
   router.get('/auth/callback', async (req, res) => {
-    const expected = parseCookies(req.headers.cookie).fc_state;
+    const cookies = parseCookies(req.headers.cookie);
+    const expected = cookies.fc_state;
+    const isVisitor = typeof expected === 'string' && expected.startsWith('v.');
     res.append('Set-Cookie', `fc_state=; ${attrs(0)}`); // single use
+    res.append('Set-Cookie', `fc_next=; ${attrs(0)}`);
     const { code, state, error } = req.query;
     if (error) return res.redirect('/?login=denied');
     if (typeof code !== 'string' || typeof state !== 'string' || !safeEqual(state, expected)) return res.redirect('/?login=failed');
@@ -80,12 +108,22 @@ export function createAuth({ config, db, fetchImpl = fetch, log = () => {} }) {
         body: new URLSearchParams({ client_id: config.clientId, client_secret: config.clientSecret, grant_type: 'authorization_code', code, redirect_uri: redirectUri }),
       });
       const bearer = { headers: { Authorization: `Bearer ${token.access_token}` } };
-      const [user, guilds] = await Promise.all([discord('/users/@me', bearer), discord('/users/@me/guilds?limit=200', bearer)]);
-      // best effort: we never need this token again
-      discord('/oauth2/token/revoke', {
+      const revoke = () => discord('/oauth2/token/revoke', { // best effort: we never need this token again
         method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ client_id: config.clientId, client_secret: config.clientSecret, token: token.access_token }),
       }).catch(() => {});
+
+      if (isVisitor) {
+        const user = await discord('/users/@me', bearer);
+        revoke();
+        const sid = db.createSession(user.id, { visitor: true, user: { id: user.id, name: user.global_name || user.username, avatar: user.avatar } }, VISITOR_TTL_MS);
+        res.append('Set-Cookie', `fc_visitor=${sid}; ${attrs(Math.floor(VISITOR_TTL_MS / 1000))}`);
+        const next = cookies.fc_next && NEXT_RE.test(cookies.fc_next) ? cookies.fc_next : '/';
+        return res.redirect(next);
+      }
+
+      const [user, guilds] = await Promise.all([discord('/users/@me', bearer), discord('/users/@me/guilds?limit=200', bearer)]);
+      revoke();
 
       const manageable = guilds.filter((g) => {
         const perms = BigInt(g.permissions || 0);
@@ -110,5 +148,12 @@ export function createAuth({ config, db, fetchImpl = fetch, log = () => {} }) {
     res.json({ ok: true });
   });
 
-  return { router, attachSession, requireSession, requireOrigin };
+  router.post('/auth/visitor/logout', express.urlencoded({ extended: false, limit: '4kb' }), attachVisitor, requireOrigin, (req, res) => {
+    if (req.visitor) db.deleteSession(req.visitor.sessionId);
+    res.append('Set-Cookie', `fc_visitor=; ${attrs(0)}`);
+    const next = typeof req.body?.next === 'string' && NEXT_RE.test(req.body.next) ? req.body.next : '/';
+    res.redirect(303, next);
+  });
+
+  return { router, attachSession, attachVisitor, requireSession, requireOrigin, csrfToken, csrfValid };
 }

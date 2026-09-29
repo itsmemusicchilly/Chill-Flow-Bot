@@ -18,14 +18,14 @@ export const DEFER_AFTER_MS = 2200;
 const EPHEMERAL = MessageFlags.Ephemeral;
 
 export class Runtime {
-  /** @param {{db: import('../db.js').Database, logger: import('../logger.js').Logger, intents?: {members: boolean, messageContent: boolean}}} deps */
-  constructor({ db, logger, intents = { members: false, messageContent: false } }) {
+  /** @param {{db: import('../db.js').Database, logger: import('../logger.js').Logger, intents?: {members: boolean, messageContent: boolean}, uploads?: {publicUrl: (guildId: string, ref: string) => string}}} deps */
+  constructor({ db, logger, intents = { members: false, messageContent: false }, uploads = null }) {
     this.db = db;
     this.logger = logger;
     this.intents = intents;
     this.client = null;
     this.services = {
-      db, logger,
+      db, logger, uploads,
       selfActions: new SelfActions(),
       cooldowns: new Map(),
       components: new ComponentState({ db }),
@@ -206,6 +206,18 @@ export class Runtime {
       if (run) runs.push(run);
     }
     return Promise.all(runs);
+  }
+
+  /** A visitor submitted a web form: start every active "Form Submitted" flow bound to it. */
+  fireForm({ guildId, user, member = null, page, formBlock, answers, summary, responseId, pageUrl }) {
+    const guild = this.client?.guilds.cache.get(guildId);
+    if (!guild) return Promise.resolve();
+    return this.fire('trigger.form.submitted', {
+      guild, user, member: member ?? undefined,
+      data: { form: { ...answers, title: formBlock.data.title, summary }, page: { title: page.title, url: pageUrl }, response: { id: responseId } },
+      info: { formKey: `${page.id}:${formBlock.id}`, isBot: false },
+      label: `Form “${formBlock.data.title}” submitted by ${user.username}`,
+    });
   }
 
   // ---- interactions -----------------------------------------------------------------------------
