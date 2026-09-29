@@ -1,0 +1,31 @@
+{
+  "name": "discord-bot-flowchart",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A shared Discord bot whose behaviour server admins build in a web flowchart editor.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "build": "vite build",
+    "dev": "concurrently -k -n server,web \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "node --watch server/index.js",
+    "dev:web": "vite",
+    "test": "node --test --no-warnings=ExperimentalWarning \"test/**/*.test.js\"",
+    "docs": "node scripts/gen-docs.js"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.12.0",
+    "discord.js": "^14.27.0",
+    "express": "^5.2.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "vite": "^8.3.1"
+  }
+}

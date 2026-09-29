@@ -1,0 +1,125 @@
+// Graph normalisation + validation, shared by the editor (live warnings) and the server (authoritative).
+import { NODE_TYPES, getOutputs, isTriggerType, isVisible, VAR_NAME_RE } from './catalog.js';
+import { LIMITS } from './limits.js';
+import { isBlank } from './util.js';
+
+export const ID_RE = /^[A-Za-z0-9_-]{1,12}$/;
+const isTemplate = (v) => typeof v === 'string' && v.includes('{{');
+const num = (v) => (typeof v === 'number' ? v : Number(v));
+
+/** Keep only the keys we persist (React Flow adds `selected`, `measured`, … at runtime). */
+export function normalizeGraph(input) {
+  const nodes = (Array.isArray(input?.nodes) ? input.nodes : []).map((n) => ({
+    id: String(n?.id ?? ''),
+    type: String(n?.type ?? ''),
+    position: { x: Math.round(Number(n?.position?.x) || 0), y: Math.round(Number(n?.position?.y) || 0) },
+    data: n?.data && typeof n.data === 'object' && !Array.isArray(n.data) ? n.data : {},
+  }));
+  const edges = (Array.isArray(input?.edges) ? input.edges : []).map((e) => {
+    const sourceHandle = e?.sourceHandle || 'out';
+    return {
+      id: String(e?.id || `${e?.source}:${sourceHandle}>${e?.target}`),
+      source: String(e?.source ?? ''),
+      sourceHandle,
+      target: String(e?.target ?? ''),
+      targetHandle: 'in',
+    };
+  });
+  return { nodes, edges };
+}
+
+function checkFields(fields, data, prefix, push) {
+  for (const f of fields) {
+    if (!isVisible(f, data)) continue;
+    const v = data[f.key];
+    const name = `${prefix}“${f.label}”`;
+    if (f.type === 'list') {
+      const items = Array.isArray(v) ? v : [];
+      if (items.length > (f.max ?? 25)) push(`${name}: at most ${f.max ?? 25} items.`);
+      items.forEach((item, i) => checkFields(f.item.fields, item || {}, `${prefix}${f.label} #${i + 1} · `, push));
+      continue;
+    }
+    if (f.required && (f.type === 'multiselect' ? !(v || []).length : isBlank(v))) { push(`${name} is required.`); continue; }
+    if (isBlank(v)) continue;
+    if (f.type === 'text' && f.pattern === 'var' && !isTemplate(v) && !VAR_NAME_RE.test(v)) {
+      push(`${name} must be letters, numbers, - or _ (max 32) and not start with a number.`);
+    }
+    if (f.type === 'number' && !isTemplate(v)) {
+      const n = num(v);
+      if (!Number.isFinite(n)) push(`${name} must be a number.`);
+      else if ((f.min !== undefined && n < f.min) || (f.max !== undefined && n > f.max)) {
+        push(`${name} must be between ${f.min ?? '−∞'} and ${f.max ?? '∞'}.`);
+      }
+    }
+    if (f.type === 'select' && !f.options.some((o) => o.value === v)) push(`${name} has an invalid value.`);
+  }
+}
+
+/**
+ * @returns {{nodeId: string|null, level: 'error'|'warning', kind: 'structure'|'config'|'intent'|'graph', message: string}[]}
+ * `kind: 'structure'` issues make a graph unsavable; the rest are shown as warnings but can be saved.
+ */
+export function validateFlow(graph, { intents } = {}) {
+  const issues = [];
+  const add = (nodeId, level, kind, message) => issues.push({ nodeId, level, kind, message });
+  const { nodes, edges } = graph;
+
+  if (nodes.length > LIMITS.nodesPerFlow) add(null, 'error', 'structure', `A flow can have at most ${LIMITS.nodesPerFlow} nodes.`);
+  if (edges.length > LIMITS.edgesPerFlow) add(null, 'error', 'structure', `A flow can have at most ${LIMITS.edgesPerFlow} connections.`);
+
+  const byId = new Map();
+  for (const n of nodes) {
+    if (!ID_RE.test(n.id)) { add(null, 'error', 'structure', `Invalid node id “${n.id}”.`); continue; }
+    if (byId.has(n.id)) { add(n.id, 'error', 'structure', `Duplicate node id “${n.id}”.`); continue; }
+    byId.set(n.id, n);
+    if (!NODE_TYPES[n.type]) { add(n.id, 'error', 'structure', `Unknown node type “${n.type}”.`); continue; }
+    if (JSON.stringify(n.data).length > LIMITS.nodeDataBytes) add(n.id, 'error', 'structure', 'This node holds too much data.');
+  }
+
+  const edgeKeys = new Set();
+  for (const e of edges) {
+    const src = byId.get(e.source);
+    const dst = byId.get(e.target);
+    if (!src || !dst) { add(null, 'error', 'structure', 'A connection points to a node that does not exist.'); continue; }
+    if (e.source === e.target) { add(e.source, 'error', 'structure', 'A node cannot connect to itself.'); continue; }
+    if (!NODE_TYPES[src.type] || !NODE_TYPES[dst.type]) continue;
+    if (isTriggerType(dst.type)) { add(dst.id, 'error', 'structure', 'Triggers start a flow — nothing can connect into them.'); continue; }
+    if (!getOutputs(src.type, src.data).some((o) => o.id === e.sourceHandle)) {
+      add(src.id, 'error', 'structure', `A connection leaves an output (“${e.sourceHandle}”) that no longer exists.`);
+      continue;
+    }
+    const key = `${e.source}|${e.sourceHandle}|${e.target}`;
+    if (edgeKeys.has(key)) add(src.id, 'error', 'structure', 'Duplicate connection.');
+    edgeKeys.add(key);
+  }
+
+  const reachable = new Set();
+  const stack = nodes.filter((n) => isTriggerType(n.type)).map((n) => n.id);
+  stack.forEach((id) => reachable.add(id));
+  while (stack.length) {
+    const id = stack.pop();
+    for (const e of edges) if (e.source === id && byId.has(e.target) && !reachable.has(e.target)) { reachable.add(e.target); stack.push(e.target); }
+  }
+
+  const triggers = nodes.filter((n) => isTriggerType(n.type));
+  if (!triggers.length) add(null, 'warning', 'graph', 'Add a trigger (a command or event) so this flow has something to start it.');
+
+  for (const n of byId.values()) {
+    const d = NODE_TYPES[n.type];
+    if (!d) continue;
+    const push = (m) => add(n.id, 'error', 'config', m);
+    checkFields(d.fields, n.data, '', push);
+    for (const m of d.check?.(n.data) || []) push(m);
+    if (d.requires && intents && !intents[d.requires]) {
+      add(n.id, 'error', 'intent', `This trigger needs the ${d.requires === 'members' ? 'Server Members' : 'Message Content'} intent, which the bot operator has not enabled — it will not run.`);
+    }
+    if (d.isTrigger) {
+      if (!edges.some((e) => e.source === n.id)) add(n.id, 'warning', 'graph', 'Connect this trigger to something to do.');
+    } else if (!reachable.has(n.id)) {
+      add(n.id, 'warning', 'graph', 'Not connected to a trigger, so it will never run.');
+    }
+  }
+  return issues;
+}
+
+export const hasStructureErrors = (issues) => issues.some((i) => i.kind === 'structure');
