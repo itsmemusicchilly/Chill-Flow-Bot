@@ -17,6 +17,9 @@ export const LIMIT_ENV = {
   stepsPerRun: 'LIMIT_STEPS_PER_RUN',
   loopIterations: 'LIMIT_LOOP_ITERATIONS',
   waitSeconds: 'LIMIT_WAIT_SECONDS',
+  pagesPerGuild: 'LIMIT_PAGES_PER_GUILD',
+  blocksPerPage: 'LIMIT_BLOCKS_PER_PAGE',
+  responsesPerGuild: 'LIMIT_RESPONSES_PER_GUILD',
 };
 const DEFAULT_REQUEST_BYTES = 50 * 1024 * 1024;
 const MAX_REQUEST_BYTES = 1024 ** 3;

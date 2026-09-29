@@ -66,6 +66,20 @@ export class BotManager {
     return ok;
   }
 
+  /** The person as a member of the server (live lookup, cached ≤ 60 s), or null. Used to check who may submit a form. */
+  async getMember(guildId, userId) {
+    const key = `m:${guildId}:${userId}`;
+    const hit = this.permCache.get(key);
+    if (hit && Date.now() - hit.at < PERM_CACHE_MS) return hit.member;
+    const guild = this.#guild(guildId);
+    const member = guild ? await guild.members.fetch({ user: userId, force: true }).catch(() => null) : null;
+    if (this.permCache.size > 5000) this.permCache.clear();
+    this.permCache.set(key, { member, at: Date.now() });
+    return member;
+  }
+
+  async isMember(guildId, userId) { return Boolean(await this.getMember(guildId, userId)); }
+
   guildSummary(id) {
     const g = this.#guild(id);
     if (!g) return null;

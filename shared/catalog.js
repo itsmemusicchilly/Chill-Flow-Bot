@@ -1,6 +1,9 @@
 // Single source of truth for every node type. The editor renders its palette, cards and inspector from
 // this file; the server uses it to validate graphs, compute handles and activate triggers.
+import { area, bool, color, idField, isVisible, list, multi, num, select, text, VAR_NAME_RE, when, whenNot } from './fields.js';
 import { uid } from './util.js';
+
+export { isVisible, VAR_NAME_RE };
 
 export const CATEGORIES = {
   trigger: { label: 'Triggers', color: '#f59e0b', blurb: 'Start a flow' },
@@ -30,26 +33,6 @@ export const COMMAND_PERMISSIONS = [
   'Administrator', 'ManageGuild', 'ManageRoles', 'ManageChannels', 'ManageMessages', 'KickMembers', 'BanMembers',
   'ModerateMembers',
 ];
-
-// ---------------------------------------------------------------------------------------------------
-// tiny field DSL
-// ---------------------------------------------------------------------------------------------------
-const pairs = (arr) => arr.map((x) => (Array.isArray(x) ? { value: x[0], label: x[1] } : { value: x, label: x }));
-const text = (key, label, o = {}) => ({ type: 'text', key, label, default: '', ...o });
-const area = (key, label, o = {}) => ({ type: 'textarea', key, label, default: '', ...o });
-const num = (key, label, o = {}) => ({ type: 'number', key, label, default: '', ...o });
-const bool = (key, label, o = {}) => ({ type: 'boolean', key, label, default: false, ...o });
-const color = (key, label, o = {}) => ({ type: 'color', key, label, default: '#5865f2', ...o });
-const select = (key, label, options, o = {}) => {
-  const opts = pairs(options);
-  return { type: 'select', key, label, options: opts, default: opts[0].value, ...o };
-};
-const multi = (key, label, options, o = {}) => ({ type: 'multiselect', key, label, options: pairs(options), default: [], ...o });
-const idField = (key, label, kind, o = {}) => ({ type: 'id', kind, key, label, default: '', ...o });
-// Lists are unlimited unless Discord itself caps them (then the definition passes an explicit `max`).
-const list = (key, label, item, o = {}) => ({ type: 'list', key, label, item, default: [], max: Infinity, ...o });
-const when = (key, ...values) => ({ key, in: values });
-const whenNot = (key, ...values) => ({ key, notIn: values });
 
 const OUT = { id: 'out', label: 'Next' };
 const ERR = { id: 'error', label: 'On error', kind: 'error' };
@@ -228,6 +211,14 @@ trigger('trigger.manual', {
   description: 'Runs when you press ▶ Run in the editor. Great for posting a button panel once.',
   fields: [idField('channelId', 'Channel for context (optional)', 'channel', { help: 'Becomes the “current channel” for the flow.' })],
   provides: () => [...GUILD, ...CHANNEL], summary: () => 'press ▶ Run',
+});
+
+trigger('trigger.form.submitted', {
+  label: 'Form Submitted', icon: '🧾',
+  description: 'Runs when someone submits one of your web page forms (build them in the Pages tab). Each answer is {{form.<question id>}}.',
+  fields: [idField('form', 'Form', 'form', { required: true, help: 'Only forms on pages of this server are listed.' })],
+  provides: () => [...USER, ...MEMBER, ...GUILD, ['form.title', 'Form title'], ['form.summary', 'All answers as text'], ['response.id', 'Response ID'], ['page.title', 'Page title'], ['page.url', 'Page link']],
+  summary: (d) => (d.form ? 'a form is submitted' : 'choose a form'),
 });
 
 // ---- messages -----------------------------------------------------------------------------------
@@ -558,19 +549,9 @@ export function defaultsFor(type) {
   return out;
 }
 
-export function isVisible(field, data) {
-  const s = field.showIf;
-  if (!s) return true;
-  const v = data?.[s.key];
-  if (s.in) return s.in.includes(v);
-  if (s.notIn) return !s.notIn.includes(v);
-  return true;
-}
-
-export const VAR_NAME_RE = /^[A-Za-z_][\w-]{0,31}$/;
-
 /** Template variables a node can use, found by walking the graph backwards to its triggers. */
-export function availableVariables(nodes, edges, nodeId) {
+/** `extra.forms` (from GET /forms) lets a Form Submitted trigger list its own questions as {{form.<id>}}. */
+export function availableVariables(nodes, edges, nodeId, extra = {}) {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const incoming = new Map();
   for (const e of edges) { if (!incoming.has(e.target)) incoming.set(e.target, []); incoming.get(e.target).push(e); }
@@ -595,6 +576,9 @@ export function availableVariables(nodes, edges, nodeId) {
       const d = defs[src.type];
       if (!d) continue;
       if (d.provides) for (const [p, l] of d.provides(src.data || {})) add(p, l);
+      if (src.type === 'trigger.form.submitted') {
+        for (const f of (extra.forms || []).find((x) => x.key === src.data?.form)?.fields || []) add(`form.${f.id}`, `Answer: ${f.label}`);
+      }
       const sd = src.data || {};
       if (sd.outputVar) add(`var.${sd.outputVar}`, `Saved by “${d.label}”`);
       if (src.type === 'data.variable.set' && sd.scope === 'run' && sd.name) add(`var.${sd.name}`, 'Run variable');

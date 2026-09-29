@@ -198,6 +198,18 @@ export class Runtime {
     return Promise.all(runs);
   }
 
+  /** A visitor submitted a web form: start every active "Form Submitted" flow bound to it. */
+  fireForm({ guildId, user, member = null, page, formBlock, answers, summary, responseId, pageUrl }) {
+    const guild = this.client?.guilds.cache.get(guildId);
+    if (!guild) return Promise.resolve();
+    return this.fire('trigger.form.submitted', {
+      guild, user, member: member ?? undefined,
+      data: { form: { ...answers, title: formBlock.data.title, summary }, page: { title: page.title, url: pageUrl }, response: { id: responseId } },
+      info: { formKey: `${page.id}:${formBlock.id}`, isBot: false },
+      label: `Form “${formBlock.data.title}” submitted by ${user.username}`,
+    });
+  }
+
   // ---- interactions -----------------------------------------------------------------------------
   async handleInteraction(interaction) {
     try {
