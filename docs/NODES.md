@@ -488,7 +488,7 @@ triggered this flow”.
 | Slowmode (seconds) | number | shown when `type` is `text` / `forum`; range 0–21600 |
 | User limit | number | shown when `type` is `voice` / `stage`; range 0–99 |
 | Hide from @everyone | boolean | Then add overrides below to let specific people in. |
-| Permission overrides | list | up to 25 items |
+| Permission overrides | list |  |
 | ↳ Applies to | select | options: A role, A member |
 | ↳ Role / member ID | text | required |
 | ↳ Allow | multiselect | options: ViewChannel, SendMessages, SendMessagesInThreads, ReadMessageHistory, AddReactions, AttachFiles, EmbedLinks, UseExternalEmojis, MentionEveryone, ManageMessages, ManageChannels, ManageRoles, ManageThreads, CreatePublicThreads, CreatePrivateThreads, UseApplicationCommands, CreateInstantInvite, Connect, Speak, Stream, UseVAD, MuteMembers, DeafenMembers, MoveMembers |
@@ -520,7 +520,7 @@ triggered this flow”.
 | Move to category | category |  |
 | Slowmode (seconds) | number | range 0–21600 |
 | Age-restricted | select | options: Unchanged, Yes, No |
-| Permission overrides | list | up to 25 items |
+| Permission overrides | list |  |
 | ↳ Applies to | select | options: A role, A member |
 | ↳ Role / member ID | text | required |
 | ↳ Allow | multiselect | options: ViewChannel, SendMessages, SendMessagesInThreads, ReadMessageHistory, AddReactions, AttachFiles, EmbedLinks, UseExternalEmojis, MentionEveryone, ManageMessages, ManageChannels, ManageRoles, ManageThreads, CreatePublicThreads, CreatePrivateThreads, UseApplicationCommands, CreateInstantInvite, Connect, Speak, Stream, UseVAD, MuteMembers, DeafenMembers, MoveMembers |
@@ -612,7 +612,7 @@ triggered this flow”.
 | Field | Type | Notes |
 | --- | --- | --- |
 | Continue on True when | select | options: ALL checks pass, ANY check passes |
-| Checks | list | up to 10 items |
+| Checks | list |  |
 | ↳ Value | text | required |
 | ↳ Check | select | options: equals, does not equal, contains, does not contain, starts with, ends with, is greater than, is at least, is less than, is at most, matches regex, is empty, is not empty |
 | ↳ Compare to | text | shown when `op` is not `isEmpty` / `isNotEmpty` |
@@ -659,11 +659,11 @@ triggered this flow”.
 
 ### ⌛ Wait
 
-`logic.wait` — Pause the flow. Up to 5 minutes.
+`logic.wait` — Pause the flow for a while. Switching the flow off stops it.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| Seconds | number | required; range 0–300 |
+| Seconds | number | required; range 0–… |
 
 **Outputs:** Next
 

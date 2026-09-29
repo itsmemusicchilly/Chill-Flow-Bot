@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { LIMITS } from '../shared/limits.js';
+import { isCapped, LIMITS } from '../shared/limits.js';
 import { uid } from '../shared/util.js';
 import { FlowError } from './engine/errors.js';
 
@@ -91,9 +91,11 @@ export class Database {
     if (!VAR_NAME.test(String(name))) throw new FlowError(`“${name}” is not a valid variable name.`);
     const json = JSON.stringify(value);
     if (json === undefined) throw new FlowError('That value cannot be stored.');
-    if (Buffer.byteLength(json) > LIMITS.varValueBytes) throw new FlowError(`Variable values can be at most ${LIMITS.varValueBytes} bytes.`);
-    const exists = this.#stmt('SELECT 1 FROM vars WHERE guild_id=? AND scope=? AND scope_id=? AND name=?').get(guildId, scope, scopeId, name);
-    if (!exists && this.countVars(guildId) >= LIMITS.varsPerGuild) throw new FlowError(`This server reached the limit of ${LIMITS.varsPerGuild} stored variables.`);
+    if (isCapped(LIMITS.varValueBytes) && Buffer.byteLength(json) > LIMITS.varValueBytes) throw new FlowError(`Variable values can be at most ${LIMITS.varValueBytes} bytes.`);
+    if (isCapped(LIMITS.varsPerGuild)) {
+      const exists = this.#stmt('SELECT 1 FROM vars WHERE guild_id=? AND scope=? AND scope_id=? AND name=?').get(guildId, scope, scopeId, name);
+      if (!exists && this.countVars(guildId) >= LIMITS.varsPerGuild) throw new FlowError(`This server reached the limit of ${LIMITS.varsPerGuild} stored variables.`);
+    }
     this.#stmt('INSERT INTO vars (guild_id, scope, scope_id, name, value) VALUES (?,?,?,?,?) ON CONFLICT(guild_id, scope, scope_id, name) DO UPDATE SET value = excluded.value')
       .run(guildId, scope, scopeId, name, json);
   }

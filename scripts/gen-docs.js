@@ -15,8 +15,8 @@ function fieldRows(fields, indent = '') {
     if (f.required) notes.push('required');
     if (f.showIf) notes.push(`shown when \`${f.showIf.key}\` ${f.showIf.in ? `is ${f.showIf.in.map((v) => `\`${v}\``).join(' / ')}` : `is not ${f.showIf.notIn.map((v) => `\`${v}\``).join(' / ')}`}`);
     if (f.type === 'select' || f.type === 'multiselect') notes.push(`options: ${f.options.map((o) => o.label).join(', ')}`);
-    if (f.type === 'list') notes.push(`up to ${f.max} items`);
-    else if (f.min !== undefined || f.max !== undefined) notes.push(`range ${f.min ?? '…'}–${f.max ?? '…'}`);
+    if (f.type === 'list' && Number.isFinite(f.max)) notes.push(`up to ${f.max} items`);
+    else if (f.type !== 'list' && (f.min !== undefined || f.max !== undefined)) notes.push(`range ${f.min ?? '…'}–${f.max ?? '…'}`);
     if (f.help) notes.push(f.help);
     rows.push(`| ${indent}${esc(f.label)} | ${f.type === 'id' ? f.kind : f.type} | ${esc(notes.join('; '))} |`);
     if (f.type === 'list') rows.push(...fieldRows(f.item.fields, `${indent}↳ `));

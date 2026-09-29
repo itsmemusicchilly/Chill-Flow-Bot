@@ -1,12 +1,13 @@
 // Walks a flow graph. Each node is rendered (templates), executed, and then its chosen output handle(s)
 // are followed. A failing node follows its "error" output if connected, otherwise ends that branch.
 import { NODE_TYPES } from '../../shared/catalog.js';
-import { LIMITS } from '../../shared/limits.js';
+import { isCapped, LIMITS } from '../../shared/limits.js';
 import { FlowAbort, friendlyError } from './errors.js';
 import { executors } from './executors/index.js';
 import { takeAction } from './resolve.js';
 import { nowInfo } from './serialize.js';
 import { renderDeep } from './template.js';
+import { YIELD_EVERY, yieldToEventLoop } from './yield.js';
 
 const compiled = new WeakMap();
 
@@ -52,19 +53,43 @@ export function buildScope(ctx) {
   return scope;
 }
 
+// A physical ceiling (not a policy limit): entries waiting on the traversal stack. Only a graph that fans out AND loops
+// back on itself can reach it; without it such a graph would eventually exhaust the whole process's memory.
+export const CEILINGS = { pendingBranches: 1_000_000 };
+const DEBUG_LOG_FIRST = 200;
+const DEBUG_LOG_EVERY = 500;
+
+/**
+ * Depth-first walk from `handle` of `nodeId`, using an explicit stack instead of recursion: the order is the same as
+ * before (an output's targets run one after another, each fully before the next), but a graph that loops back on itself
+ * runs in constant memory instead of nesting promises forever.
+ */
 async function runBranch(flow, ctx, nodeId, handle) {
-  const edges = compileFlow(flow).out.get(`${nodeId}|${handle}`);
-  if (!edges) return;
-  for (const e of edges) await runNode(flow, ctx, e.target);
+  const { out } = compileFlow(flow);
+  const stack = [];
+  const pushSuccessors = (fromId, handles) => {
+    for (let i = handles.length - 1; i >= 0; i -= 1) {
+      const edges = out.get(`${fromId}|${handles[i]}`);
+      if (edges) for (let j = edges.length - 1; j >= 0; j -= 1) stack.push(edges[j].target);
+    }
+    if (stack.length > CEILINGS.pendingBranches) throw new FlowAbort('Too many branches are waiting to run at once — check for a loop that fans out.');
+  };
+  pushSuccessors(nodeId, [handle]);
+  while (stack.length) {
+    if (ctx.aborted) throw new FlowAbort('The flow was stopped.');
+    const id = stack.pop();
+    pushSuccessors(id, await execNode(flow, ctx, id));
+  }
 }
 
-async function runNode(flow, ctx, nodeId) {
+/** Runs one node and returns the output handle(s) to follow next ([] when the branch ends). */
+async function execNode(flow, ctx, nodeId) {
   const { byId, out } = compileFlow(flow);
   const node = byId.get(nodeId);
-  if (!node) return;
-  if (ctx.aborted) throw new FlowAbort('The flow was stopped.');
+  if (!node) return [];
   ctx.steps += 1;
-  if (ctx.steps > LIMITS.stepsPerRun) throw new FlowAbort(`Stopped after ${LIMITS.stepsPerRun} steps — is there an endless loop?`);
+  if (isCapped(LIMITS.stepsPerRun) && ctx.steps > LIMITS.stepsPerRun) throw new FlowAbort(`Stopped after ${LIMITS.stepsPerRun} steps — is there an endless loop?`);
+  if (ctx.steps % YIELD_EVERY === 0) await yieldToEventLoop();
 
   const def = NODE_TYPES[node.type];
   const exec = executors[node.type];
@@ -72,29 +97,29 @@ async function runNode(flow, ctx, nodeId) {
   ctx.logMeta = { flowId: flow.id, flowName: flow.name, runId: ctx.runId, nodeId: node.id };
   if (!def || !exec) {
     ctx.services.logger.log(gid, 'warn', `Skipped unknown node type “${node.type}”.`, ctx.logMeta);
-    return;
+    return [];
   }
-  ctx.services.logger.log(gid, 'debug', `▸ ${def.label}`, ctx.logMeta);
+  if (ctx.steps <= DEBUG_LOG_FIRST || ctx.steps % DEBUG_LOG_EVERY === 0) {
+    ctx.services.logger.log(gid, 'debug', `▸ ${def.label}${ctx.steps === DEBUG_LOG_FIRST ? ' (further steps are logged sparsely)' : ''}`, ctx.logMeta);
+  }
 
-  let handles = ['out'];
   try {
     const d = renderDeep(node.data, buildScope(ctx));
     if (node.type.startsWith('action.')) takeAction(ctx);
     const result = await exec({ ctx, d, node, flow, runBranch: (h) => runBranch(flow, ctx, nodeId, h) });
-    if (result !== undefined) handles = Array.isArray(result) ? result : [result];
+    if (result === undefined) return ['out'];
+    return Array.isArray(result) ? result : [result];
   } catch (err) {
     if (err instanceof FlowAbort) throw err;
     const message = friendlyError(err);
     ctx.services.logger.log(gid, 'error', `${def.label}: ${message}`, ctx.logMeta);
     if (out.has(`${nodeId}|error`)) {
       ctx.error = { message, node: node.id };
-      handles = ['error'];
-    } else {
-      ctx.failed = true;
-      return;
+      return ['error'];
     }
+    ctx.failed = true;
+    return [];
   }
-  for (const h of handles) await runBranch(flow, ctx, nodeId, h);
 }
 
 /** Run everything reachable from `handle` of `startNodeId` (a trigger, or a message node for a button click). */

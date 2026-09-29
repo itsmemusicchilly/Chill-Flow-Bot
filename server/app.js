@@ -22,7 +22,7 @@ export function createApp({ config, db, runtime, bot, sync, logger, fetchImpl, d
     });
     next();
   });
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: config.requestBytes ?? 50 * 1024 * 1024 }));
 
   const auth = createAuth({ config, db, fetchImpl, log: (m) => logger.log(null, 'warn', m) });
   app.use(auth.router);

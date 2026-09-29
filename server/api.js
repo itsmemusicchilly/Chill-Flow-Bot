@@ -1,5 +1,5 @@
 import express from 'express';
-import { LIMITS } from '../shared/limits.js';
+import { isCapped, LIMITS, limitsToJSON } from '../shared/limits.js';
 import { TEMPLATES } from '../shared/templates.js';
 import { hasStructureErrors, normalizeGraph, validateFlow } from '../shared/validate.js';
 import { FlowError } from './engine/errors.js';
@@ -29,7 +29,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth }) {
         id: g.id, name: g.name, icon: iconUrl(g), botPresent: bot.hasGuild(g.id), inviteUrl: bot.hasGuild(g.id) ? null : bot.inviteUrl(g.id),
       })),
       meta: {
-        intents: config.intents, limits: LIMITS, minPermission: config.minPermission,
+        intents: config.intents, limits: limitsToJSON(), minPermission: config.minPermission,
         templates: TEMPLATES.map((t) => ({ id: t.id, name: t.name, description: t.description })),
       },
     });
@@ -56,7 +56,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth }) {
   function checkedGraph(input) {
     if (!input || typeof input !== 'object') throw new HttpError(400, 'Missing flow graph.');
     const graph = normalizeGraph(input);
-    if (JSON.stringify(graph).length > LIMITS.graphBytes) throw new HttpError(413, 'This flow is too large.');
+    if (isCapped(LIMITS.graphBytes) && JSON.stringify(graph).length > LIMITS.graphBytes) throw new HttpError(413, 'This flow is too large.');
     const issues = validateFlow(graph, { intents: config.intents });
     if (hasStructureErrors(issues)) throw new HttpError(400, 'The flow has structural problems and was not saved.', { issues: issues.filter((i) => i.kind === 'structure') });
     return graph;
@@ -66,6 +66,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth }) {
     if (!n) throw new HttpError(400, 'Give the flow a name.');
     return n;
   };
+  const flowsFull = (gid) => isCapped(LIMITS.flowsPerGuild) && db.countFlows(gid) >= LIMITS.flowsPerGuild;
   const actor = (req) => ({ id: req.session.userId, name: req.session.data.user.name });
   async function apply(gid) {
     runtime.loadGuild(gid);
@@ -89,7 +90,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth }) {
 
   guildRouter.post('/flows', async (req, res) => {
     const { gid } = req.params;
-    if (db.countFlows(gid) >= LIMITS.flowsPerGuild) throw new HttpError(409, `A server can have at most ${LIMITS.flowsPerGuild} flows.`);
+    if (flowsFull(gid)) throw new HttpError(409, `A server can have at most ${LIMITS.flowsPerGuild} flows.`);
     let { name, graph } = req.body ?? {};
     if (req.body?.templateId) {
       const t = TEMPLATES.find((x) => x.id === req.body.templateId);
@@ -122,7 +123,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth }) {
   guildRouter.post('/flows/:fid/duplicate', async (req, res) => {
     const { gid } = req.params;
     const cur = getFlow(req);
-    if (db.countFlows(gid) >= LIMITS.flowsPerGuild) throw new HttpError(409, `A server can have at most ${LIMITS.flowsPerGuild} flows.`);
+    if (flowsFull(gid)) throw new HttpError(409, `A server can have at most ${LIMITS.flowsPerGuild} flows.`);
     const copy = db.createFlow({ guildId: gid, name: `${cur.name} (copy)`.slice(0, 60), graph: cur.graph, enabled: false, updatedBy: actor(req) });
     res.status(201).json({ flow: full(copy) });
   });

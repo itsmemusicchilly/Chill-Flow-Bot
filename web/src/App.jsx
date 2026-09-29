@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { applyLimits } from '@shared/limits.js';
 import { api, hashFor, logout, parseHash } from './api.js';
 import Editor from './components/Editor.jsx';
 import GuildPicker from './components/GuildPicker.jsx';
@@ -30,7 +31,9 @@ export default function App() {
 
   const load = useCallback(async () => {
     try {
-      setState({ status: 'ready', me: await api('/me') });
+      const me = await api('/me');
+      applyLimits(me.meta.limits); // the server's effective limits (null = unlimited)
+      setState({ status: 'ready', me });
     } catch (e) {
       setState(e.status === 401 ? { status: 'anon' } : { status: 'error', error: e.message });
     }

@@ -18,10 +18,11 @@ channel, remember a variable…), press **Save** — it is live. No code.
   voice, schedule, manual) and 26 actions/logic nodes (messages with buttons/menus/forms, member moderation, channels,
   roles, variables, conditions, loops, cooldowns, waits). Full list: [docs/NODES.md](docs/NODES.md).
 * **Remembers things**: run, per-server and per-user variables, usable everywhere as `{{templates}}`.
+* **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (89 unit/integration tests plus a
-> 20-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (111 unit/integration tests plus a
+> 23-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it.
 
 ## Quick start
@@ -63,7 +64,39 @@ real dashboard and API against a fake in-memory Discord — useful for developme
 | `ENABLE_MEMBERS_INTENT` | `false` | Needed by *Member Joined / Left / Kicked / Timed Out* and *Role Given/Removed* triggers |
 | `ENABLE_MESSAGE_CONTENT_INTENT` | `false` | Needed by the *Message Received* trigger |
 
+| `LIMIT_*` | unlimited | Optional caps, see [Limits](#limits) |
+
 Triggers whose intent is off are greyed out in the palette and never activated (their node shows why).
+
+### Limits
+
+**There are no limits by default**: as many flows, nodes and connections, stored variables, runs per second, actions,
+loop iterations, steps per run and as long a wait as you like. On a private bot that is what you want. If you host this for
+*other people*, cap only what you need with environment variables — each takes a number or `unlimited`:
+
+| Variable | Caps |
+| --- | --- |
+| `LIMIT_FLOWS_PER_GUILD` · `LIMIT_NODES_PER_FLOW` · `LIMIT_EDGES_PER_FLOW` | flows per server, nodes and connections per flow |
+| `LIMIT_NODE_DATA_BYTES` · `LIMIT_GRAPH_BYTES` | size of one node's settings / of a whole flow |
+| `LIMIT_VARS_PER_GUILD` · `LIMIT_VAR_VALUE_BYTES` | remembered variables per server / size of one value |
+| `LIMIT_RUNS_PER_10S` · `LIMIT_CONCURRENT_RUNS` · `LIMIT_ACTIONS_PER_10S` | flow starts, simultaneous runs and Discord actions per server |
+| `LIMIT_STEPS_PER_RUN` · `LIMIT_LOOP_ITERATIONS` · `LIMIT_WAIT_SECONDS` | nodes executed per run, loop length, longest single wait |
+| `LIMIT_REQUEST_BYTES` | HTTP request body (default 50 MB; always has a ceiling, max 1 GB) |
+
+`.env.example` contains a commented **public-host preset** with sensible caps.
+
+**What cannot be unlimited** — these are physical or Discord's own rules, not ours: 25 buttons / menu options / embed fields
+per message, 25 options per slash command, 5 form inputs, 2000 characters per message, 100 slash commands per server,
+memory and CPU, `setTimeout`'s maximum (~24.8 days), the form wait (10 min: Discord's interaction tokens expire), and the
+login/API rate limits that protect the dashboard itself.
+
+**How it stays safe without a step cap:** a run that loops forever uses constant memory and yields to the event loop, so the
+bot keeps answering everyone else (measured: 650k steps in 4 s, worst stall 7 ms). **To stop a runaway flow, switch it Off
+(or delete it)** — its running instances stop within milliseconds, even in the middle of a long wait. A graph that fans out
+*and* loops back is cut off at one million waiting branches.
+
+> Trade-off: with no caps, one server can slow the shared bot for the others. Fine for your own servers; if you open
+> the dashboard to strangers, set caps.
 
 Development with hot reload: `npm run dev` (server + Vite). Set `BASE_URL=http://localhost:5173` and add
 `http://localhost:5173/auth/callback` as a redirect so login and the `Origin` check line up.
@@ -118,8 +151,8 @@ This is a multi-tenant service: many servers share one bot process, so isolation
   (there is deliberately no global scope). Logs are per server and never persisted.
 * **Safe defaults**: `@everyone`/role pings are off unless a node opts in; audit-log reasons say `[Flow name]`;
   user-supplied regexes run under a hard timeout (a catastrophic pattern cannot freeze the bot).
-* **Limits** (per server): 25 flows, 150 nodes/flow, 2000 stored variables (8 KB each), 40 runs / 10 s, 15 concurrent
-  runs, 25 Discord actions / 10 s, 500 steps per run, loops ≤ 100 iterations, waits ≤ 5 min.
+* **Limits**: none by default — see [Limits](#limits) for the caps you can turn on (recommended when hosting for others).
+  The login and dashboard-API rate limits are always on.
 * Deliberately **not included**: an HTTP-request node (server-side request forgery risk in a shared host).
 
 ## Hosting notes
@@ -131,7 +164,7 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 ## Development
 
 ```bash
-npm test          # 89 unit + API + event tests (fake Discord objects, in-memory SQLite)
+npm test          # 111 unit + API + event tests (fake Discord objects, in-memory SQLite)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
@@ -159,6 +192,8 @@ Not yet automated — please run through this once on a test server:
 - [ ] Reaction Added with message + emoji filter gives a role.
 - [ ] A second admin account in *another* server cannot see or edit the first server's flows.
 - [ ] Bot restarts: an old button still works; slash commands are not re-registered needlessly.
+- [ ] Build a flow that loops forever (two Log nodes pointing at each other), run it, confirm other commands still answer,
+      then switch the flow Off and confirm it stops.
 
 ## Ideas not done yet
 

@@ -1,6 +1,6 @@
 // Graph normalisation + validation, shared by the editor (live warnings) and the server (authoritative).
 import { NODE_TYPES, getOutputs, isTriggerType, isVisible, VAR_NAME_RE } from './catalog.js';
-import { LIMITS } from './limits.js';
+import { isCapped, LIMITS } from './limits.js';
 import { isBlank } from './util.js';
 
 export const ID_RE = /^[A-Za-z0-9_-]{1,12}$/;
@@ -35,7 +35,7 @@ function checkFields(fields, data, prefix, push) {
     const name = `${prefix}“${f.label}”`;
     if (f.type === 'list') {
       const items = Array.isArray(v) ? v : [];
-      if (items.length > (f.max ?? 25)) push(`${name}: at most ${f.max ?? 25} items.`);
+      if (items.length > (f.max ?? Infinity)) push(`${name}: at most ${f.max} items.`);
       items.forEach((item, i) => checkFields(f.item.fields, item || {}, `${prefix}${f.label} #${i + 1} · `, push));
       continue;
     }
@@ -73,7 +73,7 @@ export function validateFlow(graph, { intents } = {}) {
     if (byId.has(n.id)) { add(n.id, 'error', 'structure', `Duplicate node id “${n.id}”.`); continue; }
     byId.set(n.id, n);
     if (!NODE_TYPES[n.type]) { add(n.id, 'error', 'structure', `Unknown node type “${n.type}”.`); continue; }
-    if (JSON.stringify(n.data).length > LIMITS.nodeDataBytes) add(n.id, 'error', 'structure', 'This node holds too much data.');
+    if (isCapped(LIMITS.nodeDataBytes) && JSON.stringify(n.data).length > LIMITS.nodeDataBytes) add(n.id, 'error', 'structure', 'This node holds too much data.');
   }
 
   const edgeKeys = new Set();

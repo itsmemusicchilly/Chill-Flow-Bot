@@ -96,6 +96,13 @@ try {
   ok((await page.locator('.fnode', { hasText: 'Wait' }).count()) >= 2, 'dragging from the palette drops a node');
   await shot('07-palette');
 
+  // no artificial list caps: an If node takes more than the old limit of 10 checks
+  await page.getByRole('button', { name: /Condition \(If\)/ }).click();
+  const checks = page.locator('.field', { has: page.locator('label', { hasText: /^Checks$/ }) });
+  for (let i = 0; i < 12; i += 1) await checks.getByRole('button', { name: '+ Add' }).click();
+  ok((await checks.locator('.list-item').count()) === 12, 'an If node accepts 12 checks (no artificial cap)');
+  ok(await checks.getByRole('button', { name: '+ Add' }).isEnabled(), '+ Add is still available after 12 checks');
+
   ok((await page.locator('.issue-menu summary.bad').count()) === 1, 'unfinished required fields are flagged');
   await page.locator('.issue-menu summary').click();
   await shot('08-issues');
@@ -122,6 +129,7 @@ try {
   await page.getByRole('button', { name: '+ New flow' }).click();
   await page.getByRole('button', { name: /Button role panel/ }).click();
   await page.locator('.fnode', { hasText: 'Manual (Run button)' }).waitFor();
+  ok(await page.getByText('2 flows', { exact: true }).isVisible(), 'the flow counter shows a plain count (no "/25")');
   await page.locator('.fnode', { hasText: 'Manual (Run button)' }).click();
   await page.locator('select[aria-label="Pick channel"]').selectOption({ label: '#general' });
   await page.getByRole('button', { name: /Save changes/ }).click();

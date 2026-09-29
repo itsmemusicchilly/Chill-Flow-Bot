@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import { PermissionFlagsBits } from 'discord.js';
 import { CHANNEL_PERMISSIONS, COMMAND_PERMISSIONS, NODE_LIST, NODE_TYPES, ROLE_PERMISSIONS, availableVariables, defaultsFor, getOutputs, isTriggerType } from '../shared/catalog.js';
 import { TEMPLATES } from '../shared/templates.js';
+import { applyLimits, resetLimits } from '../shared/limits.js';
 import { hasStructureErrors, normalizeGraph, validateFlow } from '../shared/validate.js';
 import { Database } from '../server/db.js';
 import { evalCondition, evalConditions } from '../server/engine/conditions.js';
@@ -209,7 +210,15 @@ describe('database', () => {
     assert.equal(db.getVar('B', 'guild', '', 'x'), 'other');
     assert.throws(() => db.setVar('A', 'global', '', 'x', 1), /scope/);
     assert.throws(() => db.setVar('A', 'guild', '', '../bad', 1), /valid variable name/);
-    assert.throws(() => db.setVar('A', 'guild', '', 'big', 'x'.repeat(9000)), /at most/);
+    db.setVar('A', 'guild', '', 'big', 'x'.repeat(200000)); // unlimited by default
+    assert.equal(db.getVar('A', 'guild', '', 'big').length, 200000);
+    applyLimits({ varValueBytes: 8 * 1024, varsPerGuild: 3 });
+    try {
+      assert.throws(() => db.setVar('A', 'guild', '', 'big2', 'x'.repeat(9000)), /at most/);
+      db.setVar('A', 'guild', '', 'y', 1); // A now holds x, big, y = 3
+      assert.throws(() => db.setVar('A', 'guild', '', 'z', 1), /limit of 3 stored variables/);
+      db.setVar('A', 'guild', '', 'y', 2); // updating an existing variable is not a new one
+    } finally { resetLimits(); }
     assert.ok(db.deleteVar('A', 'guild', '', 'x'));
   });
   it('sessions are stored hashed and expire', () => {

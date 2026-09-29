@@ -8,7 +8,7 @@ import { uid } from '../../shared/util.js';
 import { ComponentState } from './component-state.js';
 import { parseCustomId } from './custom-id.js';
 import { runFlow } from './engine.js';
-import { friendlyError } from './errors.js';
+import { FlowAbort, friendlyError } from './errors.js';
 import { RateLimiter, SelfActions } from './rate-limit.js';
 import { autoDefer, finalize, newAck } from './responder.js';
 import { channelData, guildData, memberData, messageData, roleData, userData } from './serialize.js';
@@ -29,7 +29,7 @@ export class Runtime {
       selfActions: new SelfActions(),
       cooldowns: new Map(),
       components: new ComponentState(),
-      guard: { runs: new RateLimiter(LIMITS.runsPer10s, 10000), actions: new RateLimiter(LIMITS.actionsPer10s, 10000) },
+      guard: { runs: new RateLimiter(() => LIMITS.runsPer10s, 10000), actions: new RateLimiter(() => LIMITS.actionsPer10s, 10000) },
     };
     this.index = new Map(); // guildId -> { flows, triggers: Map<type, {flow,node}[]>, commands: Map<name, {flow,node}> }
     this.flowsById = new Map();
@@ -71,8 +71,25 @@ export class Runtime {
       }
     }
     this.index.set(guildId, entry);
+    this.#stopRemovedRuns(guildId, entry);
     this.syncSchedules(guildId);
     return entry;
+  }
+
+  /** Switching a flow off (or deleting it) stops its runs that are still going, e.g. an endless loop or a long wait. */
+  #stopRemovedRuns(guildId, entry) {
+    const stopped = new Map();
+    for (const ctx of this.live) {
+      if (ctx.guild.id !== guildId || entry.flows.has(ctx.flow.id) || ctx.aborted) continue;
+      this.abortRun(ctx);
+      stopped.set(ctx.flow.name, (stopped.get(ctx.flow.name) ?? 0) + 1);
+    }
+    for (const [name, n] of stopped) this.logger.log(guildId, 'info', `Stopped ${n} running instance(s) of “${name}” because it was switched off or deleted.`);
+  }
+
+  abortRun(ctx) {
+    ctx.aborted = true;
+    ctx.abortController.abort();
   }
 
   loadAll() { for (const gid of this.db.guildIdsWithFlows()) this.loadGuild(gid); }
@@ -80,6 +97,7 @@ export class Runtime {
   unloadGuild(guildId) {
     for (const id of this.index.get(guildId)?.flows.keys() ?? []) this.flowsById.delete(id);
     this.index.delete(guildId);
+    this.#stopRemovedRuns(guildId, { flows: new Map() });
     this.clearTimers(guildId);
   }
 
@@ -108,7 +126,7 @@ export class Runtime {
       services: this.services,
       data: templateData,
       vars: base.vars ?? {},
-      loop: null, error: null, steps: 0, failed: false, aborted: false,
+      loop: null, error: null, steps: 0, failed: false, aborted: false, abortController: new AbortController(),
       ack: newAck(),
       deferEphemeral: Boolean(base.deferEphemeral),
       deferTimer: null,
@@ -151,8 +169,12 @@ export class Runtime {
     try {
       await runFlow(flow, triggerNode.id, handle, ctx);
     } catch (err) {
-      ctx.failed = true;
-      this.logger.log(gid, 'error', `${flow.name}: ${friendlyError(err)}`, ctx.logMeta);
+      if (err instanceof FlowAbort && ctx.aborted) {
+        this.logger.log(gid, 'info', `■ ${flow.name} was stopped.`, ctx.logMeta);
+      } else {
+        ctx.failed = true;
+        this.logger.log(gid, 'error', `${flow.name}: ${friendlyError(err)}`, ctx.logMeta);
+      }
     } finally {
       clearTimeout(ctx.deferTimer);
       await finalize(ctx, { failed: ctx.failed });
@@ -273,7 +295,7 @@ export class Runtime {
   }
 
   async stop() {
-    for (const ctx of this.live) ctx.aborted = true;
+    for (const ctx of this.live) this.abortRun(ctx);
     for (const key of this.timers.keys()) clearInterval(this.timers.get(key));
     this.timers.clear();
   }

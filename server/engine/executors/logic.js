@@ -1,8 +1,22 @@
 import { LIMITS } from '../../../shared/limits.js';
 import { evalConditions } from '../conditions.js';
 import { FlowAbort, FlowError } from '../errors.js';
+import { YIELD_EVERY, yieldToEventLoop } from '../yield.js';
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const MAX_TIMER_MS = 2 ** 31 - 1; // larger delays overflow setTimeout and would fire immediately
+
+/** Delay for a Wait node: never negative, never above the operator's cap, never above what a timer can hold. */
+export function clampDelayMs(seconds) {
+  return Math.min(Math.max(0, Number(seconds) * 1000), LIMITS.waitSeconds * 1000, MAX_TIMER_MS);
+}
+
+/** Sleep that ends early (without throwing) when the run is aborted, e.g. because the flow was switched off. */
+function abortableSleep(ctx, ms) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    ctx.abortController?.signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+  });
+}
 
 function parseItems(s) {
   const t = String(s ?? '').trim();
@@ -26,23 +40,28 @@ export const logicExecutors = {
   },
 
   async 'logic.loop'({ ctx, d, runBranch }) {
-    let items;
+    // Iterated lazily: a huge repeat count must not allocate a huge array.
+    let total;
+    let itemAt;
     if (d.mode === 'repeat') {
-      const n = Math.trunc(Number(d.count));
-      if (!Number.isFinite(n) || n < 1) throw new FlowError('The loop count must be at least 1.');
-      items = Array.from({ length: n }, (_, i) => String(i + 1));
+      total = Math.trunc(Number(d.count));
+      if (!Number.isFinite(total) || total < 1) throw new FlowError('The loop count must be at least 1.');
+      itemAt = (i) => String(i + 1);
     } else {
-      items = parseItems(d.items);
+      const items = parseItems(d.items);
+      total = items.length;
+      itemAt = (i) => items[i];
     }
-    if (items.length > LIMITS.loopIterations) {
-      ctx.services.logger.log(ctx.guild.id, 'warn', `Loop limited to ${LIMITS.loopIterations} iterations (had ${items.length}).`, ctx.logMeta);
-      items = items.slice(0, LIMITS.loopIterations);
+    if (total > LIMITS.loopIterations) {
+      ctx.services.logger.log(ctx.guild.id, 'warn', `Loop limited to ${LIMITS.loopIterations} iterations (had ${total}).`, ctx.logMeta);
+      total = LIMITS.loopIterations;
     }
     const outer = ctx.loop;
     try {
-      for (let i = 0; i < items.length; i += 1) {
+      for (let i = 0; i < total; i += 1) {
         if (ctx.aborted) throw new FlowAbort('The flow was stopped.');
-        ctx.loop = { index: i + 1, item: items[i], count: items.length, first: i === 0, last: i === items.length - 1 };
+        if (i > 0 && i % YIELD_EVERY === 0) await yieldToEventLoop();
+        ctx.loop = { index: i + 1, item: itemAt(i), count: total, first: i === 0, last: i === total - 1 };
         await runBranch('each');
       }
     } finally { ctx.loop = outer; }
@@ -66,7 +85,7 @@ export const logicExecutors = {
   async 'logic.wait'({ ctx, d }) {
     const s = Number(d.seconds);
     if (!Number.isFinite(s) || s < 0) throw new FlowError('Wait seconds must be 0 or more.');
-    await sleep(Math.min(s, LIMITS.waitSeconds) * 1000);
+    await abortableSleep(ctx, clampDelayMs(s));
     if (ctx.aborted) throw new FlowAbort('The flow was stopped.');
   },
 

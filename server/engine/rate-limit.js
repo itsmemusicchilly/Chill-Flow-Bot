@@ -1,4 +1,8 @@
-/** Sliding-window limiter keyed by string (e.g. a guild id). */
+/**
+ * Sliding-window limiter keyed by string (e.g. a guild id).
+ * `max` may be a number or a function (read on every call, so limits can change at runtime); Infinity = no limit
+ * and nothing is recorded.
+ */
 export class RateLimiter {
   constructor(max, windowMs, now = () => Date.now()) {
     this.max = max; this.windowMs = windowMs; this.now = now; this.hits = new Map(); this.lastPrune = now();
@@ -6,10 +10,12 @@ export class RateLimiter {
 
   /** Records a hit and returns whether it is within the limit. */
   take(key) {
+    const max = typeof this.max === 'function' ? this.max() : this.max;
+    if (!Number.isFinite(max)) return true;
     const t = this.now();
     this.#maybePrune(t);
     const arr = (this.hits.get(key) || []).filter((x) => t - x < this.windowMs);
-    if (arr.length >= this.max) { this.hits.set(key, arr); return false; }
+    if (arr.length >= max) { this.hits.set(key, arr); return false; }
     arr.push(t);
     this.hits.set(key, arr);
     return true;

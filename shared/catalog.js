@@ -46,7 +46,8 @@ const select = (key, label, options, o = {}) => {
 };
 const multi = (key, label, options, o = {}) => ({ type: 'multiselect', key, label, options: pairs(options), default: [], ...o });
 const idField = (key, label, kind, o = {}) => ({ type: 'id', kind, key, label, default: '', ...o });
-const list = (key, label, item, o = {}) => ({ type: 'list', key, label, item, default: [], max: 25, ...o });
+// Lists are unlimited unless Discord itself caps them (then the definition passes an explicit `max`).
+const list = (key, label, item, o = {}) => ({ type: 'list', key, label, item, default: [], max: Infinity, ...o });
 const when = (key, ...values) => ({ key, in: values });
 const whenNot = (key, ...values) => ({ key, notIn: values });
 
@@ -112,7 +113,7 @@ trigger('trigger.command', {
         select('type', 'Type', [['string', 'Text'], ['integer', 'Whole number'], ['number', 'Decimal number'], ['boolean', 'True / False'], ['user', 'User'], ['channel', 'Channel'], ['role', 'Role'], ['mentionable', 'User or role']]),
         bool('required', 'Required'),
       ],
-    }),
+    }, { max: 25 }),
     select('permission', 'Who can use it', [['', 'Everyone'], ['Administrator', 'Administrators'], ['ManageGuild', 'Manage Server'], ['ManageRoles', 'Manage Roles'], ['ManageChannels', 'Manage Channels'], ['ManageMessages', 'Manage Messages'], ['KickMembers', 'Kick Members'], ['BanMembers', 'Ban Members'], ['ModerateMembers', 'Timeout Members']],
       { help: 'Discord\'s default permission for the command. Server admins can still change it in Integrations.' }),
     bool('deferEphemeral', 'Make the "thinking…" reply private', { help: 'Used when a flow takes longer than ~2 s to answer.' }),
@@ -257,14 +258,14 @@ def('action.message.send', {
         text('emoji', 'Emoji (optional)'),
         bool('disabled', 'Disabled'),
       ],
-    }),
+    }, { max: 25 }),
     bool('menuEnabled', 'Add a select menu'),
     text('menuPlaceholder', 'Menu placeholder', { showIf: when('menuEnabled', true), default: 'Choose…' }),
     list('menuOptions', 'Menu options', {
       create: () => ({ id: uid(6), label: 'Option', description: '', emoji: '' }),
       label: (o) => o.label,
       fields: [text('label', 'Label', { required: true }), text('description', 'Description'), text('emoji', 'Emoji (optional)')],
-    }, { showIf: when('menuEnabled', true) }),
+    }, { max: 25, showIf: when('menuEnabled', true) }),
     bool('restrictToInvoker', 'Only the person who triggered this can use the buttons'),
     bool('allowEveryone', 'Allow role, @everyone and @here pings', { help: 'Off by default so member-supplied text can never mass-ping. Individual users can always be mentioned.' }),
     text('outputVar', 'Save message ID as variable', { placeholder: 'msg', pattern: 'var' }),
@@ -495,7 +496,7 @@ def('logic.condition', {
         select('op', 'Check', COND_OPS),
         text('right', 'Compare to', { showIf: whenNot('op', 'isEmpty', 'isNotEmpty') }),
       ],
-    }, { max: 10 }),
+    }),
   ],
   outputs: [{ id: 'true', label: 'True', kind: 'true' }, { id: 'false', label: 'False', kind: 'false' }],
   summary: (d) => (d.conditions || []).map((c) => `${c.left} ${c.op} ${c.right ?? ''}`).join(d.match === 'any' ? ' OR ' : ' AND ').slice(0, 60),
@@ -528,8 +529,8 @@ def('logic.cooldown', {
   provides: () => [['cooldown.remaining', 'Seconds left (when blocked)']], summary: (d) => `${d.seconds}s per ${d.scope}`,
 });
 def('logic.wait', {
-  category: 'logic', label: 'Wait', icon: '⌛', description: 'Pause the flow. Up to 5 minutes.',
-  fields: [num('seconds', 'Seconds', { default: 5, min: 0, max: 300, required: true })], outputs: [OUT], summary: (d) => `${d.seconds}s`,
+  category: 'logic', label: 'Wait', icon: '⌛', description: 'Pause the flow for a while. Switching the flow off stops it.',
+  fields: [num('seconds', 'Seconds', { default: 5, min: 0, required: true })], outputs: [OUT], summary: (d) => `${d.seconds}s`,
 });
 def('logic.log', {
   category: 'logic', label: 'Log', icon: '📋', description: 'Write a line to the Logs panel — handy for debugging.',

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { applyLimits } from '../shared/limits.js';
 import { ConfigError, loadConfig } from './config.js';
 import { Database } from './db.js';
 import { Runtime } from './engine/runtime.js';
@@ -14,6 +15,8 @@ try { config = loadConfig(); } catch (err) {
   if (err instanceof ConfigError) { console.error(`\n${err.message}\n`); process.exit(1); }
   throw err;
 }
+
+applyLimits(config.limits);
 
 const logger = new Logger();
 const db = new Database(path.join(config.dataDir, 'flowbot.sqlite'));

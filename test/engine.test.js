@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
+import { applyLimits, resetLimits } from '../shared/limits.js';
 import { Database } from '../server/db.js';
+import { CEILINGS } from '../server/engine/engine.js';
 import { Runtime } from '../server/engine/runtime.js';
 import { Logger } from '../server/logger.js';
 import { commandFlow, edge, fakeChannel, fakeCommand, fakeComponent, fakeGuild, fakeUser, node } from './helpers/fakes.js';
@@ -25,7 +27,7 @@ const slash = (commandName = 'cmd', options = []) => fakeCommand({ guild, channe
 const run = async (i) => { await runtime.handleInteraction(i); return i; };
 const logs = () => runtime.logger.recent(guild.id).map((l) => `${l.level}: ${l.message}`);
 
-beforeEach(() => setup());
+beforeEach(() => { resetLimits(); setup(); });
 
 describe('commands, variables and conditions', () => {
   it('runs a command flow and persists a guild variable across runs', async () => {
@@ -110,6 +112,7 @@ describe('errors and limits', () => {
   });
 
   it('stops endless loops after the step limit', async () => {
+    applyLimits({ stepsPerRun: 500 });
     install(commandFlow(
       [node('a', 'logic.log', { message: 'a' }), node('b', 'logic.log', { message: 'b' })],
       [edge('t', 'a'), edge('a', 'b'), edge('b', 'a')],
@@ -156,6 +159,7 @@ describe('errors and limits', () => {
   });
 
   it('throttles a server that starts too many runs', async () => {
+    applyLimits({ runsPer10s: 40 });
     install(commandFlow([node('l', 'logic.log', { message: 'x' })], [edge('t', 'l')]));
     let throttled = 0;
     for (let n = 0; n < 60; n += 1) {
@@ -167,6 +171,7 @@ describe('errors and limits', () => {
   });
 
   it('rate-limits mutating actions per server', async () => {
+    applyLimits({ actionsPer10s: 25 });
     install(commandFlow(
       [node('l', 'logic.loop', { mode: 'repeat', count: 40 }), node('c', 'action.channel.create', { name: 'x{{loop.index}}' })],
       [edge('t', 'l'), edge('l', 'c', 'each')],
@@ -411,5 +416,98 @@ describe('actions', () => {
     assert.equal(channel.sent[0].content, 'panel');
     assert.equal((await runtime.runManual(guild.id, flow.id, 'nope')).ok, false);
     assert.equal((await runtime.runManual('otherguild', flow.id, 't')).ok, false);
+  });
+});
+
+describe('unlimited by default', () => {
+  const settle = (promise, ms = 5000) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error('the run did not stop')), ms))]);
+  const switchOff = (flow) => { db.updateFlow(guild.id, flow.id, { enabled: false }); runtime.loadGuild(guild.id); };
+
+  it('an endless loop neither freezes the bot nor survives switching the flow off', async () => {
+    const flow = install(commandFlow(
+      [node('a', 'logic.log', { message: 'a' }), node('b', 'logic.log', { message: 'b' })],
+      [edge('t', 'a'), edge('a', 'b'), edge('b', 'a')],
+    ));
+    const running = run(slash());
+    let timerFired = false;
+    await new Promise((resolve) => setTimeout(() => { timerFired = true; resolve(); }, 50));
+    assert.ok(timerFired, 'timers still fire while the loop spins (it yields to the event loop)');
+    switchOff(flow);
+    await settle(running);
+    assert.ok(logs().some((l) => /Stopped 1 running instance\(s\) of “Test flow”/.test(l)));
+    assert.ok(logs().some((l) => /was stopped/.test(l)));
+    assert.ok(!logs().some((l) => /^error:/.test(l)), 'stopping is not an error');
+  });
+
+  it('a huge repeat loop runs lazily and finishes', async () => {
+    install(commandFlow(
+      [node('l', 'logic.loop', { mode: 'repeat', count: 200000 }), node('r', 'action.message.send', { target: 'reply', content: 'done' })],
+      [edge('t', 'l'), edge('l', 'r', 'done')],
+    ));
+    const started = Date.now();
+    const i = await settle(run(slash()), 20000);
+    assert.equal(i.calls[0][1].content, 'done');
+    assert.ok(Date.now() - started < 15000);
+  });
+
+  it('a loop of a billion iterations is never materialised and can be stopped', async () => {
+    const flow = install(commandFlow(
+      [node('l', 'logic.loop', { mode: 'repeat', count: 1e9 })],
+      [edge('t', 'l')],
+    ));
+    const running = run(slash());
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    switchOff(flow);
+    await settle(running);
+  });
+
+  it('a very long wait ends as soon as the flow is switched off', async () => {
+    const flow = install(commandFlow(
+      [node('w', 'logic.wait', { seconds: 1e9 }), node('r', 'action.message.send', { target: 'reply', content: 'never' })],
+      [edge('t', 'w'), edge('w', 'r')],
+    ));
+    const i = slash();
+    const running = run(i);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    switchOff(flow);
+    await settle(running, 2000);
+    assert.ok(!i.calls.some((c) => c[1]?.content === 'never'));
+  });
+
+  it('saving an edited flow does not kill runs that are still going', async () => {
+    const flow = install(commandFlow(
+      [node('w', 'logic.wait', { seconds: 0.15 }), node('r', 'action.message.send', { target: 'reply', content: 'finished' })],
+      [edge('t', 'w'), edge('w', 'r')],
+    ));
+    const i = slash();
+    const running = run(i);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    db.updateFlow(guild.id, flow.id, { name: 'Renamed' });
+    runtime.loadGuild(guild.id);
+    await settle(running);
+    assert.ok(i.calls.some((c) => c[1]?.content === 'finished'));
+  });
+
+  it('fan-out runs top to bottom and finishes each branch before the next (depth-first)', async () => {
+    install(commandFlow(
+      [node('b', 'logic.log', { message: 'B' }, 0, 300), node('a', 'logic.log', { message: 'A' }, 0, 100), node('a2', 'logic.log', { message: 'A2' }, 300, 100)],
+      [edge('t', 'b'), edge('t', 'a'), edge('a', 'a2')],
+    ));
+    await run(slash());
+    assert.deepEqual(logs().filter((l) => /^info: (A|A2|B)$/.test(l)), ['info: A', 'info: A2', 'info: B']);
+  });
+
+  it('a branch that fans out and loops back is cut off at the pending-branch ceiling', async () => {
+    // a -> b (dead end) and a -> c -> a: every lap leaves one more dead-end branch waiting on the stack.
+    const before = CEILINGS.pendingBranches;
+    CEILINGS.pendingBranches = 50;
+    try {
+      install(commandFlow(
+        [node('a', 'logic.log', { message: 'a' }, 0, 200), node('b', 'logic.log', { message: 'b' }, 300, 300), node('c', 'logic.log', { message: 'c' }, 300, 100)],
+        [edge('t', 'a'), edge('a', 'b'), edge('a', 'c'), edge('c', 'a')],
+      ));
+      await run(slash());
+      assert.ok(logs().some((l) => /^error: .*Too many branches/.test(l)));
+    } finally { CEILINGS.pendingBranches = before; }
   });
 });

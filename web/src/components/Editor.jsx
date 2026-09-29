@@ -157,7 +157,7 @@ export default function Editor({ me, guild, flowId, navigate, onLogout }) {
                   </span>
                 </div>
               ))}
-              <p className="tiny muted">{flows.length}/{me.meta.limits.flowsPerGuild} flows</p>
+              <p className="tiny muted">{flows.length}{me.meta.limits.flowsPerGuild ? `/${me.meta.limits.flowsPerGuild}` : ''} {flows.length === 1 ? 'flow' : 'flows'}</p>
             </div>
           ) : (
             <Palette intents={me.meta.intents} onAdd={(type) => apiRef.current?.addNode(type)} />

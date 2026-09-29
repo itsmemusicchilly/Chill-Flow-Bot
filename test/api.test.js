@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { after, before, beforeEach, describe, it } from 'node:test';
-import { LIMITS } from '../shared/limits.js';
+import { applyLimits, LIMITS, resetLimits } from '../shared/limits.js';
 import { createApp } from '../server/app.js';
 import { Database } from '../server/db.js';
 import { Runtime } from '../server/engine/runtime.js';
@@ -50,6 +50,7 @@ before(async () => {
 });
 after(() => { server.close(); db.close(); });
 beforeEach(() => {
+  resetLimits();
   syncCalls = []; discordCalls = []; managers = new Set([`${A}:u1`, `${B}:u1`]);
   discordGuilds = [
     { id: A, name: 'A', owner: false, permissions: '8' },
@@ -201,12 +202,30 @@ describe('flows', () => {
   });
 
   it('enforces size limits', async () => {
+    applyLimits({ nodesPerFlow: 150, nodeDataBytes: 24 * 1024, flowsPerGuild: 25 }); // opt-in caps (default is unlimited)
     const many = { nodes: Array.from({ length: LIMITS.nodesPerFlow + 1 }, (_, i) => node(`n${i}`, 'logic.log', { message: 'x' })), edges: [] };
     assert.equal((await call('POST', `/api/guilds/${A}/flows`, { body: { name: 'big', graph: many } })).status, 400);
     const huge = { nodes: [node('t', 'trigger.manual', { channelId: 'x'.repeat(30 * 1024) })], edges: [] };
     assert.equal((await call('POST', `/api/guilds/${A}/flows`, { body: { name: 'huge', graph: huge } })).status, 400);
     for (let i = db.countFlows(B); i < LIMITS.flowsPerGuild; i += 1) db.createFlow({ guildId: B, name: `f${i}`, graph: { nodes: [], edges: [] } });
     assert.equal((await call('POST', `/api/guilds/${B}/flows`, { body: { name: 'one too many', graph: graph() } })).status, 409);
+  });
+
+  it('has no policy limits by default, and reports the effective limits to the editor', async () => {
+    for (let n = 0; n < 30; n += 1) {
+      assert.equal((await call('POST', `/api/guilds/${B}/flows`, { body: { name: `bulk ${n}`, graph: graph() } })).status, 201);
+    }
+    assert.ok(db.countFlows(B) >= 30, 'more flows than the old cap of 25');
+    const many = { nodes: Array.from({ length: 300 }, (_, i) => node(`n${i}`, 'logic.log', { message: 'x' })), edges: [] };
+    assert.equal((await call('POST', `/api/guilds/${B}/flows`, { body: { name: '300 nodes', graph: many } })).status, 201);
+    const heavy = { nodes: [node('t', 'trigger.manual', { channelId: 'x'.repeat(200 * 1024) })], edges: [] };
+    assert.equal((await call('POST', `/api/guilds/${B}/flows`, { body: { name: 'heavy node', graph: heavy } })).status, 201);
+    const unlimited = (await call('GET', '/api/me')).json.meta.limits;
+    assert.equal(unlimited.flowsPerGuild, null, 'unlimited travels as null');
+    assert.equal(unlimited.nodesPerFlow, null);
+    applyLimits({ flowsPerGuild: 7 });
+    assert.equal((await call('GET', '/api/me')).json.meta.limits.flowsPerGuild, 7);
+    assert.equal((await call('POST', `/api/guilds/${B}/flows`, { body: { name: 'over the new cap', graph: graph() } })).status, 409);
   });
 
   it('deleting a flow removes its commands', async () => {

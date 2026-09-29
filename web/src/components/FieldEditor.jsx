@@ -94,7 +94,7 @@ function ListField({ field, value, onChange, focusRef }) {
           )}
         </div>
       ))}
-      <button type="button" className="btn small" disabled={items.length >= (field.max ?? 25)} onClick={add}>+ Add</button>
+      <button type="button" className="btn small" disabled={items.length >= (field.max ?? Infinity)} onClick={add}>+ Add</button>
     </div>
   );
 }
