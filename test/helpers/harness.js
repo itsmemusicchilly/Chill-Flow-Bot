@@ -13,6 +13,8 @@ import { fakeGuild, fakeUser } from './fakes.js';
 export const ORIGIN = 'http://localhost:3999';
 export const A = '111111';
 export const B = '222222';
+export const STAFF = '333333'; // a role every test server has
+export const MEMBERS = '444444'; // and another one
 
 export async function startHarness({ config: over = {} } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowbot-test-')); // uploaded images go here, never into the repo
@@ -31,6 +33,7 @@ export async function startHarness({ config: over = {} } = {}) {
   const guilds = { [A]: fakeGuild({ id: A, name: 'Pixel Café' }), [B]: fakeGuild({ id: B, name: 'Dev Sandbox' }) };
   guilds[A].name = 'Pixel Café';
   guilds[B].name = 'Dev Sandbox';
+  for (const g of Object.values(guilds)) { g.addRole({ id: STAFF, name: 'Staff' }); g.addRole({ id: MEMBERS, name: 'Members' }); }
   runtime.attachClient(guilds[A].client);
   for (const g of Object.values(guilds)) guilds[A].client.guilds.cache.set(g.id, g);
 
@@ -43,7 +46,7 @@ export async function startHarness({ config: over = {} } = {}) {
     guildSummary: (id) => (guilds[id] ? { id, name: guilds[id].name, icon: null, memberCount: 3 } : null),
     botPermissions: () => ['SendMessages'],
     channels: () => [{ id: '1', name: 'general', type: 'GuildText', parentId: null }],
-    roles: () => [{ id: '2', name: 'Staff', color: '#fff', managed: false }],
+    roles: (g) => [...guilds[g].roles.cache.values()].filter((r) => r.id !== g).map((r) => ({ id: r.id, name: r.name, color: '#fff', managed: false })),
     inviteUrl: (g) => `https://discord.com/oauth2/authorize?client_id=cid${g ? `&guild_id=${g}` : ''}`,
   };
   const sync = { status: new Map(), sync: async (gid) => { state.syncCalls.push(gid); return { ok: true, count: 0 }; } };
@@ -83,6 +86,15 @@ export async function startHarness({ config: over = {} } = {}) {
     return { status: res.status, json, text, res };
   }
 
+  /** Makes `userId` a member of the server with exactly these roles (what the bot would see). */
+  const setRoles = (guildId, userId, roleIds = []) => {
+    state.members.add(`${guildId}:${userId}`);
+    const g = guilds[guildId];
+    const m = g.members.cache.get(userId) ?? g.addMember({ user: fakeUser({ id: userId, username: 'visitor' }) });
+    m.roles.cache.clear();
+    for (const id of roleIds) m.roles.cache.set(id, g.roles.cache.get(id) ?? { id });
+    return m;
+  };
   const close = async () => { server.close(); db.close(); fs.rmSync(dataDir, { recursive: true, force: true }); };
-  return { config, state, db, logger, runtime, guilds, bot, base, call, session, visitorSession, uploads, dataDir, close };
+  return { config, state, db, logger, runtime, guilds, bot, base, call, session, visitorSession, uploads, dataDir, setRoles, close };
 }

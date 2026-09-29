@@ -129,12 +129,13 @@ describe('block catalog and page validation', () => {
   });
 
   it('normalises input, keeping only known theme values', () => {
-    const p = normalizePage({ title: `  ${'t'.repeat(200)} `, slug: ' MY-Page ', theme: { mode: 'weird', accent: 'red', width: 'huge', extra: 1 }, blocks: 'nope', published: 1 });
+    const p = normalizePage({ title: `  ${'t'.repeat(200)} `, slug: ' MY-Page ', theme: { mode: 'weird', accent: 'red', width: 'huge', extra: 1 }, blocks: 'nope', published: 1, access: 'everyone', roleIds: 'nope' });
     assert.equal(p.title.length, 80);
     assert.equal(p.slug, 'my-page');
-    assert.deepEqual(p.theme, { mode: 'dark', accent: '#5865f2', width: 'normal' });
+    assert.deepEqual(p.theme, { mode: 'dark', accent: '#5865f2', width: 'normal', description: '', previewImage: '' });
     assert.deepEqual(p.blocks, []);
-    assert.equal(p.published, true);
+    assert.equal('published' in p, false, 'publishing is not part of a page\'s content');
+    assert.deepEqual([p.access, p.roleIds], ['public', []], 'unknown access values fall back to public');
   });
 
   it('lists forms for the flow trigger', () => {

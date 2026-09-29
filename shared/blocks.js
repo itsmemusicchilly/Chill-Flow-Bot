@@ -4,19 +4,28 @@
 import { area, bool, checkFields, color, defaultsForFields, image, list, num, select, text, when } from './fields.js';
 import { CHOICE_TYPES, FIELD_ID_RE, RESERVED_FIELD_IDS, parseOptions } from './forms.js';
 import { isCapped, LIMITS } from './limits.js';
-import { looksLikeUpload, safeUrl, uploadIdOf } from './urls.js';
-import { uid } from './util.js';
+import { GUILD_ID_RE, looksLikeUpload, safeUrl, uploadIdOf } from './urls.js';
+import { canonicalJson, uid } from './util.js';
 
 export const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 export const BLOCK_ID_RE = /^[A-Za-z0-9_-]{1,12}$/;
 export const MAX_BLOCK_BYTES = 128 * 1024; // physical ceiling per block
 export const MAX_PAGE_BYTES = 2 * 1024 * 1024; // physical ceiling per page
 
-export const THEME_DEFAULTS = { mode: 'dark', accent: '#5865f2', width: 'normal' };
+export const THEME_DEFAULTS = { mode: 'dark', accent: '#5865f2', width: 'normal', description: '', previewImage: '' };
+export const DESCRIPTION_MAX = 200;
+// Who may open a page. Not part of the draft/live content: it applies as soon as it is saved.
+export const ACCESS_MODES = ['public', 'members', 'roles'];
 export const THEME_FIELDS = [
   select('mode', 'Look', [['dark', 'Dark'], ['light', 'Light']]),
   color('accent', 'Accent colour'),
   select('width', 'Page width', [['narrow', 'Narrow'], ['normal', 'Normal'], ['wide', 'Wide']], { default: 'normal' }),
+];
+
+// What Discord shows when the page's link is pasted into a chat. Stored in the page's `theme`, so it follows Publish like the content.
+export const PREVIEW_FIELDS = [
+  area('description', 'Description', { rows: 3, help: `Up to ${DESCRIPTION_MAX} characters. Leave blank to use the start of your first text.` }),
+  image('previewImage', 'Preview picture', { help: 'Leave blank to use the hero picture, or the server icon.' }),
 ];
 
 const ALIGN = select('align', 'Alignment', [['left', 'Left'], ['center', 'Centred']], { default: 'left' });
@@ -142,8 +151,12 @@ export function normalizePage(input) {
   return {
     title: String(input?.title ?? '').trim().slice(0, 80),
     slug: String(input?.slug ?? '').trim().toLowerCase(),
-    published: Boolean(input?.published),
-    theme: { mode: theme.mode === 'light' ? 'light' : 'dark', accent: /^#[0-9a-f]{6}$/i.test(theme.accent) ? theme.accent : THEME_DEFAULTS.accent, width: ['narrow', 'normal', 'wide'].includes(theme.width) ? theme.width : 'normal' },
+    theme: {
+      mode: theme.mode === 'light' ? 'light' : 'dark', accent: /^#[0-9a-f]{6}$/i.test(theme.accent) ? theme.accent : THEME_DEFAULTS.accent, width: ['narrow', 'normal', 'wide'].includes(theme.width) ? theme.width : 'normal',
+      description: String(theme.description ?? '').trim().slice(0, DESCRIPTION_MAX), previewImage: String(theme.previewImage ?? '').trim().slice(0, 2048),
+    },
+    access: ACCESS_MODES.includes(input?.access) ? input.access : 'public',
+    roleIds: [...new Set((Array.isArray(input?.roleIds) ? input.roleIds : []).map(String).filter((id) => GUILD_ID_RE.test(id)))],
     blocks: (Array.isArray(input?.blocks) ? input.blocks : []).map((b) => ({
       id: String(b?.id ?? ''), type: String(b?.type ?? ''), data: b?.data && typeof b.data === 'object' && !Array.isArray(b.data) ? b.data : {},
     })),
@@ -151,18 +164,24 @@ export function normalizePage(input) {
 }
 
 /**
- * @param {{uploads?: Set<string>}} [known] the ids of this server's uploaded images, when known: a picture that was deleted
- *   since it was chosen is then reported (as a warning: the page still publishes, that spot just shows nothing)
- * @returns {{blockId: string|null, level: 'error'|'warning', kind: 'structure'|'config'|'image', message: string}[]}
+ * @param {{uploads?: Set<string>, roles?: Set<string>}} [known] the ids of this server's uploaded images / roles, when known: a picture or role
+ *   that was deleted since it was chosen is then reported (as a warning: the page still publishes, that spot just shows nothing / nobody gets in)
+ * @returns {{blockId: string|null, level: 'error'|'warning', kind: 'structure'|'config'|'image'|'access', message: string}[]}
  * `structure` issues make a page unsavable; `config` issues are shown as to-dos and block *publishing* forms with problems.
  */
-export function validatePage(page, { uploads } = {}) {
+export function validatePage(page, { uploads, roles } = {}) {
   const issues = [];
   const add = (blockId, kind, message) => issues.push({ blockId, level: 'error', kind, message });
   if (!page.title) add(null, 'config', 'Give the page a title.');
   if (!SLUG_RE.test(page.slug)) add(null, 'structure', 'The web address must be 1–40 lowercase letters, numbers or dashes (not starting or ending with a dash).');
   if (isCapped(LIMITS.blocksPerPage) && page.blocks.length > LIMITS.blocksPerPage) add(null, 'structure', `A page can have at most ${LIMITS.blocksPerPage} blocks.`);
   if (JSON.stringify(page.blocks).length > MAX_PAGE_BYTES) add(null, 'structure', 'This page holds too much content.');
+  checkFields(PREVIEW_FIELDS, page.theme ?? {}, '', (m) => add(null, 'config', m));
+  for (const m of imageProblem(page.theme?.previewImage, 'The preview picture')) add(null, 'config', m);
+  if (page.access === 'roles' && !(page.roleIds ?? []).length) add(null, 'config', 'Choose at least one role under “Who can open this page”, or pick another option.');
+  const previewId = uploadIdOf(page.theme?.previewImage);
+  if (uploads && previewId && !uploads.has(previewId)) issues.push({ blockId: null, level: 'warning', kind: 'image', message: 'The preview picture no longer exists. Choose another one.' });
+  if (roles && page.access === 'roles' && (page.roleIds ?? []).some((id) => !roles.has(id))) issues.push({ blockId: null, level: 'warning', kind: 'access', message: 'A role chosen under “Who can open this page” no longer exists.' });
   const ids = new Set();
   for (const b of page.blocks) {
     if (!BLOCK_ID_RE.test(b.id) || ids.has(b.id)) { add(null, 'structure', `Invalid or duplicate block id “${b.id}”.`); continue; }
@@ -181,4 +200,10 @@ export function validatePage(page, { uploads } = {}) {
   }
   return issues;
 }
+/** Only what visitors can see is versioned: title, look, link preview and blocks. */
+const versioned = (p) => { const n = normalizePage(p); return { title: n.title, theme: n.theme, blocks: n.blocks }; };
+
+/** Has the draft moved away from what is live? (Older live snapshots lack newer fields, so both sides are normalised first.) */
+export const hasUnpublishedChanges = (page) => Boolean(page?.published && page.live) && canonicalJson(versioned(page)) !== canonicalJson(versioned(page.live));
+
 export const hasPageStructureErrors = (issues) => issues.some((i) => i.kind === 'structure');

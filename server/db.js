@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS command_sync (guild_id TEXT PRIMARY KEY, hash TEXT NO
 CREATE TABLE IF NOT EXISTS pages (
   id TEXT PRIMARY KEY, guild_id TEXT NOT NULL, slug TEXT NOT NULL, title TEXT NOT NULL, published INTEGER NOT NULL DEFAULT 0,
   theme TEXT NOT NULL, blocks TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT,
+  live TEXT, access TEXT NOT NULL DEFAULT 'public', role_ids TEXT NOT NULL DEFAULT '[]',
   UNIQUE (guild_id, slug)
 );
 CREATE INDEX IF NOT EXISTS pages_guild ON pages(guild_id);
@@ -51,10 +52,16 @@ const toFlow = (r) => (r ? {
 
 export class SlugTakenError extends Error {}
 
+// `title`, `theme` and `blocks` are the DRAFT (what the editor saves). `live` is the snapshot visitors see: null until the page is
+// published; `published` is true exactly when there is one. `access`/`roleIds` are not versioned: they apply as soon as they are saved.
 const toPage = (r) => (r ? {
   id: r.id, guildId: r.guild_id, slug: r.slug, title: r.title, published: Boolean(r.published), theme: JSON.parse(r.theme), blocks: JSON.parse(r.blocks),
+  access: r.access ?? 'public', roleIds: JSON.parse(r.role_ids ?? '[]'), live: r.live ? JSON.parse(r.live) : null,
   createdAt: r.created_at, updatedAt: r.updated_at, updatedBy: r.updated_by ? JSON.parse(r.updated_by) : null,
 } : null);
+
+/** The page as visitors get it — the published snapshot in the same shape as a draft — or null when it is not published. */
+export const livePage = (p) => (p?.published && p.live ? { ...p, title: p.live.title, theme: p.live.theme, blocks: p.live.blocks } : null);
 const toUpload = (r) => (r ? {
   id: r.id, guildId: r.guild_id, name: r.name, bytes: r.bytes, width: r.width, height: r.height, animated: Boolean(r.animated),
   sha256: r.sha256, createdAt: r.created_at, createdBy: r.created_by ? JSON.parse(r.created_by) : null,
@@ -69,6 +76,21 @@ export class Database {
     this.db.exec('PRAGMA busy_timeout = 5000;');
     this.db.exec(SCHEMA);
     this.q = {};
+    this.#migrate();
+  }
+
+  /** Brings a database made by an older version up to date. Safe to run every start: it only adds what is missing. */
+  #migrate() {
+    const have = new Set(this.db.prepare('PRAGMA table_info(pages)').all().map((c) => c.name));
+    for (const [name, ddl] of [['live', 'TEXT'], ['access', "TEXT NOT NULL DEFAULT 'public'"], ['role_ids', "TEXT NOT NULL DEFAULT '[]'"]]) {
+      if (!have.has(name)) this.db.exec(`ALTER TABLE pages ADD COLUMN ${name} ${ddl}`);
+    }
+    // Pages published before drafts existed: what visitors see today becomes their live version, so nothing changes for them.
+    const legacy = this.db.prepare('SELECT id, title, theme, blocks, updated_at, updated_by FROM pages WHERE published = 1 AND live IS NULL').all();
+    for (const r of legacy) {
+      const live = { title: r.title, theme: JSON.parse(r.theme), blocks: JSON.parse(r.blocks), at: r.updated_at, by: r.updated_by ? JSON.parse(r.updated_by) : null };
+      this.db.prepare('UPDATE pages SET live = ? WHERE id = ?').run(JSON.stringify(live), r.id);
+    }
   }
 
   #stmt(sql) { return (this.q[sql] ??= this.db.prepare(sql)); }
@@ -163,12 +185,14 @@ export class Database {
     }
   }
 
-  createPage({ guildId, slug, title, theme, blocks, published = false, updatedBy = null }) {
+  /** `published: true` creates the page already live with this content (the draft and the live version start out equal). */
+  createPage({ guildId, slug, title, theme, blocks, published = false, access = 'public', roleIds = [], updatedBy = null }) {
     const now = Date.now();
     const id = uid(8);
+    const live = published ? JSON.stringify({ title, theme, blocks, at: now, by: updatedBy }) : null;
     try {
-      this.#stmt('INSERT INTO pages (id, guild_id, slug, title, published, theme, blocks, created_at, updated_at, updated_by) VALUES (?,?,?,?,?,?,?,?,?,?)')
-        .run(id, guildId, slug, title, published ? 1 : 0, JSON.stringify(theme), JSON.stringify(blocks), now, now, updatedBy ? JSON.stringify(updatedBy) : null);
+      this.#stmt('INSERT INTO pages (id, guild_id, slug, title, published, theme, blocks, created_at, updated_at, updated_by, live, access, role_ids) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(id, guildId, slug, title, published ? 1 : 0, JSON.stringify(theme), JSON.stringify(blocks), now, now, updatedBy ? JSON.stringify(updatedBy) : null, live, access, JSON.stringify(roleIds));
     } catch (err) {
       if (/UNIQUE/i.test(err.message)) throw new SlugTakenError('That web address is already used by another page.');
       throw err;
@@ -176,17 +200,42 @@ export class Database {
     return this.getPage(guildId, id);
   }
 
+  /** Saves the DRAFT (and the access settings). Never publishes or unpublishes: see publishPage / unpublishPage. */
   updatePage(guildId, id, patch, updatedBy = null) {
     const cur = this.getPage(guildId, id);
     if (!cur) return null;
     const next = { ...cur, ...patch };
     try {
-      this.#stmt('UPDATE pages SET slug = ?, title = ?, published = ?, theme = ?, blocks = ?, updated_at = ?, updated_by = ? WHERE id = ? AND guild_id = ?')
-        .run(next.slug, next.title, next.published ? 1 : 0, JSON.stringify(next.theme), JSON.stringify(next.blocks), Date.now(), JSON.stringify(updatedBy ?? cur.updatedBy), id, guildId);
+      this.#stmt('UPDATE pages SET slug = ?, title = ?, theme = ?, blocks = ?, access = ?, role_ids = ?, updated_at = ?, updated_by = ? WHERE id = ? AND guild_id = ?')
+        .run(next.slug, next.title, JSON.stringify(next.theme), JSON.stringify(next.blocks), next.access, JSON.stringify(next.roleIds), Date.now(), JSON.stringify(updatedBy ?? cur.updatedBy), id, guildId);
     } catch (err) {
       if (/UNIQUE/i.test(err.message)) throw new SlugTakenError('That web address is already used by another page.');
       throw err;
     }
+    return this.getPage(guildId, id);
+  }
+
+  /** Makes the current draft the live version (and switches the page on). */
+  publishPage(guildId, id, by = null) {
+    const cur = this.getPage(guildId, id);
+    if (!cur) return null;
+    const live = { title: cur.title, theme: cur.theme, blocks: cur.blocks, at: Date.now(), by };
+    this.#stmt('UPDATE pages SET published = 1, live = ? WHERE id = ? AND guild_id = ?').run(JSON.stringify(live), id, guildId);
+    return this.getPage(guildId, id);
+  }
+
+  /** Takes the page offline. The draft is kept; the live snapshot is dropped. */
+  unpublishPage(guildId, id) {
+    this.#stmt('UPDATE pages SET published = 0, live = NULL WHERE id = ? AND guild_id = ?').run(id, guildId);
+    return this.getPage(guildId, id);
+  }
+
+  /** Throws the draft away: it becomes a copy of the live version again. Null when the page was never published. */
+  discardDraft(guildId, id, by = null) {
+    const cur = this.getPage(guildId, id);
+    if (!cur?.live) return null;
+    this.#stmt('UPDATE pages SET title = ?, theme = ?, blocks = ?, updated_at = ?, updated_by = ? WHERE id = ? AND guild_id = ?')
+      .run(cur.live.title, JSON.stringify(cur.live.theme), JSON.stringify(cur.live.blocks), Date.now(), by ? JSON.stringify(by) : (cur.updatedBy ? JSON.stringify(cur.updatedBy) : null), id, guildId);
     return this.getPage(guildId, id);
   }
 

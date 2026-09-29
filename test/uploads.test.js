@@ -395,7 +395,8 @@ describe('pages using uploaded pictures', () => {
   it('the dashboard warns about a picture deleted after it was chosen, without unpublishing the page', async () => {
     const u = (await upload(await png(58, 22, { noise: true }))).json.upload;
     const created = (await call('POST', `/api/guilds/${A}/pages`, { body: { templateId: 'blank', title: 'Warn me' } })).json.page;
-    const saved = await call('PUT', `/api/guilds/${A}/pages/${created.id}`, { body: { published: true, blocks: [imageBlock(u.ref)] } });
+    assert.equal((await call('PUT', `/api/guilds/${A}/pages/${created.id}`, { body: { blocks: [imageBlock(u.ref)] } })).status, 200);
+    const saved = await call('POST', `/api/guilds/${A}/pages/${created.id}/publish`);
     assert.equal(saved.status, 200);
     assert.equal(saved.json.page.published, true);
     assert.deepEqual(saved.json.page.issues, []);
@@ -406,13 +407,15 @@ describe('pages using uploaded pictures', () => {
     assert.equal((await call('GET', `/api/guilds/${A}/pages`)).json.find((p) => p.id === created.id).issues, 1);
   });
 
-  it('a mangled reference is a real problem: the page is saved but switched off', async () => {
+  it('a mangled reference is a real problem: the draft is saved, but the page cannot be published', async () => {
     const created = (await call('POST', `/api/guilds/${A}/pages`, { body: { templateId: 'blank', title: 'Mangled' } })).json.page;
-    const saved = await call('PUT', `/api/guilds/${A}/pages/${created.id}`, { body: { published: true, blocks: [imageBlock('upload:not-a-real-id')] } });
+    const saved = await call('PUT', `/api/guilds/${A}/pages/${created.id}`, { body: { blocks: [imageBlock('upload:not-a-real-id')] } });
     assert.equal(saved.status, 200);
-    assert.equal(saved.json.unpublished, true);
-    assert.equal(saved.json.page.published, false);
     assert.match(saved.json.page.issues[0].message, /not a valid uploaded image/);
+    const refused = await call('POST', `/api/guilds/${A}/pages/${created.id}/publish`);
+    assert.equal(refused.status, 400);
+    assert.match(refused.json.issues[0].message, /not a valid uploaded image/);
+    assert.equal(h.db.getPage(A, created.id).published, false);
   });
 });
 

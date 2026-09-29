@@ -8,6 +8,7 @@ import { isCapped, LIMITS } from '../shared/limits.js';
 import { renderNotFound, renderNotice, renderPage } from '../shared/render-page.js';
 import { safeUrl } from '../shared/urls.js';
 import { uid } from '../shared/util.js';
+import { livePage } from './db.js';
 import { friendlyError } from './engine/errors.js';
 import { RateLimiter } from './engine/rate-limit.js';
 
@@ -44,12 +45,11 @@ export function createPublic({ config, db, runtime, bot, logger, auth }) {
   const html = (res, status, body) => res.status(status).type('html').send(body);
   const notFound = (res) => html(res, 404, renderNotFound()); // identical for unknown, unpublished and other-server pages
 
-  /** /:gid/:slug → a *published* page of a server the bot is in, or null. */
+  /** /:gid/:slug → the LIVE version of a published page of a server the bot is in, or null. Drafts are never served. */
   function lookup(req) {
     const { gid, slug } = req.params;
     if (!GID_RE.test(gid) || !SLUG_RE.test(slug) || !bot.hasGuild(gid)) return null;
-    const page = db.getPageBySlug(gid, slug);
-    return page?.published ? page : null;
+    return livePage(db.getPageBySlug(gid, slug));
   }
   const findForm = (page, blockId) => (BLOCK_ID_RE.test(blockId) ? page.blocks.find((b) => b.id === blockId && b.type === 'form') : undefined);
   const pathOf = (page) => `/s/${page.guildId}/${page.slug}`;

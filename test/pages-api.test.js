@@ -74,23 +74,27 @@ describe('pages API', () => {
     assert.equal((await call('POST', `/api/guilds/${A}/pages`, { body: { templateId: 'nope' } })).status, 400);
   });
 
-  it('publishes a healthy page, but never leaves a page with a broken form live', async () => {
+  it('publishes a healthy page, and refuses to publish one with a broken form (saving the draft is always allowed)', async () => {
     const page = await create({ templateId: 'contact' });
-    const live = await call('PUT', `/api/guilds/${A}/pages/${page.id}`, { body: { published: true } });
+    const live = await call('POST', `/api/guilds/${A}/pages/${page.id}/publish`);
+    assert.equal(live.status, 200);
     assert.equal(live.json.page.published, true);
-    assert.equal(live.json.unpublished, false);
+    assert.equal(live.json.page.changed, false);
     const blocks = structuredClone(live.json.page.blocks);
     blocks.find((b) => b.type === 'form').data.fields = [];
-    const broken = await call('PUT', `/api/guilds/${A}/pages/${page.id}`, { body: { blocks } });
-    assert.equal(broken.status, 200);
-    assert.equal(broken.json.page.published, false);
-    assert.equal(broken.json.unpublished, true);
-    assert.match(broken.json.page.issues.map((i) => i.message).join(), /at least one question/);
+    const saved = await call('PUT', `/api/guilds/${A}/pages/${page.id}`, { body: { blocks } });
+    assert.equal(saved.status, 200);
+    assert.equal(saved.json.page.published, true, 'saving a draft never switches a live page off');
+    assert.equal(saved.json.page.changed, true);
+    assert.match(saved.json.page.issues.map((i) => i.message).join(), /at least one question/);
+    const refused = await call('POST', `/api/guilds/${A}/pages/${page.id}/publish`);
+    assert.equal(refused.status, 400);
+    assert.match(refused.json.issues.map((i) => i.message).join(), /at least one question/);
   });
 
   it('duplicates as an unpublished copy with its own address', async () => {
     const page = await create({ templateId: 'rules' });
-    await call('PUT', `/api/guilds/${A}/pages/${page.id}`, { body: { published: true } });
+    await call('POST', `/api/guilds/${A}/pages/${page.id}/publish`);
     const copy = (await call('POST', `/api/guilds/${A}/pages/${page.id}/duplicate`)).json.page;
     assert.equal(copy.published, false);
     assert.equal(copy.slug, `${page.slug}-copy`);

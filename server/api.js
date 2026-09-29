@@ -1,11 +1,11 @@
 import express from 'express';
 import { isCapped, LIMITS, limitsToJSON } from '../shared/limits.js';
-import { BLOCK_ID_RE, formsOf, hasPageStructureErrors, normalizePage, validatePage } from '../shared/blocks.js';
+import { BLOCK_ID_RE, formsOf, hasPageStructureErrors, hasUnpublishedChanges, normalizePage, validatePage } from '../shared/blocks.js';
 import { PAGE_TEMPLATES } from '../shared/page-templates.js';
 import { TEMPLATES } from '../shared/templates.js';
 import { hasStructureErrors, normalizeGraph, validateFlow } from '../shared/validate.js';
 import { toCsv } from './csv.js';
-import { SlugTakenError } from './db.js';
+import { livePage, SlugTakenError } from './db.js';
 import { FlowError } from './engine/errors.js';
 import { RateLimiter } from './engine/rate-limit.js';
 import { available as imagesAvailable, IMAGE_LIMITS } from './images.js';
@@ -144,12 +144,15 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
 
   // ---- pages (website builder) --------------------------------------------------------------
   const pagePath = (p) => `/s/${p.guildId}/${p.slug}`;
-  // `known` = the ids of this server's uploaded images, so a picture that was deleted since it was chosen shows up as an issue
-  const pageSummary = (p, known = db.uploadIds(p.guildId)) => ({
-    id: p.id, title: p.title, slug: p.slug, published: p.published, updatedAt: p.updatedAt, updatedBy: p.updatedBy,
-    blocks: p.blocks.length, forms: formsOf(p).length, issues: validatePage(p, { uploads: known }).length, path: pagePath(p), url: `${config.baseUrl}${pagePath(p)}`,
+  // `known` = the ids of this server's pictures and roles, so one that was deleted since it was chosen shows up as an issue
+  const knownFor = (gid) => ({ uploads: db.uploadIds(gid), roles: new Set(bot.roles(gid).map((r) => r.id)) });
+  // `title`/`blocks`/`theme` are the DRAFT. `published` = a live version exists; `changed` = the draft differs from it.
+  const pageSummary = (p, known = knownFor(p.guildId)) => ({
+    id: p.id, title: p.title, slug: p.slug, published: p.published, changed: hasUnpublishedChanges(p), access: p.access, roleIds: p.roleIds,
+    publishedAt: p.live?.at ?? null, updatedAt: p.updatedAt, updatedBy: p.updatedBy,
+    blocks: p.blocks.length, forms: formsOf(p).length, issues: validatePage(p, known).length, path: pagePath(p), url: `${config.baseUrl}${pagePath(p)}`,
   });
-  const pageFull = (p, known = db.uploadIds(p.guildId)) => ({ ...pageSummary(p, known), theme: p.theme, createdAt: p.createdAt, blocks: p.blocks, issues: validatePage(p, { uploads: known }) });
+  const pageFull = (p, known = knownFor(p.guildId)) => ({ ...pageSummary(p, known), theme: p.theme, createdAt: p.createdAt, publishedBy: p.live?.by ?? null, blocks: p.blocks, issues: validatePage(p, known) });
   const pagesFull = (gid) => isCapped(LIMITS.pagesPerGuild) && db.countPages(gid) >= LIMITS.pagesPerGuild;
   const findPage = (req) => {
     const p = db.getPage(req.params.gid, req.params.pid); // scoped by server: another server's page id is simply a 404
@@ -165,7 +168,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
     return { page, issues };
   }
 
-  guildRouter.get('/pages', (req, res) => { const known = db.uploadIds(req.params.gid); res.json(db.listPages(req.params.gid).map((p) => pageSummary(p, known))); });
+  guildRouter.get('/pages', (req, res) => { const known = knownFor(req.params.gid); res.json(db.listPages(req.params.gid).map((p) => pageSummary(p, known))); });
 
   guildRouter.post('/pages', (req, res) => {
     const { gid } = req.params;
@@ -176,7 +179,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
       if (!t) throw new HttpError(400, 'Unknown template.');
       input = { ...t.build(), ...(input.title ? { title: String(input.title) } : {}) };
     }
-    const draft = normalizePage({ ...input, title: input.title || 'New page', published: false });
+    const draft = normalizePage({ ...input, title: input.title || 'New page' });
     draft.slug = db.uniqueSlug(gid, draft.slug || slugify(draft.title)); // creating never fails on a taken address: it gets a free one
     const { page } = checkedPage(draft);
     const created = guardSlug(() => db.createPage({ guildId: gid, ...page, published: false, updatedBy: actor(req) }));
@@ -185,15 +188,34 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
 
   guildRouter.get('/pages/:pid', (req, res) => res.json({ page: pageFull(findPage(req)) }));
 
+  // Saving only ever changes the DRAFT (plus the address and the access settings, which apply at once). What visitors see changes
+  // only through publish / unpublish / discard below.
   guildRouter.put('/pages/:pid', (req, res) => {
     const cur = findPage(req);
     const body = req.body ?? {};
-    const { page, issues } = checkedPage({ title: cur.title, slug: cur.slug, published: cur.published, theme: cur.theme, blocks: cur.blocks, ...Object.fromEntries(['title', 'slug', 'published', 'theme', 'blocks'].filter((k) => k in body).map((k) => [k, body[k]])) });
-    // never leave a page with a broken form live: content is saved, but publishing is switched back off
-    const broken = page.published && issues.some((i) => i.kind === 'config');
-    if (broken) page.published = false;
+    const { page } = checkedPage({ title: cur.title, slug: cur.slug, theme: cur.theme, blocks: cur.blocks, access: cur.access, roleIds: cur.roleIds, ...Object.fromEntries(['title', 'slug', 'theme', 'blocks', 'access', 'roleIds'].filter((k) => k in body).map((k) => [k, body[k]])) });
     const updated = guardSlug(() => db.updatePage(req.params.gid, cur.id, page, actor(req)));
-    res.json({ page: pageFull(updated), unpublished: broken });
+    res.json({ page: pageFull(updated) });
+  });
+
+  /** Makes the saved draft the live page. Refused while it has real problems (a broken form, a malformed picture…). */
+  guildRouter.post('/pages/:pid/publish', (req, res) => {
+    const cur = findPage(req);
+    const problems = validatePage(cur, knownFor(cur.guildId)).filter((i) => i.level === 'error');
+    if (problems.length) throw new HttpError(400, 'This page still has problems, so it was not published.', { issues: problems });
+    res.json({ page: pageFull(db.publishPage(req.params.gid, cur.id, actor(req))) });
+  });
+
+  guildRouter.post('/pages/:pid/unpublish', (req, res) => {
+    const cur = findPage(req);
+    res.json({ page: pageFull(db.unpublishPage(req.params.gid, cur.id)) });
+  });
+
+  /** Throws the draft away: it becomes a copy of the live page again. */
+  guildRouter.post('/pages/:pid/discard', (req, res) => {
+    const cur = findPage(req);
+    if (!cur.live) throw new HttpError(409, 'This page has not been published, so there is nothing to go back to.');
+    res.json({ page: pageFull(db.discardDraft(req.params.gid, cur.id, actor(req))) });
   });
 
   guildRouter.delete('/pages/:pid', (req, res) => {
@@ -206,7 +228,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
     const { gid } = req.params;
     const cur = findPage(req);
     if (pagesFull(gid)) throw new HttpError(409, `A server can have at most ${LIMITS.pagesPerGuild} pages.`);
-    const copy = guardSlug(() => db.createPage({ guildId: gid, slug: db.uniqueSlug(gid, `${cur.slug}-copy`), title: `${cur.title} (copy)`.slice(0, 80), theme: cur.theme, blocks: cur.blocks, published: false, updatedBy: actor(req) }));
+    const copy = guardSlug(() => db.createPage({ guildId: gid, slug: db.uniqueSlug(gid, `${cur.slug}-copy`), title: `${cur.title} (copy)`.slice(0, 80), theme: cur.theme, blocks: cur.blocks, published: false, access: cur.access, roleIds: cur.roleIds, updatedBy: actor(req) }));
     res.status(201).json({ page: pageFull(copy) });
   });
 
@@ -240,7 +262,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
   guildRouter.get('/pages/:pid/responses.csv', (req, res) => {
     const page = findPage(req);
     const blockId = formParam(req);
-    const form = page.blocks.find((b) => b.id === blockId && b.type === 'form');
+    const form = (livePage(page) ?? page).blocks.find((b) => b.id === blockId && b.type === 'form'); // the questions visitors actually answered
     const columns = (form?.data.fields || []).map((q) => ({ id: q.id, label: q.label }));
     const rows = db.allResponses(page.guildId, page.id, blockId).map((r) => [new Date(r.createdAt).toISOString(), r.userId, r.userName, ...columns.map((c) => r.answers[c.id] ?? '')]);
     res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="responses-${page.slug}.csv"`, 'Cache-Control': 'no-store' });
