@@ -6,7 +6,7 @@ import { LIMITS } from '../../shared/limits.js';
 import { normalizeGraph, validateFlow } from '../../shared/validate.js';
 import { uid } from '../../shared/util.js';
 import { ComponentState } from './component-state.js';
-import { parseCustomId } from './custom-id.js';
+import { parseButtonId, parseCustomId } from './custom-id.js';
 import { runFlow } from './engine.js';
 import { FlowAbort, friendlyError } from './errors.js';
 import { RateLimiter, SelfActions } from './rate-limit.js';
@@ -28,10 +28,10 @@ export class Runtime {
       db, logger,
       selfActions: new SelfActions(),
       cooldowns: new Map(),
-      components: new ComponentState(),
+      components: new ComponentState({ db }),
       guard: { runs: new RateLimiter(() => LIMITS.runsPer10s, 10000), actions: new RateLimiter(() => LIMITS.actionsPer10s, 10000) },
     };
-    this.index = new Map(); // guildId -> { flows, triggers: Map<type, {flow,node}[]>, commands: Map<name, {flow,node}> }
+    this.index = new Map(); // guildId -> { flows, triggers: Map<type, {flow,node}[]>, commands: Map<name, {flow,node}>, buttons: Map<buttonId, {flow,node}> }
     this.flowsById = new Map();
     this.active = new Map();
     this.live = new Set();
@@ -44,7 +44,7 @@ export class Runtime {
   // ---- index ------------------------------------------------------------------------------------
   loadGuild(guildId) {
     for (const id of this.index.get(guildId)?.flows.keys() ?? []) this.flowsById.delete(id);
-    const entry = { flows: new Map(), triggers: new Map(), commands: new Map() };
+    const entry = { flows: new Map(), triggers: new Map(), commands: new Map(), buttons: new Map() };
     for (const flow of this.db.listEnabledFlows(guildId)) {
       const graph = normalizeGraph(flow.graph);
       const active = { ...flow, graph };
@@ -65,6 +65,16 @@ export class Runtime {
             continue;
           }
           entry.commands.set(node.data.name, { flow: active, node });
+        }
+        if (node.type === 'trigger.button.clicked') {
+          // A press can only be answered once, so a Button ID has exactly one handler: the first flow (oldest) wins.
+          const buttonId = String(node.data.customId ?? '').trim();
+          const first = entry.buttons.get(buttonId);
+          if (first) {
+            this.logger.log(guildId, 'warn', `Button ID “${buttonId}” is handled twice; “${flow.name}” is ignored for it (“${first.flow.name}” handles it).`, { flowId: flow.id, flowName: flow.name, nodeId: node.id });
+            continue;
+          }
+          entry.buttons.set(buttonId, { flow: active, node });
         }
         if (!entry.triggers.has(node.type)) entry.triggers.set(node.type, []);
         entry.triggers.get(node.type).push({ flow: active, node });
@@ -232,10 +242,16 @@ export class Runtime {
     else await interaction.reply({ content: 'Too many requests right now — try again in a moment.', flags: EPHEMERAL }).catch(() => {});
   }
 
+  #stale(interaction, content) {
+    return interaction.reply({ content, flags: EPHEMERAL, allowedMentions: { parse: [] } }).catch(() => {});
+  }
+
   async #handleComponent(interaction) {
+    const button = parseButtonId(interaction.customId);
+    if (button) return this.#handleButton(interaction, button);
     const parsed = parseCustomId(interaction.customId);
     if (!parsed) return;
-    const stale = (content) => interaction.reply({ content, flags: EPHEMERAL, allowedMentions: { parse: [] } }).catch(() => {});
+    const stale = (content) => this.#stale(interaction, content);
     const flow = this.flowsById.get(parsed.flowId);
     if (!flow || (interaction.guildId && flow.guildId !== interaction.guildId)) return stale('This button is no longer active.');
     const node = flow.graph.nodes.find((n) => n.id === parsed.nodeId && n.type === 'action.message.send');
@@ -247,7 +263,7 @@ export class Runtime {
     const guild = interaction.guild ?? this.client?.guilds.cache.get(flow.guildId);
     if (!guild) return stale('This button is no longer active.');
 
-    const snap = this.services.components.get(interaction.message?.id);
+    const snap = this.services.components.get(flow.guildId, interaction.message?.id);
     const { member, channel } = await this.#memberAndChannel(guild, interaction);
     const data = {};
     if (snap) data.original = snap.data;
@@ -257,6 +273,27 @@ export class Runtime {
     }, { handle, label: `${isMenu ? 'menu' : 'button'} used by ${interaction.user.username}` });
     if (started) await started;
     else await stale('Too many requests right now — try again in a moment.');
+  }
+
+  /** A reusable button (`fcb:<id>`): found by its Button ID in this server, whichever message or flow posted it. */
+  async #handleButton(interaction, { id, invokerId }) {
+    const guildId = interaction.guildId;
+    if (!guildId) return this.#stale(interaction, 'This button only works inside a server.');
+    const handler = this.index.get(guildId)?.buttons.get(id); // only this server's flows can answer this server's buttons
+    if (!handler) return this.#stale(interaction, 'This button is no longer active.');
+    if (invokerId && invokerId !== interaction.user.id) return this.#stale(interaction, `Only <@${invokerId}> can use this.`);
+    const guild = interaction.guild ?? this.client?.guilds.cache.get(guildId);
+    if (!guild) return this.#stale(interaction, 'This button is no longer active.');
+
+    const snap = this.services.components.get(guildId, interaction.message?.id);
+    const { member, channel } = await this.#memberAndChannel(guild, interaction);
+    const data = { button: { id, label: interaction.component?.label ?? '' } };
+    if (snap) data.original = snap.data;
+    const started = this.start(handler.flow, handler.node, {
+      guild, channel, member, user: interaction.user, message: interaction.message, interaction, data, vars: snap?.vars ?? {},
+    }, { label: `button “${id}” used by ${interaction.user.username}` });
+    if (started) await started;
+    else await this.#stale(interaction, 'Too many requests right now — try again in a moment.');
   }
 
   // ---- manual + scheduled runs ------------------------------------------------------------------

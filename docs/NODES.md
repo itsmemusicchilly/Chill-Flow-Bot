@@ -26,6 +26,16 @@ triggered this flow”.
 
 **Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
+### 🔘 Button Clicked
+
+`trigger.button.clicked` — Runs when someone presses a button that has this Button ID — on any message, from any flow. Keeps working after restarts, so it is ideal for ticket and role panels.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Button ID | text | required; Give a button in a Send Message node the same “Button ID”. Letters, numbers, - _ and . (max 64). Use each ID in only one flow. |
+
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{button.id}}`, `{{button.label}}`
+
 ### 💬 Message Received
 
 `trigger.message.received` — Runs when someone posts a message that matches your filter (e.g. a !prefix command).
@@ -312,6 +322,7 @@ triggered this flow”.
 | ↳ URL | text | required; shown when `style` is `Link` |
 | ↳ Emoji (optional) | text |  |
 | ↳ Disabled | boolean |  |
+| ↳ Button ID (optional) | text | shown when `style` is not `Link`; Makes this a reusable button: it is handled by a “Button Clicked” trigger with the same ID instead of its own output here, and keeps working on every copy of the message. Adding an ID removes this button's output connection. |
 | Add a select menu | boolean |  |
 | Menu placeholder | text | shown when `menuEnabled` is `true` |
 | Menu options | list | shown when `menuEnabled` is `true`; up to 25 items |
@@ -322,7 +333,7 @@ triggered this flow”.
 | Allow role, @everyone and @here pings | boolean | Off by default so member-supplied text can never mass-ping. Individual users can always be mentioned. |
 | Save message ID as variable | text |  |
 
-**Outputs:** Next, On error — plus one per button and menu option
+**Outputs:** Next, On error — plus one per button and menu option (a button with a Button ID has no output: a “Button Clicked” trigger handles it instead)
 
 ### 📝 Edit Message
 
@@ -413,6 +424,20 @@ triggered this flow”.
 | Reason (audit log) | text |  |
 
 **Outputs:** Next, On error
+
+### 🔁 Toggle Role
+
+`action.member.toggleRole` — Give the role if the member does not have it, take it away if they do. Perfect for role panels: one button per role. Use {{toggle.action}} (added / removed) in your reply.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Member | user |  |
+| Role | role | required |
+| Reason (audit log) | text |  |
+
+**Outputs:** Next, On error
+
+**Adds variables:** `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`, `{{toggle.action}}`
 
 ### 🥾 Kick Member
 

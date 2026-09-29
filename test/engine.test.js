@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 import { applyLimits, resetLimits } from '../shared/limits.js';
+import { TEMPLATES } from '../shared/templates.js';
 import { Database } from '../server/db.js';
 import { CEILINGS } from '../server/engine/engine.js';
 import { Runtime } from '../server/engine/runtime.js';
@@ -305,6 +306,204 @@ describe('buttons and select menus', () => {
     assert.match(click.calls[0][1].content, /no longer active/);
     assert.equal(guild.calls.length, 0);
     assert.ok(flow);
+  });
+});
+
+describe('reusable buttons and persistent panels', () => {
+  const settle = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const rows = (payload) => payload.components.flatMap((r) => r.components.map((c) => c.data));
+  const click = (customId, over = {}) => fakeComponent({ guild, channel, user, member, customId, ...over });
+
+  /** A panel posted by the manual trigger and answered by a "Button Clicked" trigger. */
+  function installPanel(replyContent = 'hi {{user.name}} id={{button.id}} label={{button.label}}') {
+    return install({
+      nodes: [
+        node('t', 'trigger.manual', { channelId: channel.id }),
+        node('p', 'action.message.send', { target: 'current_channel', content: 'Open a ticket', buttons: [{ id: 'open', label: 'Open', style: 'Success', customId: 'open_ticket' }] }),
+        node('h', 'trigger.button.clicked', { customId: 'open_ticket' }),
+        node('r', 'action.message.send', { target: 'reply', ephemeral: true, content: replyContent }),
+      ],
+      edges: [edge('t', 'p'), edge('h', 'r')],
+    });
+  }
+  const post = async (flow, triggerId = 't') => {
+    const before = channel.sent.length;
+    await runtime.runManual(guild.id, flow.id, triggerId);
+    await settle();
+    assert.equal(channel.sent.length, before + 1, 'the panel was posted');
+    return { payload: channel.sent.at(-1), messageId: channel.sentIds.at(-1) };
+  };
+
+  it('a Button ID makes an fcb: button with no output of its own, answered by the matching trigger on every copy of the message', async () => {
+    const flow = installPanel();
+    const first = await post(flow);
+    const btn = rows(first.payload)[0];
+    assert.equal(btn.custom_id, 'fcb:open_ticket:');
+    const a = await run(click(btn.custom_id, { messageId: first.messageId, label: 'Open' }));
+    assert.equal(a.calls[0][0], 'reply');
+    assert.equal(a.calls[0][1].content, 'hi mia id=open_ticket label=Open');
+    assert.ok(a.calls[0][1].flags, 'the reply is ephemeral');
+
+    const second = await post(flow); // reposting the panel anywhere just works
+    const b = await run(click(rows(second.payload)[0].custom_id, { messageId: second.messageId, label: 'Open' }));
+    assert.equal(b.calls[0][1].content, 'hi mia id=open_ticket label=Open');
+  });
+
+  it('gives every click its own variables, even on the same panel message', async () => {
+    install({
+      nodes: [
+        node('t', 'trigger.command', { name: 'panel', description: 'x' }),
+        node('m', 'action.message.send', { target: 'reply', content: 'go', buttons: [{ id: 'g', label: 'Go', style: 'Primary', customId: 'go' }] }),
+        node('h', 'trigger.button.clicked', { customId: 'go' }),
+        node('r', 'action.message.send', { target: 'reply', content: 'seen={{var.seen | default:none}}' }),
+        node('v', 'data.variable.set', { scope: 'run', name: 'seen', operation: 'set', value: 'yes' }),
+      ],
+      edges: [edge('t', 'm'), edge('h', 'r'), edge('r', 'v')],
+    });
+    const first = await run(slash('panel'));
+    const id = rows(first.calls[0][1])[0].custom_id;
+    const a = await run(click(id, { messageId: 'm1' }));
+    const b = await run(click(id, { messageId: 'm1' }));
+    assert.equal(a.calls[0][1].content, 'seen=none');
+    assert.equal(b.calls[0][1].content, 'seen=none', 'the first click did not leak its variables into the second');
+  });
+
+  it('still knows the original run and its variables after a restart', async () => {
+    install({
+      nodes: [
+        node('t', 'trigger.command', { name: 'panel', description: 'x' }),
+        node('v', 'data.variable.set', { scope: 'run', name: 'ticket', operation: 'set', value: 'abc' }),
+        node('m', 'action.message.send', { target: 'reply', content: 'go', buttons: [{ id: 'g', label: 'Go', style: 'Primary', customId: 'go' }] }),
+        node('h', 'trigger.button.clicked', { customId: 'go' }),
+        node('r', 'action.message.send', { target: 'reply', content: '{{original.user.name}}/{{var.ticket}}/{{user.name}}' }),
+      ],
+      edges: [edge('t', 'v'), edge('v', 'm'), edge('h', 'r')],
+    });
+    const first = await run(slash('panel'));
+    const id = rows(first.calls[0][1])[0].custom_id;
+
+    // "restart": a brand-new runtime on the same database
+    runtime = new Runtime({ db, logger: new Logger({ console: false }), intents: { members: true, messageContent: true } });
+    runtime.attachClient(guild.client);
+    runtime.loadGuild(guild.id);
+    const clicker = fakeUser({ id: '333333', username: 'bob' });
+    const after = await run(click(id, { messageId: 'm1', user: clicker, member: guild.addMember({ user: clicker }) }));
+    assert.equal(after.calls[0][1].content, 'mia/abc/bob');
+  });
+
+  it('keeps the person-only restriction and answers politely when nothing handles the button', async () => {
+    install({
+      nodes: [
+        node('t', 'trigger.command', { name: 'p', description: 'x' }),
+        node('m', 'action.message.send', { target: 'reply', content: 'x', restrictToInvoker: true, buttons: [{ id: 'g', label: 'Go', style: 'Primary', customId: 'go' }] }),
+        node('h', 'trigger.button.clicked', { customId: 'go' }),
+        node('r', 'action.message.send', { target: 'reply', content: 'ok' }),
+      ],
+      edges: [edge('t', 'm'), edge('h', 'r')],
+    });
+    const first = await run(slash('p'));
+    const id = rows(first.calls[0][1])[0].custom_id;
+    assert.equal(id, 'fcb:go:222222');
+    const stranger = fakeUser({ id: '444444' });
+    const denied = await run(click(id, { user: stranger, member: guild.addMember({ user: stranger }) }));
+    assert.match(denied.calls[0][1].content, /Only <@222222> can use this/);
+    assert.equal((await run(click(id))).calls[0][1].content, 'ok');
+
+    assert.match((await run(click('fcb:nobody:'))).calls[0][1].content, /no longer active/);
+    const dm = fakeComponent({ guild: null, channel, user, member, customId: id });
+    assert.match((await run(dm)).calls[0][1].content, /only works inside a server/);
+  });
+
+  it('never lets one server\'s button reach another server\'s flow, and stops when the flow is off', async () => {
+    const flow = installPanel();
+    const otherGuild = fakeGuild({ id: '777777' });
+    const ch = otherGuild.addChannel({});
+    const u = fakeUser({ id: '888888' });
+    const foreign = fakeComponent({ guild: otherGuild, channel: ch, user: u, member: otherGuild.addMember({ user: u }), customId: 'fcb:open_ticket:' });
+    assert.match((await run(foreign)).calls[0][1].content, /no longer active/);
+
+    db.updateFlow(guild.id, flow.id, { enabled: false });
+    runtime.loadGuild(guild.id);
+    assert.match((await run(click('fcb:open_ticket:'))).calls[0][1].content, /no longer active/);
+  });
+
+  it('lets only the first flow handle a Button ID and warns about the other', async () => {
+    installPanel('first');
+    install({
+      nodes: [node('h', 'trigger.button.clicked', { customId: 'open_ticket' }), node('r', 'action.message.send', { target: 'reply', content: 'second' })],
+      edges: [edge('h', 'r')],
+    }, guild.id, 'Copycat');
+    const i = await run(click('fcb:open_ticket:'));
+    assert.equal(i.calls[0][1].content, 'first');
+    assert.ok(logs().some((l) => l.startsWith('warn:') && /open_ticket/.test(l) && /Copycat/.test(l)), logs().join('\n'));
+  });
+
+  it('refuses a Button ID that becomes invalid once templates are filled in', async () => {
+    install(commandFlow(
+      [node('m', 'action.message.send', { target: 'reply', content: 'x', buttons: [{ id: 'g', label: 'Go', style: 'Primary', customId: '{{option.x}}' }] })],
+      [edge('t', 'm')],
+    ));
+    const i = await run(slash('cmd', [{ name: 'x', value: 'fcb:evil id' }]));
+    assert.ok(logs().some((l) => l.startsWith('error:') && /Button ID/.test(l)), logs().join('\n'));
+    assert.ok(!i.calls.some((c) => c[0] === 'reply' && c[1].components), 'no message with a bad id was sent');
+  });
+
+  it('Toggle Role adds, then removes, then adds again — and its own changes do not trigger role events', async () => {
+    const role = guild.addRole({ name: 'Gamer' });
+    install({
+      nodes: [
+        node('h', 'trigger.button.clicked', { customId: 'gamer' }),
+        node('g', 'action.member.toggleRole', { roleId: role.id, reason: 'panel' }),
+        node('r', 'action.message.send', { target: 'reply', ephemeral: true, content: '{{role.name}} {{toggle.action}}' }),
+      ],
+      edges: [edge('h', 'g'), edge('g', 'r')],
+    });
+    const said = [];
+    for (let n = 0; n < 3; n += 1) said.push((await run(click('fcb:gamer:'))).calls[0][1].content);
+    assert.deepEqual(said, ['Gamer added', 'Gamer removed', 'Gamer added']);
+    assert.deepEqual(member.calls.map((c) => c[0]), ['roleAdd', 'roleRemove', 'roleAdd']);
+    assert.equal(member.calls[0][2], '[Test flow] panel');
+    assert.equal(member.roles.cache.has(role.id), true);
+    assert.equal(runtime.services.selfActions.consume(`roleAdd:${guild.id}:222222:${role.id}`), true);
+  });
+
+  it('the Button role panel template toggles roles from its own buttons', async () => {
+    const gamer = guild.addRole({ name: 'Gamer' });
+    const t = TEMPLATES.find((x) => x.id === 'role-panel').build();
+    t.nodes.find((x) => x.id === 't1').data.channelId = channel.id;
+    t.nodes.find((x) => x.id === 'g1').data.roleId = gamer.id;
+    const flow = install(t);
+    await runtime.runManual(guild.id, flow.id, 't1');
+    await settle();
+    const gamerBtn = rows(channel.sent.at(-1)).find((c) => c.label === 'Gamer');
+    assert.equal((await run(click(gamerBtn.custom_id, { messageId: channel.sentIds.at(-1) }))).calls[0][1].content, 'The **Gamer** role was added ✅');
+    assert.equal((await run(click(gamerBtn.custom_id, { messageId: channel.sentIds.at(-1) }))).calls[0][1].content, 'The **Gamer** role was removed ✅');
+  });
+
+  it('the Ticket panel template opens one ticket per press window and closes it with the opener remembered', async () => {
+    const t = TEMPLATES.find((x) => x.id === 'ticket-panel').build();
+    t.nodes.find((x) => x.id === 't1').data.channelId = channel.id;
+    t.nodes.find((x) => x.id === 'w1').data.seconds = 0; // do not really wait 5 s
+    const flow = install(t);
+    const panel = await post(flow, 't1');
+    const open = rows(panel.payload)[0];
+    assert.equal(open.custom_id, 'fcb:open_ticket:');
+
+    const opened = await run(click(open.custom_id, { messageId: panel.messageId }));
+    assert.match(opened.calls[0][1].content, /^Your ticket is ready: <#\d+>$/);
+    const ticket = guild.channels.cache.find((c) => c.name === 'ticket-mia');
+    assert.ok(ticket, 'a private ticket channel was created');
+
+    const again = await run(click(open.custom_id, { messageId: panel.messageId }));
+    assert.match(again.calls[0][1].content, /^Please wait \d+ seconds/, 'a second press right away is held back');
+    assert.equal([...guild.channels.cache.values()].filter((c) => c.name === 'ticket-mia').length, 1);
+
+    const close = rows(ticket.sent[0]).find((c) => c.label === 'Close ticket');
+    assert.match(close.custom_id, /^fc:[a-z0-9]+:s1:btn_close:$/);
+    const staff = fakeUser({ id: '555555', username: 'sam' });
+    const closed = await run(fakeComponent({ guild, channel: ticket, user: staff, member: guild.addMember({ user: staff }), customId: close.custom_id, messageId: ticket.sentIds[0] }));
+    assert.equal(closed.calls[0][1].content, 'Closing this ticket (opened by <@222222>) in 5 seconds…');
+    assert.ok(ticket.calls.some((c) => c[0] === 'delete'), 'the ticket channel was deleted');
   });
 });
 

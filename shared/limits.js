@@ -6,7 +6,7 @@
 
 export const LIMIT_KEYS = [
   'flowsPerGuild', 'nodesPerFlow', 'edgesPerFlow', 'nodeDataBytes', 'graphBytes', 'varsPerGuild', 'varValueBytes',
-  'runsPer10s', 'concurrentRuns', 'actionsPer10s', 'stepsPerRun', 'loopIterations', 'waitSeconds',
+  'runsPer10s', 'concurrentRuns', 'actionsPer10s', 'stepsPerRun', 'loopIterations', 'waitSeconds', 'componentStateDays',
 ];
 
 /** The live limits object. Mutated in place by applyLimits(), so every importer always sees current values. */

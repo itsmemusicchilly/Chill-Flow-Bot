@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { PermissionFlagsBits } from 'discord.js';
-import { CHANNEL_PERMISSIONS, COMMAND_PERMISSIONS, NODE_LIST, NODE_TYPES, ROLE_PERMISSIONS, availableVariables, defaultsFor, getOutputs, isTriggerType } from '../shared/catalog.js';
+import { CHANNEL_PERMISSIONS, COMMAND_PERMISSIONS, NODE_LIST, NODE_TYPES, ROLE_PERMISSIONS, availableVariables, buttonKey, defaultsFor, getOutputs, isTriggerType } from '../shared/catalog.js';
 import { TEMPLATES } from '../shared/templates.js';
 import { applyLimits, resetLimits } from '../shared/limits.js';
 import { hasStructureErrors, normalizeGraph, validateFlow } from '../shared/validate.js';
@@ -13,7 +13,7 @@ import { RateLimiter, SelfActions } from '../server/engine/rate-limit.js';
 import { safeRegexTest } from '../server/engine/safe-regex.js';
 import { getPath, renderDeep, renderTemplate } from '../server/engine/template.js';
 import { matches } from '../server/engine/triggers.js';
-import { buildCustomId, parseCustomId } from '../server/engine/custom-id.js';
+import { buildButtonId, buildCustomId, parseButtonId, parseCustomId } from '../server/engine/custom-id.js';
 import { Logger } from '../server/logger.js';
 import { edge, node } from './helpers/fakes.js';
 
@@ -152,6 +152,88 @@ describe('catalog integrity', () => {
     const paths = availableVariables(nodes, edges, 'd').map((v) => v.path);
     for (const p of ['user.name', 'option.reason', 'var.ticket', 'original.user.name', 'guild.name']) assert.ok(paths.includes(p), p);
     assert.ok(!availableVariables(nodes, edges, 'c').map((v) => v.path).includes('original.user.name'));
+  });
+});
+
+describe('reusable buttons (catalog)', () => {
+  const sendCheck = (buttons, extra = {}) => NODE_TYPES['action.message.send'].check({ ...defaultsFor('action.message.send'), content: 'x', buttons, ...extra });
+  const btn = (over = {}) => ({ id: 'b', label: 'B', style: 'Primary', ...over });
+
+  it('reusable button ids round-trip, stay within Discord\'s 100 characters and never pass for flow ids', () => {
+    const id = buildButtonId({ id: 'open_ticket', invokerId: '123456789012345678' });
+    assert.equal(id, 'fcb:open_ticket:123456789012345678');
+    assert.deepEqual(parseButtonId(id), { id: 'open_ticket', invokerId: '123456789012345678' });
+    assert.deepEqual(parseButtonId('fcb:open_ticket:'), { id: 'open_ticket', invokerId: '' });
+    assert.equal(parseButtonId('fc:a:b:btn_x:'), null);
+    assert.equal(parseCustomId('fcb:open_ticket:'), null, 'the flow-wired parser ignores reusable ids');
+    assert.equal(parseButtonId('fcb:bad id:'), null);
+    assert.equal(parseButtonId('fcb::'), null);
+    assert.throws(() => buildButtonId({ id: 'has:colon' }));
+    assert.ok(buildButtonId({ id: 'x'.repeat(64), invokerId: '1'.repeat(20) }).length <= 100);
+  });
+
+  it('a button with a Button ID has no output of its own (Link buttons never do either)', () => {
+    const d = defaultsFor('action.message.send');
+    d.buttons = [btn({ id: 'a' }), btn({ id: 'b', customId: 'open' }), btn({ id: 'l', style: 'Link', customId: 'ignored' })];
+    assert.deepEqual(getOutputs('action.message.send', d).map((o) => o.id), ['out', 'btn_a', 'error']);
+    assert.equal(buttonKey(d.buttons[1]), 'open');
+    assert.equal(buttonKey(d.buttons[2]), '');
+    assert.equal(buttonKey(d.buttons[0]), '', 'buttons made before Button IDs existed still work');
+  });
+
+  it('checks Button IDs on the message: characters, duplicates, direct messages', () => {
+    assert.deepEqual(sendCheck([btn({ customId: 'ok_1.a-b' })]), []);
+    assert.ok(sendCheck([btn({ customId: 'bad id' })]).some((m) => /Button ID/.test(m)));
+    assert.ok(sendCheck([btn({ customId: 'a:b' })]).some((m) => /Button ID/.test(m)));
+    assert.ok(sendCheck([btn({ id: '1', customId: 'a' }), btn({ id: '2', customId: 'a' })]).some((m) => /twice/.test(m)));
+    assert.ok(sendCheck([btn({ customId: 'a' })], { target: 'dm' }).some((m) => /direct messages/.test(m)));
+    assert.deepEqual(sendCheck([btn({ customId: 'a' })], { target: 'reply' }), []);
+    assert.deepEqual(sendCheck([btn({ style: 'Link', url: 'https://x.y', customId: 'ignored' })], { target: 'dm' }), []);
+    assert.deepEqual(sendCheck([btn({ customId: '{{option.x}}' })]), [], 'templated ids are checked once they are filled in');
+  });
+
+  it('the Button Clicked trigger needs a valid ID', () => {
+    const check = NODE_TYPES['trigger.button.clicked'].check;
+    assert.deepEqual(check({ customId: 'open_ticket' }), []);
+    assert.ok(check({ customId: 'bad id' }).length);
+    assert.ok(check({ customId: 'a'.repeat(65) }).length);
+    const issues = validateFlow(normalizeGraph({ nodes: [node('h', 'trigger.button.clicked', { customId: '' }), node('l', 'logic.log', { message: 'm' })], edges: [edge('h', 'l')] }));
+    assert.ok(issues.some((i) => i.nodeId === 'h' && i.level === 'error' && /Button ID/.test(i.message)), 'an empty ID stops the trigger from activating');
+  });
+
+  it('warns when one flow handles the same Button ID twice', () => {
+    const issues = validateFlow(normalizeGraph({
+      nodes: [node('a', 'trigger.button.clicked', { customId: 'x' }), node('b', 'trigger.button.clicked', { customId: 'x' }), node('l', 'logic.log', { message: 'm' })],
+      edges: [edge('a', 'l'), edge('b', 'l')],
+    }));
+    assert.ok(issues.some((i) => i.nodeId === 'b' && i.level === 'warning' && /already handled/.test(i.message)));
+    assert.ok(!issues.some((i) => i.nodeId === 'a' && /already handled/.test(i.message)));
+  });
+
+  it('offers button and original-run variables after a Button Clicked trigger', () => {
+    const nodes = [node('t', 'trigger.button.clicked', { customId: 'x' }), node('r', 'action.message.send', { content: 'x' })];
+    const paths = availableVariables(nodes, [edge('t', 'r')], 'r').map((v) => v.path);
+    for (const p of ['button.id', 'button.label', 'original.user.name', 'user.name', 'message.id']) assert.ok(paths.includes(p), p);
+  });
+
+  it('Toggle Role offers the role and what happened', () => {
+    const nodes = [node('t', 'trigger.manual'), node('g', 'action.member.toggleRole', { roleId: '1' }), node('r', 'action.message.send', { content: 'x' })];
+    const paths = availableVariables(nodes, [edge('t', 'g'), edge('g', 'r')], 'r').map((v) => v.path);
+    for (const p of ['toggle.action', 'role.name']) assert.ok(paths.includes(p), p);
+    assert.deepEqual(getOutputs('action.member.toggleRole', defaultsFor('action.member.toggleRole')).map((o) => o.id), ['out', 'error']);
+  });
+
+  it('every Button Clicked ID in a template is put on a button in the same flow', () => {
+    let seen = 0;
+    for (const t of TEMPLATES) {
+      const g = t.build();
+      const ids = new Set(g.nodes.filter((n) => n.type === 'action.message.send').flatMap((n) => (n.data.buttons || []).map(buttonKey).filter(Boolean)));
+      for (const h of g.nodes.filter((n) => n.type === 'trigger.button.clicked')) {
+        seen += 1;
+        assert.ok(ids.has(h.data.customId), `${t.id}: nothing sends a button with ID “${h.data.customId}”`);
+      }
+    }
+    assert.ok(seen > 0, 'at least one template uses the trigger');
   });
 });
 

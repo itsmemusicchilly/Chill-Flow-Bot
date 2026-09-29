@@ -65,9 +65,9 @@ export function fakeGuild(over = {}) {
 export function fakeChannel(guild, o = {}) {
   const ch = {
     id: o.id ?? nextId(), name: o.name ?? 'general', guild, guildId: guild.id, type: o.type ?? ChannelType.GuildText, parentId: null, topic: '',
-    sent: [], calls: [], messages: { store: new Map(), async fetch(id) { return ch.messages.store.get(id) ?? null; } },
+    sent: [], sentIds: [], calls: [], messages: { store: new Map(), async fetch(id) { return ch.messages.store.get(id) ?? null; } },
     isTextBased: () => [0, 5, 2, 13].includes(ch.type) === true && ch.type !== 2 && ch.type !== 13,
-    async send(p) { const m = { id: nextId(), ...p }; ch.sent.push(p); return m; },
+    async send(p) { const m = { id: nextId(), ...p }; ch.sent.push(p); ch.sentIds.push(m.id); return m; },
     async delete(reason) { ch.calls.push(['delete', reason]); guild.channels.cache.delete(ch.id); },
     async edit(p) { ch.calls.push(['edit', p]); },
     permissionOverwrites: { async edit(t, perms, opt) { ch.calls.push(['overwrite', t.id, perms, opt]); } },
@@ -89,8 +89,8 @@ export function fakeCommand({ guild, channel, user, member, commandName, options
   return i;
 }
 
-export function fakeComponent({ guild, channel, user, member, customId, messageId = 'MSG1', values }) {
-  const i = { ...baseInteraction(guild, channel, user, member), customId, values, isMessageComponent: () => true,
+export function fakeComponent({ guild, channel, user, member, customId, messageId = 'MSG1', values, label = '' }) {
+  const i = { ...baseInteraction(guild, channel, user, member), customId, values, component: { label }, isMessageComponent: () => true,
     message: { id: messageId, edit: async (p) => { i.calls.push(['messageEdit', p]); } } };
   i.reply = async (p) => { i.calls.push(['reply', p]); return { resource: { message: { id: `m${i.calls.length}` } } }; };
   i.update = async (p) => { i.calls.push(['update', p]); };

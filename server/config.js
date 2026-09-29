@@ -17,6 +17,7 @@ export const LIMIT_ENV = {
   stepsPerRun: 'LIMIT_STEPS_PER_RUN',
   loopIterations: 'LIMIT_LOOP_ITERATIONS',
   waitSeconds: 'LIMIT_WAIT_SECONDS',
+  componentStateDays: 'LIMIT_COMPONENT_STATE_DAYS',
 };
 const DEFAULT_REQUEST_BYTES = 50 * 1024 * 1024;
 const MAX_REQUEST_BYTES = 1024 ** 3;

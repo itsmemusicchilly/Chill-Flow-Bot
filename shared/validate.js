@@ -119,6 +119,16 @@ export function validateFlow(graph, { intents } = {}) {
       add(n.id, 'warning', 'graph', 'Not connected to a trigger, so it will never run.');
     }
   }
+
+  // A button press can only be answered once, so every Button ID needs exactly one handler.
+  const handlers = new Map();
+  for (const n of nodes) {
+    if (n.type !== 'trigger.button.clicked') continue;
+    const id = String(n.data?.customId ?? '').trim();
+    if (!id) continue;
+    if (handlers.has(id)) add(n.id, 'warning', 'graph', `Button ID “${id}” is already handled by another trigger in this flow — only the first one runs.`);
+    else handlers.set(id, n.id);
+  }
   return issues;
 }
 

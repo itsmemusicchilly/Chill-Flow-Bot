@@ -231,3 +231,33 @@ describe('slash command registration', () => {
     assert.equal(hashDefs([]) === hashDefs([]), true);
   });
 });
+
+describe('cleaning up what buttons remembered', () => {
+  const remember = (messageId, channelId, guildId = guild.id) => runtime.services.components.remember(messageId, { guild: { id: guildId }, vars: { a: 1 }, data: { user: { id: '1' } } }, { channelId });
+
+  it('forgets a message when it is deleted, a whole channel when it is deleted, and bulk-deleted messages', async () => {
+    remember('m1', 'c1'); remember('m2', 'c2'); remember('m3', 'c2'); remember('m4', 'c3'); remember('m5', 'c3');
+    assert.equal(db.countComponentState(guild.id), 5);
+
+    client.emit(Events.MessageDelete, { id: 'm1', guildId: guild.id, guild });
+    await tick(30);
+    assert.equal(runtime.services.components.get(guild.id, 'm1'), undefined);
+
+    client.emit(Events.ChannelDelete, { id: 'c2', guild, type: ChannelType.GuildText });
+    await tick(30);
+    assert.equal(runtime.services.components.get(guild.id, 'm2'), undefined);
+    assert.equal(runtime.services.components.get(guild.id, 'm3'), undefined);
+
+    client.emit(Events.MessageBulkDelete, new Coll([['m4', {}]]), { guildId: guild.id });
+    await tick(30);
+    assert.equal(runtime.services.components.get(guild.id, 'm4'), undefined);
+    assert.ok(runtime.services.components.get(guild.id, 'm5'), 'untouched messages keep their state');
+  });
+
+  it('a message deleted in another server does not touch this one', async () => {
+    remember('m1', 'c1');
+    client.emit(Events.MessageDelete, { id: 'm1', guildId: '999999', guild: { id: '999999' } });
+    await tick(30);
+    assert.ok(runtime.services.components.get(guild.id, 'm1'));
+  });
+});

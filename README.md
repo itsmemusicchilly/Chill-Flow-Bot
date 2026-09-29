@@ -14,14 +14,17 @@ channel, remember a variable…), press **Save** — it is live. No code.
   administrator (configurable). Every flow, variable, slash command and log is scoped to one server.
 * **Every button is its own path.** A *Send Message* node can carry several buttons and a select menu; each one becomes an
   output you connect to whatever should happen next.
-* **49 nodes**: 23 triggers (commands, messages, joins/leaves/kicks/bans/timeouts, role and channel events, reactions,
-  voice, schedule, manual) and 26 actions/logic nodes (messages with buttons/menus/forms, member moderation, channels,
-  roles, variables, conditions, loops, cooldowns, waits). Full list: [docs/NODES.md](docs/NODES.md).
+* **Reusable panels.** Give a button a *Button ID* and handle it with a **Button Clicked** trigger instead: it works on any
+  copy of the message, from any flow, survives restarts, and **Toggle Role** turns a button into a one-press role switch.
+  Ready-made *Ticket panel* and *Button role panel* templates show how.
+* **51 nodes**: 24 triggers (commands, buttons, messages, joins/leaves/kicks/bans/timeouts, role and channel events,
+  reactions, voice, schedule, manual) and 27 actions/logic nodes (messages with buttons/menus/forms, member moderation,
+  channels, roles, variables, conditions, loops, cooldowns, waits). Full list: [docs/NODES.md](docs/NODES.md).
 * **Remembers things**: run, per-server and per-user variables, usable everywhere as `{{templates}}`.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (111 unit/integration tests plus a
+> **Status:** the engine, API, security rules and editor are covered by automated tests (148 unit/integration tests plus a
 > 23-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it.
 
@@ -81,6 +84,7 @@ loop iterations, steps per run and as long a wait as you like. On a private bot 
 | `LIMIT_VARS_PER_GUILD` · `LIMIT_VAR_VALUE_BYTES` | remembered variables per server / size of one value |
 | `LIMIT_RUNS_PER_10S` · `LIMIT_CONCURRENT_RUNS` · `LIMIT_ACTIONS_PER_10S` | flow starts, simultaneous runs and Discord actions per server |
 | `LIMIT_STEPS_PER_RUN` · `LIMIT_LOOP_ITERATIONS` · `LIMIT_WAIT_SECONDS` | nodes executed per run, loop length, longest single wait |
+| `LIMIT_COMPONENT_STATE_DAYS` | how long a message's remembered button data is kept (default: until the message or its channel is deleted; ephemeral replies always expire after a day) |
 | `LIMIT_REQUEST_BYTES` | HTTP request body (default 50 MB; always has a ceiling, max 1 GB) |
 
 `.env.example` contains a commented **public-host preset** with sensible caps.
@@ -108,14 +112,31 @@ Development with hot reload: `npm run dev` (server + Vite). Set `BASE_URL=http:/
 * **Errors**: every action has an **On error** output. Connect it to react (`{{error.message}}`); unconnected, the error
   is logged and that branch ends. Interactions never end with Discord's red “interaction failed”.
 * **Slow flows** are fine: after ~2 s the bot defers the reply for you, and the next *Send Message → reply* fills it in.
-* **Buttons & menus** are routed by their custom id, so they keep working after restarts. Run variables (`{{var.x}}`) are
-  remembered *in memory* per message, so they survive edits but not a restart. `{{original.user.name}}` etc. refer to
-  whoever/whatever created the message.
+* **Buttons & menus** are routed by their custom id, so they keep working after restarts. What the run that posted a message
+  knew — its run variables (`{{var.x}}`) and `{{original.user.name}}` etc. (whoever/whatever created the message) — is stored
+  in the database, so it survives restarts too. **Every press gets its own private copy**: one person's press can never
+  change what the next person sees. If you want something to carry over between presses, use a server or user variable.
 * **Forms (modals)** must be the first thing a command/button does; answers are `{{input.<id>}}`.
 * **No feedback loops**: changes the bot makes itself (a role it gave, a channel it created) do not trigger flows unless you
   tick *Also run for changes made by this bot*.
 * **Kick vs leave, who banned whom**: read from the audit log — give the bot *View Audit Log* or kicks look like leaves.
 * **Slash commands** are registered per server when you save (instant, no global propagation delay).
+
+### Reusable panels (tickets, role menus)
+
+A normal button is wired to an output of the *Send Message* node that posted it. To make a button reusable, open the button
+in the node and fill **Button ID** (for example `open_ticket`), then add a **Button Clicked** trigger with the same ID:
+
+* The button keeps working on **every copy** of the message, after restarts, and even if you duplicate or rebuild the flow —
+  its Discord id is `fcb:open_ticket`, which does not mention any flow or node.
+* **One handler per ID.** A press can only be answered once, so if two flows use the same ID the oldest wins and the log
+  says so. Buttons with an ID only work inside servers (not in DMs), and adding an ID to a button that is already posted
+  makes that old message stop working until you post it again.
+* Inside the flow `{{button.id}}`, `{{button.label}}`, `{{user.*}}` (whoever pressed) and `{{original.*}}` (whoever posted the
+  message) are available. **Toggle Role** gives the role, or takes it away if the member already has it (`{{toggle.action}}`
+  says which).
+* Panels are posted by a **Manual** trigger (press ▶ Run once). Start from the **Ticket panel** or **Button role panel**
+  template. In the ticket template a cooldown stops double-clicks from opening two tickets.
 
 ### Templates
 
@@ -129,6 +150,7 @@ Development with hot reload: `npm run dev` (server + Vite). Set `BASE_URL=http:/
 | `channel.id .name .mention .type`, `message.id .content .url .after`, `role.*`, `emoji.*` | event details |
 | `option.<name>` | slash-command options |
 | `input.<id>`, `select.value`, `original.*` | forms, menus, the message that a button belongs to |
+| `button.id`, `button.label`, `toggle.action` | the button that was pressed (*Button Clicked*), and whether *Toggle Role* added or removed the role |
 | `var.<name>` | run variable (or something saved by *Save … as variable*) |
 | `user.vars.<name>`, `guild.vars.<name>` | remembered per-user / per-server variables |
 | `loop.index .item`, `error.message`, `cooldown.remaining`, `now.iso .date .time .timestamp` | misc |
@@ -164,7 +186,7 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 ## Development
 
 ```bash
-npm test          # 111 unit + API + event tests (fake Discord objects, in-memory SQLite)
+npm test          # 148 unit + API + event tests (fake Discord objects, in-memory SQLite)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
@@ -187,15 +209,19 @@ Not yet automated — please run through this once on a test server:
 - [ ] Login works, the server appears, *Add bot* link opens the right server.
 - [ ] `/ticket` template: channel is created privately, the reply is ephemeral, **Close** deletes the channel.
 - [ ] A slash command that takes > 3 s still answers (auto-defer).
-- [ ] Button role panel: ▶ Run posts the panel; each button gives its own role.
+- [ ] Button role panel: ▶ Run posts the panel; each button toggles its own role (press three times: added, removed, added).
+- [ ] Ticket panel: ▶ Run posts the panel; pressing **Open a ticket** twice quickly gives one private channel, one private
+      reply and one “please wait” message; **Close ticket** mentions the person who opened it and deletes the channel.
+- [ ] Two accounts press the same panel button at the same time: each only sees their own variables.
+- [ ] Use one Button ID in two flows: the log warns that the newer flow is ignored for it.
 - [ ] Member Joined (with the Members intent) greets and gives a role; Kicked vs Left is told apart (with *View Audit Log*).
 - [ ] Reaction Added with message + emoji filter gives a role.
 - [ ] A second admin account in *another* server cannot see or edit the first server's flows.
-- [ ] Bot restarts: an old button still works; slash commands are not re-registered needlessly.
+- [ ] Bot restarts: an old button still works and still knows who opened its ticket (`{{original.user.mention}}`); slash commands are not re-registered needlessly.
 - [ ] Build a flow that loops forever (two Log nodes pointing at each other), run it, confirm other commands still answer,
       then switch the flow Off and confirm it stops.
 
 ## Ideas not done yet
 
 HTTP/webhook node with SSRF protection, autocomplete options, sub-commands, embed preview, undo/redo, flow version history,
-persisting run variables across restarts, sharding.
+sharding.

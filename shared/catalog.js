@@ -51,6 +51,11 @@ const list = (key, label, item, o = {}) => ({ type: 'list', key, label, item, de
 const when = (key, ...values) => ({ key, in: values });
 const whenNot = (key, ...values) => ({ key, notIn: values });
 
+/** A reusable button's public id. Lives in the Discord custom_id (`fcb:<id>`), so it must stay short and colon-free. */
+export const BUTTON_ID_RE = /^[A-Za-z0-9_.-]{1,64}$/;
+/** The reusable id of a button ('' when it is a normal button wired to its own output, or a Link button). */
+export const buttonKey = (b) => (b && b.style !== 'Link' ? String(b.customId ?? '').trim() : '');
+
 const OUT = { id: 'out', label: 'Next' };
 const ERR = { id: 'error', label: 'On error', kind: 'error' };
 const ACTION_OUTS = [OUT, ERR];
@@ -132,6 +137,23 @@ trigger('trigger.command', {
       seen.add(o.name);
     }
     return e;
+  },
+});
+
+trigger('trigger.button.clicked', {
+  label: 'Button Clicked', icon: '🔘',
+  description: 'Runs when someone presses a button that has this Button ID — on any message, from any flow. Keeps working after restarts, so it is ideal for ticket and role panels.',
+  fields: [
+    text('customId', 'Button ID', {
+      required: true, placeholder: 'open_ticket',
+      help: 'Give a button in a Send Message node the same “Button ID”. Letters, numbers, - _ and . (max 64). Use each ID in only one flow.',
+    }),
+  ],
+  provides: () => [...USER, ...MEMBER, ...GUILD, ...CHANNEL, ...MESSAGE, ['button.id', 'Button ID'], ['button.label', 'Button label']],
+  summary: (d) => d.customId || '?',
+  check(d) {
+    const id = String(d.customId ?? '').trim();
+    return id && !BUTTON_ID_RE.test(id) ? ['Button ID can only use letters, numbers, - _ and . (max 64).'] : [];
   },
 });
 
@@ -249,7 +271,7 @@ def('action.message.send', {
     area('content', 'Message text', { placeholder: 'Hello {{user.mention}}!' }),
     ...embedFields(),
     list('buttons', 'Buttons', {
-      create: () => ({ id: uid(6), label: 'Button', style: 'Primary', emoji: '', url: '', disabled: false }),
+      create: () => ({ id: uid(6), label: 'Button', style: 'Primary', emoji: '', url: '', disabled: false, customId: '' }),
       label: (b) => b.label,
       fields: [
         text('label', 'Label', { required: true }),
@@ -257,6 +279,10 @@ def('action.message.send', {
         text('url', 'URL', { showIf: when('style', 'Link'), required: true }),
         text('emoji', 'Emoji (optional)'),
         bool('disabled', 'Disabled'),
+        text('customId', 'Button ID (optional)', {
+          showIf: whenNot('style', 'Link'), placeholder: 'open_ticket',
+          help: 'Makes this a reusable button: it is handled by a “Button Clicked” trigger with the same ID instead of its own output here, and keeps working on every copy of the message. Adding an ID removes this button\'s output connection.',
+        }),
       ],
     }, { max: 25 }),
     bool('menuEnabled', 'Add a select menu'),
@@ -272,7 +298,7 @@ def('action.message.send', {
   ],
   outputs: (d) => [
     OUT,
-    ...(d.buttons || []).filter((b) => b.style !== 'Link').map((b) => ({ id: `btn_${b.id}`, label: b.label || 'Button', kind: 'button' })),
+    ...(d.buttons || []).filter((b) => b.style !== 'Link' && !buttonKey(b)).map((b) => ({ id: `btn_${b.id}`, label: b.label || 'Button', kind: 'button' })),
     ...(d.menuEnabled ? (d.menuOptions || []).map((o) => ({ id: `opt_${o.id}`, label: o.label || 'Option', kind: 'option' })) : []),
     ERR,
   ],
@@ -282,6 +308,15 @@ def('action.message.send', {
     if (!d.content && !d.useEmbed && !(d.buttons || []).length) e.push('Add message text, an embed or buttons — Discord will not send an empty message.');
     if ((d.buttons || []).length + (d.menuEnabled ? 1 : 0) > 25) e.push('Too many components.');
     if (d.menuEnabled && !(d.menuOptions || []).length) e.push('The select menu needs at least one option.');
+    const seen = new Set();
+    for (const b of d.buttons || []) {
+      const key = buttonKey(b);
+      if (!key) continue;
+      if (!/\{\{/.test(key) && !BUTTON_ID_RE.test(key)) e.push(`Button ID “${key}” can only use letters, numbers, - _ and . (max 64).`);
+      if (seen.has(key)) e.push(`Button ID “${key}” is used twice in this message — Discord needs them to be unique.`);
+      seen.add(key);
+    }
+    if (seen.size && d.target === 'dm') e.push('Buttons with a Button ID only work inside a server, not in direct messages.');
     return e;
   },
 });
@@ -355,6 +390,14 @@ def('action.member.removeRole', {
   category: 'member', label: 'Remove Role', icon: '📤', description: 'Take a role away from a member.',
   fields: [userField(), idField('roleId', 'Role', 'role', { required: true }), reasonField()],
   outputs: ACTION_OUTS, summary: (d) => d.roleId || '',
+});
+def('action.member.toggleRole', {
+  category: 'member', label: 'Toggle Role', icon: '🔁',
+  description: 'Give the role if the member does not have it, take it away if they do. Perfect for role panels: one button per role. Use {{toggle.action}} (added / removed) in your reply.',
+  fields: [userField(), idField('roleId', 'Role', 'role', { required: true }), reasonField()],
+  outputs: ACTION_OUTS,
+  provides: () => [...ROLE, ['toggle.action', 'Whether the role was “added” or “removed”']],
+  summary: (d) => d.roleId || '',
 });
 def('action.member.kick', {
   category: 'member', label: 'Kick Member', icon: '🥾', description: 'Kick a member from the server.',
@@ -587,7 +630,7 @@ export function availableVariables(nodes, edges, nodeId) {
       const src = byId.get(e.source);
       if (!src) continue;
       const h = e.sourceHandle || 'out';
-      if (h.startsWith('btn_') || h.startsWith('opt_')) fromComponent = true;
+      if (h.startsWith('btn_') || h.startsWith('opt_') || src.type === 'trigger.button.clicked') fromComponent = true;
       if (h === 'error') fromError = true;
       if (seen.has(src.id)) continue;
       seen.add(src.id);
