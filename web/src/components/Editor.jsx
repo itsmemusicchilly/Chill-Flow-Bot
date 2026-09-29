@@ -5,12 +5,16 @@ import { useToast } from '../context.js';
 import FlowWorkspace from './FlowWorkspace.jsx';
 import LogsPanel from './LogsPanel.jsx';
 import NewFlowDialog from './NewFlowDialog.jsx';
+import NewPageDialog from './NewPageDialog.jsx';
+import PageEditor from './PageEditor.jsx';
+import PagesList from './PagesList.jsx';
 import Palette from './Palette.jsx';
 import VariablesDialog from './VariablesDialog.jsx';
+import { usePages } from '../pages/usePages.js';
 
 const MAX_LOGS = 400;
 
-export default function Editor({ me, guild, flowId, navigate, onLogout }) {
+export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }) {
   const gid = guild.id;
   const toast = useToast();
   const [info, setInfo] = useState(null);
@@ -18,8 +22,8 @@ export default function Editor({ me, guild, flowId, navigate, onLogout }) {
   const [roles, setRoles] = useState([]);
   const [flows, setFlows] = useState(null);
   const [flow, setFlow] = useState(null);
-  const [tab, setTab] = useState('flows');
-  const [dialog, setDialog] = useState(null); // 'new' | 'vars'
+  const [tab, setTab] = useState(pageId ? 'pages' : 'flows');
+  const [dialog, setDialog] = useState(null); // 'new' | 'newpage' | 'vars'
   const [showLogs, setShowLogs] = useState(true);
   const [logs, setLogs] = useState([]);
   const [flash, setFlash] = useState({});
@@ -28,6 +32,9 @@ export default function Editor({ me, guild, flowId, navigate, onLogout }) {
   const dirtyRef = useRef(false);
   const flowIdRef = useRef(flowId);
   flowIdRef.current = flowId;
+  const confirmLeave = () => !dirtyRef.current || window.confirm('You have unsaved changes. Discard them?');
+  const pagesApi = usePages({ gid, pageId, navigate, confirmLeave, dirtyRef });
+  useEffect(() => { if (pageId) setTab('pages'); else if (flowId) setTab('flows'); }, [pageId, flowId]);
 
   // ---- initial load ---------------------------------------------------------------------------
   useEffect(() => {
@@ -66,8 +73,7 @@ export default function Editor({ me, guild, flowId, navigate, onLogout }) {
     return () => { alive = false; es.close(); };
   }, [gid]);
 
-  const guildData = useMemo(() => ({ channels, roles }), [channels, roles]);
-  const confirmLeave = () => !dirtyRef.current || window.confirm('You have unsaved changes in this flow. Discard them?');
+  const guildData = useMemo(() => ({ channels, roles, forms: pagesApi.forms }), [channels, roles, pagesApi.forms]);
 
   const openFlow = (id) => { if (id !== flowId && confirmLeave()) navigate(gid, id); };
 
@@ -116,7 +122,7 @@ export default function Editor({ me, guild, flowId, navigate, onLogout }) {
   };
 
   if (loadError) return <div className="splash">Could not open this server: {loadError} <button className="btn" onClick={() => navigate(null)}>Back</button></div>;
-  if (!info || !flows) return <div className="splash">Loading server…</div>;
+  if (!info || !flows || !pagesApi.pages) return <div className="splash">Loading server…</div>;
 
   const sync = info.commandSync;
   return (
@@ -138,9 +144,15 @@ export default function Editor({ me, guild, flowId, navigate, onLogout }) {
         <aside className="sidebar">
           <div className="tabs" role="tablist">
             <button role="tab" aria-selected={tab === 'flows'} className={tab === 'flows' ? 'on' : ''} onClick={() => setTab('flows')}>Flows</button>
-            <button role="tab" aria-selected={tab === 'nodes'} className={tab === 'nodes' ? 'on' : ''} onClick={() => setTab('nodes')} disabled={!flow}>Nodes</button>
+            <button role="tab" aria-selected={tab === 'pages'} className={tab === 'pages' ? 'on' : ''} onClick={() => setTab('pages')}>Pages</button>
+            <button role="tab" aria-selected={tab === 'nodes'} className={tab === 'nodes' ? 'on' : ''} onClick={() => setTab('nodes')} disabled={!flow || Boolean(pageId)}>Nodes</button>
           </div>
-          {tab === 'flows' ? (
+          {tab === 'pages' ? (
+            <PagesList
+              pages={pagesApi.pages} pageId={pageId} limit={me.meta.limits.pagesPerGuild}
+              onOpen={pagesApi.openPage} onNew={() => setDialog('newpage')} onDuplicate={pagesApi.duplicatePage} onRemove={pagesApi.removePage}
+            />
+          ) : tab === 'flows' ? (
             <div className="flow-list">
               <button className="btn primary block" onClick={() => setDialog('new')}>+ New flow</button>
               {flows.length === 0 && <p className="muted tiny">No flows yet. Start from a template — it is the quickest way to see how things connect.</p>}
@@ -165,7 +177,11 @@ export default function Editor({ me, guild, flowId, navigate, onLogout }) {
         </aside>
 
         <div className="stage">
-          {flow && flow.id === flowId ? (
+          {pageId && pagesApi.page && pagesApi.page.id === pageId ? (
+            <PageEditor key={pagesApi.page.id} gid={gid} guild={guild} page={pagesApi.page} dirtyRef={dirtyRef} onSaved={pagesApi.onPageSaved} />
+          ) : pageId ? (
+            <div className="empty-stage"><p className="muted">Loading page…</p></div>
+          ) : flow && flow.id === flowId ? (
             <ReactFlowProvider key={flow.id}>
               <FlowWorkspace
                 gid={gid} flow={flow} meta={me.meta} guildData={guildData} flash={flash}
@@ -184,6 +200,7 @@ export default function Editor({ me, guild, flowId, navigate, onLogout }) {
       </div>
 
       {dialog === 'new' && <NewFlowDialog templates={me.meta.templates} onCreate={createFlow} onClose={() => setDialog(null)} />}
+      {dialog === 'newpage' && <NewPageDialog onCreate={async (payload) => { await pagesApi.createPage(payload); setDialog(null); }} onClose={() => setDialog(null)} />}
       {dialog === 'vars' && <VariablesDialog gid={gid} onClose={() => setDialog(null)} />}
     </div>
   );

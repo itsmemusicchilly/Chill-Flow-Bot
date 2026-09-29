@@ -281,6 +281,16 @@ triggered this flow”.
 
 **Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
+### 🧾 Form Submitted
+
+`trigger.form.submitted` — Runs when someone submits one of your web page forms (build them in the Pages tab). Each answer is {{form.<question id>}}.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Form | form | required; Only forms on pages of this server are listed. |
+
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{form.title}}`, `{{form.summary}}`, `{{response.id}}`, `{{page.title}}`, `{{page.url}}`
+
 ## Messages
 
 ### 💬 Send Message

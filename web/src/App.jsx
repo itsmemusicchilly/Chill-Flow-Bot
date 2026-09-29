@@ -14,7 +14,7 @@ function useHashRoute() {
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
-  const navigate = useCallback((guildId, flowId) => { window.location.hash = hashFor(guildId, flowId); }, []);
+  const navigate = useCallback((guildId, flowId, pageId) => { window.location.hash = hashFor(guildId, flowId, pageId); }, []);
   return [route, navigate];
 }
 
@@ -56,7 +56,7 @@ export default function App() {
     const { me } = state;
     const guild = route.guildId ? me.guilds.find((g) => g.id === route.guildId && g.botPresent) : null;
     body = guild
-      ? <Editor key={guild.id} me={me} guild={guild} flowId={route.flowId} navigate={navigate} onLogout={doLogout} />
+      ? <Editor key={guild.id} me={me} guild={guild} flowId={route.flowId} pageId={route.pageId} navigate={navigate} onLogout={doLogout} />
       : <GuildPicker me={me} onOpen={(g) => navigate(g.id)} onRefresh={load} onLogout={doLogout} />;
   }
 

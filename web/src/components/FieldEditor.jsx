@@ -24,12 +24,13 @@ function IdPicker({ field, value, onChange, focusRef }) {
   if (field.kind === 'channel') { options = channels.filter((c) => c.type !== 'GuildCategory'); prefix = '#'; }
   else if (field.kind === 'category') { options = channels.filter((c) => c.type === 'GuildCategory'); }
   else if (field.kind === 'role') { options = [{ id: '@everyone', name: 'everyone' }, ...roles]; prefix = '@'; }
+  else if (field.kind === 'form') { options = (guildData.forms || []).map((f) => ({ id: f.key, name: f.label })); }
   const match = options.find((o) => o.id === value);
   return (
     <>
       <div className="idfield">
         <input
-          type="text" value={value ?? ''} placeholder={field.placeholder || (field.kind === 'user' ? 'user ID or {{user.id}}' : `${field.kind} ID or name`)}
+          type="text" value={value ?? ''} placeholder={field.placeholder || (field.kind === 'user' ? 'user ID or {{user.id}}' : field.kind === 'form' ? 'pick a form →' : `${field.kind} ID or name`)}
           onChange={(e) => onChange(e.target.value)} onFocus={track(focusRef, onChange)} spellCheck={false}
         />
         {options.length > 0 && (

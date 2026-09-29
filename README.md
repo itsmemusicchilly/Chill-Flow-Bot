@@ -10,19 +10,22 @@ channel, remember a variable…), press **Save** — it is live. No code.
                                                             └─ On error
 ```
 
+* **Website builder.** Publish small pages — a landing page, rules, an application form — from blocks (hero, text, images,
+  buttons, lists, **forms**). Visitors log in with Discord to fill a form; a **Form Submitted** flow can react, and responses are
+  saved for you to review and export (see [Pages & forms](#pages--forms)).
 * **Multi-server, Discord login.** Admins sign in with Discord and can only edit servers where they are an
   administrator (configurable). Every flow, variable, slash command and log is scoped to one server.
 * **Every button is its own path.** A *Send Message* node can carry several buttons and a select menu; each one becomes an
   output you connect to whatever should happen next.
-* **49 nodes**: 23 triggers (commands, messages, joins/leaves/kicks/bans/timeouts, role and channel events, reactions,
+* **50 nodes**: 24 triggers (commands, messages, joins/leaves/kicks/bans/timeouts, role and channel events, reactions,
   voice, schedule, manual) and 26 actions/logic nodes (messages with buttons/menus/forms, member moderation, channels,
-  roles, variables, conditions, loops, cooldowns, waits). Full list: [docs/NODES.md](docs/NODES.md).
+  roles, variables, conditions, loops, cooldowns, waits). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
 * **Remembers things**: run, per-server and per-user variables, usable everywhere as `{{templates}}`.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (111 unit/integration tests plus a
-> 23-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (175 unit/integration tests plus a
+> 43-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it.
 
 ## Quick start
@@ -81,6 +84,7 @@ loop iterations, steps per run and as long a wait as you like. On a private bot 
 | `LIMIT_VARS_PER_GUILD` · `LIMIT_VAR_VALUE_BYTES` | remembered variables per server / size of one value |
 | `LIMIT_RUNS_PER_10S` · `LIMIT_CONCURRENT_RUNS` · `LIMIT_ACTIONS_PER_10S` | flow starts, simultaneous runs and Discord actions per server |
 | `LIMIT_STEPS_PER_RUN` · `LIMIT_LOOP_ITERATIONS` · `LIMIT_WAIT_SECONDS` | nodes executed per run, loop length, longest single wait |
+| `LIMIT_PAGES_PER_GUILD` · `LIMIT_BLOCKS_PER_PAGE` · `LIMIT_RESPONSES_PER_GUILD` | pages per server, blocks per page, stored form responses per server |
 | `LIMIT_REQUEST_BYTES` | HTTP request body (default 50 MB; always has a ceiling, max 1 GB) |
 
 `.env.example` contains a commented **public-host preset** with sensible caps.
@@ -88,7 +92,8 @@ loop iterations, steps per run and as long a wait as you like. On a private bot 
 **What cannot be unlimited** — these are physical or Discord's own rules, not ours: 25 buttons / menu options / embed fields
 per message, 25 options per slash command, 5 form inputs, 2000 characters per message, 100 slash commands per server,
 memory and CPU, `setTimeout`'s maximum (~24.8 days), the form wait (10 min: Discord's interaction tokens expire), and the
-login/API rate limits that protect the dashboard itself.
+login/API/public-site rate limits that protect the site itself (10 form submissions per minute per visitor, 60 per IP, 600 page views
+per IP; a form answer is at most 10 000 characters and a public request 256 KB).
 
 **How it stays safe without a step cap:** a run that loops forever uses constant memory and yields to the event loop, so the
 bot keeps answering everyone else (measured: 650k steps in 4 s, worst stall 7 ms). **To stop a runaway flow, switch it Off
@@ -137,6 +142,35 @@ Development with hot reload: `npm run dev` (server + Vite). Set `BASE_URL=http:/
 Filters: `default:x`, `upper`, `lower`, `trim`, `length`, `json`, `round`. Substituted text is never evaluated again, so
 member-supplied text cannot inject templates.
 
+## Pages & forms
+
+Open the **Pages** tab → **+ New page** (start from *Landing page*, *Staff application form*, *Contact form*, *Rules & verification*
+or blank). Add blocks from the left, arrange them with ↑ ↓, edit them on the right, and watch the **live preview** — it is rendered by
+exactly the same code as the public page. Switch the page to **Published** and share the link:
+`https://your-site/s/<serverId>/<address>`. Pages start as drafts. Block reference: [docs/BLOCKS.md](docs/BLOCKS.md).
+
+**Forms.** A *Form* block has questions (short/long answer, number, dropdown, radio buttons, checkboxes, a single “I agree” box,
+date), each optionally required with min/max. Options per form: only members of the server may submit (checked live through the
+bot), one response per person, a wait between responses, save responses (or not), and what happens afterwards — a thank-you message
+or a redirect to another address. Visitors **must log in with Discord** (we only ask for their identity, not their server list).
+
+**Reacting to a submission.** In a flow use the **Form Submitted** trigger and pick the form. The answers are `{{form.<question id>}}`,
+`{{form.summary}}` is every answer as text, and `{{user.*}}`/`{{member.*}}` describe the person who submitted:
+
+```
+Form Submitted ─▶ Send Message (to #staff-applications): "New application from {{user.mention}}\n{{form.summary}}" ─▶ Give Role
+```
+
+**Responses.** The editor's **Responses** button lists what people sent (delete any entry) and downloads a **CSV**. If “Save
+responses” is off, no answers are stored — only, when “one response per person” or a wait is on, a receipt (who and when) so those
+rules still work. Deleting a page erases its responses.
+
+**Safe by construction.** Pages are data, never HTML: everything is escaped, links/images must be `https`, there is **no
+JavaScript on public pages** (and the CSP forbids it), every page carries a footer saying it was made by the server’s admins and
+not Discord, forms show what data is shared, and there is deliberately no password field. Submissions need a Discord login, a
+per-form CSRF token, a same-origin request, and are rate limited (10 per minute per visitor, 60 per IP). Visitor logins are a separate
+kind of session that can never reach the dashboard API.
+
 ## Security model
 
 This is a multi-tenant service: many servers share one bot process, so isolation is enforced in code and covered by tests.
@@ -145,10 +179,15 @@ This is a multi-tenant service: many servers share one bot process, so isolation
   never stored**; sessions are random ids (only a hash is kept) in `HttpOnly; SameSite=Lax` cookies.
 * **Authorisation**: every server-scoped request re-checks, live through the bot, that you are the owner/Administrator
   (cached ≤ 60 s). Stale sessions cannot keep access after a demotion. Flow lookups are always filtered by server id.
-* **CSRF**: state-changing requests must come from `BASE_URL`'s origin; security headers + a strict CSP are sent.
+* **CSRF**: state-changing requests must come from `BASE_URL`'s origin; security headers + a strict CSP are sent (scripts only from
+  this site; the dashboard allows `https:` images so the page preview can show the pictures you add — public pages themselves allow no script at all).
 * **Execution isolation**: executors only resolve channels, roles and members through the flow's own server and re-check
   ownership, so pasting a foreign id does nothing. DMs go only to members of that server. Variables are per server
   (there is deliberately no global scope). Logs are per server and never persisted.
+* **Public pages** (the only unauthenticated surface): rendered from structured data with everything escaped and URLs validated
+  (`javascript:`/`data:`/credential-carrying links refused), served with a no-script CSP, `X-Frame-Options: DENY` and
+  `Referrer-Policy: same-origin`; unpublished, unknown and other-server pages are indistinguishable 404s; “check, then insert” for
+  one-per-person rules is atomic so simultaneous submissions cannot both pass; CSV exports defuse spreadsheet formulas.
 * **Safe defaults**: `@everyone`/role pings are off unless a node opts in; audit-log reasons say `[Flow name]`;
   user-supplied regexes run under a hard timeout (a catastrophic pattern cannot freeze the bot).
 * **Limits**: none by default — see [Limits](#limits) for the caps you can turn on (recommended when hosting for others).
@@ -164,15 +203,15 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 ## Development
 
 ```bash
-npm test          # 111 unit + API + event tests (fake Discord objects, in-memory SQLite)
+npm test          # 175 unit + API + event + public-page tests (fake Discord objects, in-memory SQLite)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
 ```
 
 ```
-shared/   catalog.js (every node: fields, outputs, summaries) · validate.js · templates.js — used by the editor AND server
-server/   app/api/auth · db (node:sqlite) · engine/ (runner, templates, executors, responder) · bot/ (events, commands)
+shared/   catalog.js (every node) · blocks.js (page blocks) · forms.js · render-page.js · validate.js · templates — used by the editor AND server
+server/   app/api/auth/public (the /s pages) · db (node:sqlite) · engine/ (runner, templates, executors, responder) · bot/ (events, commands)
 web/      React + @xyflow/react editor
 test/     node:test suites · e2e/ (Playwright) · helpers/fakes.js
 ```
@@ -191,11 +230,14 @@ Not yet automated — please run through this once on a test server:
 - [ ] Member Joined (with the Members intent) greets and gives a role; Kicked vs Left is told apart (with *View Audit Log*).
 - [ ] Reaction Added with message + emoji filter gives a role.
 - [ ] A second admin account in *another* server cannot see or edit the first server's flows.
+- [ ] Pages: publish a page with a form; open it in a private window — **Log in with Discord** works on your real domain and returns
+      you to the page; a member can submit; a non-member of a members-only form is told why; the Form Submitted flow reacts.
+- [ ] A form with “redirect to another address” lands on that address; the response and its CSV appear in the dashboard.
 - [ ] Bot restarts: an old button still works; slash commands are not re-registered needlessly.
 - [ ] Build a flow that loops forever (two Log nodes pointing at each other), run it, confirm other commands still answer,
       then switch the flow Off and confirm it stops.
 
 ## Ideas not done yet
 
-HTTP/webhook node with SSRF protection, autocomplete options, sub-commands, embed preview, undo/redo, flow version history,
+Page columns/nesting, image uploads, custom domains, page analytics, email/webhook notifications for forms, HTTP/webhook node with SSRF protection, autocomplete options, sub-commands, embed preview, undo/redo, flow version history,
 persisting run variables across restarts, sharding.

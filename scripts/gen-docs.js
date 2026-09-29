@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BLOCK_LIST, THEME_FIELDS } from '../shared/blocks.js';
 import { CATEGORIES, defaultsFor, getOutputs, NODE_LIST } from '../shared/catalog.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -54,3 +55,24 @@ for (const [key, cat] of Object.entries(CATEGORIES)) {
 fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
 fs.writeFileSync(path.join(root, 'docs/NODES.md'), `${out.join('\n')}\n`);
 console.log(`Wrote docs/NODES.md (${NODE_LIST.length} nodes)`);
+
+// ---- docs/BLOCKS.md -----------------------------------------------------------------------------------------------------
+const blocks = [
+  '# Page block reference',
+  '',
+  '> Generated from `shared/blocks.js` by `npm run docs` — do not edit by hand.',
+  '',
+  'Pages are made of blocks, top to bottom. Text fields accept a little formatting — `**bold**`, `*italic*`, `[link text](https://example.com)` —',
+  'and never raw HTML. Links and images must be full `https://` (links may also be `http://`) addresses.',
+  '',
+  '## Page settings',
+  '',
+  '| Field | Type | Notes |', '| --- | --- | --- |', ...fieldRows(THEME_FIELDS), '',
+];
+for (const b of BLOCK_LIST) {
+  blocks.push(`## ${b.icon} ${b.label}`, '', `\`${b.type}\` — ${b.description}`, '');
+  const rows = fieldRows(b.fields);
+  if (rows.length) blocks.push('| Field | Type | Notes |', '| --- | --- | --- |', ...rows, '');
+}
+fs.writeFileSync(path.join(root, 'docs/BLOCKS.md'), `${blocks.join('\n')}\n`);
+console.log(`Wrote docs/BLOCKS.md (${BLOCK_LIST.length} blocks)`);
