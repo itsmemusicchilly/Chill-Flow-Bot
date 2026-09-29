@@ -266,7 +266,7 @@ def('action.message.send', {
       fields: [text('label', 'Label', { required: true }), text('description', 'Description'), text('emoji', 'Emoji (optional)')],
     }, { showIf: when('menuEnabled', true) }),
     bool('restrictToInvoker', 'Only the person who triggered this can use the buttons'),
-    bool('allowEveryone', 'Allow @everyone / @here pings', { help: 'Off by default so member-supplied text can never mass-ping.' }),
+    bool('allowEveryone', 'Allow role, @everyone and @here pings', { help: 'Off by default so member-supplied text can never mass-ping. Individual users can always be mentioned.' }),
     text('outputVar', 'Save message ID as variable', { placeholder: 'msg', pattern: 'var' }),
   ],
   outputs: (d) => [
