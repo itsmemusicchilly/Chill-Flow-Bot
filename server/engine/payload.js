@@ -1,4 +1,5 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder } from 'discord.js';
+import { looksLikeUpload } from '../../shared/urls.js';
 import { FlowError } from './errors.js';
 import { buildCustomId } from './custom-id.js';
 
@@ -19,17 +20,28 @@ export function parseEmoji(v) {
   return m ? { name: m[2], id: m[3], animated: m[1] === 'a' } : s;
 }
 
-function buildEmbed(d) {
+/**
+ * The address of an embed picture: an http(s) link, or `upload:<id>` — a picture uploaded to *this* server, turned into an
+ * absolute address Discord can download. (Templates have already been filled in, so `upload:{{var.pic}}` works too.)
+ */
+function embedPicture(ctx, value, label) {
+  const v = String(value).trim();
+  if (looksLikeUpload(v)) {
+    if (!ctx.services.uploads) throw new FlowError('Uploaded images are not available here.');
+    return ctx.services.uploads.publicUrl(ctx.guild.id, v);
+  }
+  if (!HTTP.test(v)) throw new FlowError(`${label} must be an http(s) URL or an uploaded image.`);
+  return v;
+}
+
+function buildEmbed(ctx, d) {
   const e = new EmbedBuilder();
   if (d.embedTitle) e.setTitle(cut(d.embedTitle, 256));
   if (d.embedDescription) e.setDescription(cut(d.embedDescription, 4096));
   const color = parseColor(d.embedColor);
   if (color !== null) e.setColor(color);
-  for (const [key, setter] of [['embedThumbnail', 'setThumbnail'], ['embedImage', 'setImage']]) {
-    if (d[key]) {
-      if (!HTTP.test(d[key])) throw new FlowError(`${key === 'embedImage' ? 'Image' : 'Thumbnail'} must be an http(s) URL.`);
-      e[setter](d[key]);
-    }
+  for (const [key, setter, label] of [['embedThumbnail', 'setThumbnail', 'Thumbnail'], ['embedImage', 'setImage', 'Image']]) {
+    if (d[key]) e[setter](embedPicture(ctx, d[key], label));
   }
   if (d.embedFooter) e.setFooter({ text: cut(d.embedFooter, 2048) });
   if (d.embedTimestamp) e.setTimestamp();
@@ -47,7 +59,7 @@ export function buildPayload(ctx, d, node, { components = true, replace = false 
   const payload = { allowedMentions: { parse: d.allowEveryone ? ['users', 'roles', 'everyone'] : ['users'] } };
   const content = cut(d.content, 2000);
   if (content) payload.content = content; else if (replace) payload.content = '';
-  if (d.useEmbed) payload.embeds = [buildEmbed(d)]; else if (replace) payload.embeds = [];
+  if (d.useEmbed) payload.embeds = [buildEmbed(ctx, d)]; else if (replace) payload.embeds = [];
 
   if (components) {
     const rows = [];
