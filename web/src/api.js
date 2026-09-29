@@ -6,13 +6,8 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(path, { method = 'GET', body } = {}) {
-  const res = await fetch(`/api${path}`, {
-    method,
-    credentials: 'same-origin',
-    headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+async function request(path, init) {
+  const res = await fetch(`/api${path}`, { credentials: 'same-origin', ...init });
   let data = null;
   try { data = await res.json(); } catch { /* empty or non-JSON body */ }
   if (!res.ok) {
@@ -21,6 +16,19 @@ export async function api(path, { method = 'GET', body } = {}) {
   }
   return data;
 }
+
+export const api = (path, { method = 'GET', body } = {}) => request(path, {
+  method,
+  headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
+  body: body !== undefined ? JSON.stringify(body) : undefined,
+});
+
+/** Send one picture as the raw request body (the file name travels in a header, only as a label). */
+export const uploadFile = (path, file) => request(path, {
+  method: 'POST',
+  headers: { 'Content-Type': file.type, 'X-Filename': encodeURIComponent(file.name) },
+  body: file,
+});
 
 export async function logout() {
   await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});

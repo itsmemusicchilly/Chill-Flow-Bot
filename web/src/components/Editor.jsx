@@ -1,8 +1,9 @@
 import { ReactFlowProvider } from '@xyflow/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api.js';
-import { useToast } from '../context.js';
+import { ImagesContext, useToast } from '../context.js';
 import FlowWorkspace from './FlowWorkspace.jsx';
+import ImageLibrary from './ImageLibrary.jsx';
 import LogsPanel from './LogsPanel.jsx';
 import NewFlowDialog from './NewFlowDialog.jsx';
 import NewPageDialog from './NewPageDialog.jsx';
@@ -11,6 +12,7 @@ import PagesList from './PagesList.jsx';
 import Palette from './Palette.jsx';
 import VariablesDialog from './VariablesDialog.jsx';
 import { usePages } from '../pages/usePages.js';
+import { useUploads } from '../uploads/useUploads.js';
 
 const MAX_LOGS = 400;
 
@@ -34,6 +36,12 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
   flowIdRef.current = flowId;
   const confirmLeave = () => !dirtyRef.current || window.confirm('You have unsaved changes. Discard them?');
   const pagesApi = usePages({ gid, pageId, navigate, confirmLeave, dirtyRef });
+  const uploads = useUploads(gid, me.meta.uploads.maxBytes);
+  const [library, setLibrary] = useState(null); // null (closed) | { onPick?, current? }
+  const imagesCtx = useMemo(() => ({
+    gid, available: me.meta.uploads.available, publicBase: me.meta.uploads.publicBase, ids: uploads.ids,
+    openLibrary: (opts = {}) => setLibrary(opts),
+  }), [gid, me.meta.uploads.available, me.meta.uploads.publicBase, uploads.ids]);
   useEffect(() => { if (pageId) setTab('pages'); else if (flowId) setTab('flows'); }, [pageId, flowId]);
 
   // ---- initial load ---------------------------------------------------------------------------
@@ -126,6 +134,7 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
 
   const sync = info.commandSync;
   return (
+    <ImagesContext.Provider value={imagesCtx}>
     <div className="app">
       <header className="topbar">
         <button className="icon-btn" aria-label="Back to servers" title="All servers" onClick={() => confirmLeave() && navigate(null)}>←</button>
@@ -133,6 +142,7 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
         <b className="guild-title">{guild.name}</b>
         <span className="spacer" />
         <button className="btn ghost small" onClick={() => setDialog('vars')}>Variables</button>
+        <button className="btn ghost small" onClick={() => setLibrary({})}>Pictures</button>
         <button className="btn ghost small" onClick={() => setShowLogs((s) => !s)} aria-pressed={showLogs}>{showLogs ? 'Hide logs' : 'Show logs'}</button>
         <img className="avatar" src={me.user.avatar} alt="" width="26" height="26" />
         <button className="btn ghost small" onClick={onLogout}>Log out</button>
@@ -202,6 +212,14 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
       {dialog === 'new' && <NewFlowDialog templates={me.meta.templates} onCreate={createFlow} onClose={() => setDialog(null)} />}
       {dialog === 'newpage' && <NewPageDialog onCreate={async (payload) => { await pagesApi.createPage(payload); setDialog(null); }} onClose={() => setDialog(null)} />}
       {dialog === 'vars' && <VariablesDialog gid={gid} onClose={() => setDialog(null)} />}
+      {library && (
+        <ImageLibrary
+          library={uploads} meta={me.meta.uploads} limits={me.meta.limits} current={library.current}
+          onPick={library.onPick ? (ref) => { library.onPick(ref); setLibrary(null); } : undefined}
+          onClose={() => setLibrary(null)}
+        />
+      )}
     </div>
+    </ImagesContext.Provider>
   );
 }

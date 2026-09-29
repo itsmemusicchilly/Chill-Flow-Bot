@@ -1,7 +1,9 @@
 // DEV ONLY: runs the real dashboard + API against a fake, in-memory Discord so you can try the editor
 // without any credentials. Visit /demo-login to be signed in as a demo admin (and /demo-visitor-login?next=/s/<id>/<slug>
 // to act as a visitor of a public page).   npm run demo
+import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ChannelType } from 'discord.js';
@@ -10,18 +12,23 @@ import { createApp } from '../server/app.js';
 import { Database } from '../server/db.js';
 import { Runtime } from '../server/engine/runtime.js';
 import { Logger } from '../server/logger.js';
+import { createUploads } from '../server/uploads.js';
 import { fakeGuild, fakeUser } from '../test/helpers/fakes.js';
 
 const port = Number(process.env.PORT || 4100);
 const baseUrl = `http://127.0.0.1:${port}`;
+// uploaded pictures live in a temporary folder that disappears with the demo
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowbot-demo-'));
+for (const sig of ['exit', 'SIGINT', 'SIGTERM']) process.on(sig, () => { fs.rmSync(dataDir, { recursive: true, force: true }); if (sig !== 'exit') process.exit(0); });
 const config = {
-  token: 'demo', clientId: '1', clientSecret: 'demo', baseUrl, port, host: '127.0.0.1', trustProxy: false,
+  token: 'demo', clientId: '1', clientSecret: 'demo', baseUrl, port, host: '127.0.0.1', trustProxy: false, dataDir,
   intents: { members: true, messageContent: true }, minPermission: 'Administrator', sessionTtlMs: 8 * 3600e3,
   publicRate: { views: 100000, visitor: 1000, ip: 100000 },
 };
 const db = new Database(':memory:');
 const logger = new Logger({ console: false });
-const runtime = new Runtime({ db, logger, intents: config.intents });
+const uploads = createUploads({ config, db, logger });
+const runtime = new Runtime({ db, logger, intents: config.intents, uploads });
 
 const guilds = new Map();
 function makeGuild(id, name) {
@@ -58,7 +65,7 @@ const bot = {
 };
 const sync = { status: new Map(), sync: async (gid) => { const n = runtime.commandsFor(gid).length; const r = { ok: true, count: n, at: Date.now() }; sync.status.set(gid, r); logger.log(gid, 'info', `Slash commands updated (${n}). [demo]`); return r; } };
 
-const inner = createApp({ config, db, runtime, bot, sync, logger, distDir: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist') });
+const inner = createApp({ config, db, runtime, bot, sync, logger, uploads, distDir: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist') });
 const app = express();
 app.get('/demo-login', (_req, res) => {
   const sid = db.createSession('42', {

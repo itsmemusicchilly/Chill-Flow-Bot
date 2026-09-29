@@ -3,7 +3,7 @@ import { BLOCK_LIST, BLOCK_TYPES, formsOf, newBlock, normalizePage, THEME_FIELDS
 import { renderPage } from '@shared/render-page.js';
 import { uid } from '@shared/util.js';
 import { api } from '../api.js';
-import { useToast } from '../context.js';
+import { useImages, useToast } from '../context.js';
 import { FieldList } from './FieldEditor.jsx';
 import ResponsesDialog from './ResponsesDialog.jsx';
 
@@ -11,6 +11,7 @@ const pick = (page) => structuredClone({ title: page.title, slug: page.slug, the
 
 export default function PageEditor({ gid, guild, page, dirtyRef, onSaved }) {
   const toast = useToast();
+  const { ids: pictureIds } = useImages();
   const [draft, setDraft] = useState(() => pick(page));
   const [selected, setSelected] = useState(null); // block id, or null for page settings
   const [dirty, setDirty] = useState(false);
@@ -61,7 +62,7 @@ export default function PageEditor({ gid, guild, page, dirtyRef, onSaved }) {
   const remove = (id) => { setBlocks((bs) => bs.filter((b) => b.id !== id)); if (selected === id) setSelected(null); };
 
   // ---- validation and live preview (the exact renderer the public site uses) ---------------------------------------------
-  const issues = useMemo(() => validatePage(normalizePage(draft)), [draft]);
+  const issues = useMemo(() => validatePage(normalizePage(draft), { uploads: pictureIds ?? undefined }), [draft, pictureIds]);
   const issuesByBlock = useMemo(() => {
     const map = {};
     for (const i of issues) (map[i.blockId ?? '_page'] ||= []).push(i);
@@ -69,7 +70,7 @@ export default function PageEditor({ gid, guild, page, dirtyRef, onSaved }) {
   }, [issues]);
   const deferred = useDeferredValue(draft);
   const previewHtml = useMemo(
-    () => renderPage({ page: normalizePage(deferred), guild: { id: gid, name: guild.name, icon: guild.icon }, mode: 'preview' }),
+    () => renderPage({ page: normalizePage(deferred), guild: { id: gid, name: guild.name, icon: guild.icon }, mode: 'preview', assetBase: window.location.origin }),
     [deferred, gid, guild.name, guild.icon],
   );
 

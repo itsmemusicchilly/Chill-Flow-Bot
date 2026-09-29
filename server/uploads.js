@@ -17,7 +17,7 @@ import { IMAGE_LIMITS, ImageError, processImage } from './images.js';
 const TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 const FILE_RE = /^([a-z0-9]{16})\.webp$/;
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
-const mb = (n) => `${Math.round((n / 1048576) * 10) / 10} MB`;
+const size = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${Math.round(n / 102.4) / 10} KB` : `${Math.round(n / 104857.6) / 10} MB`);
 
 const hidden = (ch) => {
   const c = ch.codePointAt(0);
@@ -75,7 +75,7 @@ export function createUploads({ config, db, logger }) {
   function capProblem(guildId, addBytes = 0) {
     const use = db.uploadUsage(guildId);
     if (isCapped(LIMITS.uploadsPerGuild) && use.count >= LIMITS.uploadsPerGuild) return `A server can have at most ${LIMITS.uploadsPerGuild} uploaded images. Delete one first.`;
-    if (isCapped(LIMITS.storageBytesPerGuild) && use.bytes + addBytes > LIMITS.storageBytesPerGuild) return `This server's image storage is full (${mb(LIMITS.storageBytesPerGuild)}). Delete some images first.`;
+    if (isCapped(LIMITS.storageBytesPerGuild) && use.bytes + addBytes > LIMITS.storageBytesPerGuild) return `This server's image storage is full (${size(LIMITS.storageBytesPerGuild)}). Delete some images first.`;
     return null;
   }
 
@@ -94,7 +94,7 @@ export function createUploads({ config, db, logger }) {
   });
 
   const readBody = (req, res, next) => express.raw({ type: TYPES, limit: maxBytes() })(req, res, (err) => {
-    if (err?.type === 'entity.too.large') return next(new HttpError(413, `That file is too large (the most this server takes is ${mb(maxBytes())}).`));
+    if (err?.type === 'entity.too.large') return next(new HttpError(413, `That file is too large (the most this server takes is ${size(maxBytes())}).`));
     return next(err);
   });
 
@@ -148,7 +148,7 @@ export function createUploads({ config, db, logger }) {
       if (err.code === 'ENOSPC') throw new HttpError(507, 'The server is out of disk space.');
       throw err;
     }
-    logger.log(gid, 'info', `Image “${row.name}” (${mb(row.bytes)}) was uploaded by ${req.session.data.user.name}.`);
+    logger.log(gid, 'info', `Image “${row.name}” (${size(row.bytes)}) was uploaded by ${req.session.data.user.name}.`);
     return res.status(201).json({ upload: present(row) });
   });
 

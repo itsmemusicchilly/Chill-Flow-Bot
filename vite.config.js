@@ -15,6 +15,6 @@ export default defineConfig({
     port: 5173,
     fs: { allow: [root] },
     // In dev, set BASE_URL=http://localhost:5173 so OAuth redirects and the Origin check line up.
-    proxy: { '/api': backend, '/auth': backend },
+    proxy: { '/api': backend, '/auth': backend, '/s': backend, '/i': backend },
   },
 });

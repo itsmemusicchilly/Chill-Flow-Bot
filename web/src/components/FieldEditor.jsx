@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { isVisible } from '@shared/catalog.js';
-import { useEditor } from '../context.js';
+import { uploadIdOf, uploadPath } from '@shared/urls.js';
+import { useEditor, useImages } from '../context.js';
 
 /** Renders every visible field of a node (or list item) and reports changes as (key, value). */
 export function FieldList({ fields, data, onChange, focusRef }) {
@@ -42,6 +43,39 @@ function IdPicker({ field, value, onChange, focusRef }) {
       </div>
       {match && <div className="help">→ {prefix}{match.name}</div>}
     </>
+  );
+}
+
+/** A picture: chosen from the server's uploads (`upload:<id>`), or typed as an https link (flows may also use {{variables}}). */
+function ImageField({ field, value, onChange, focusRef, id }) {
+  const { gid, openLibrary } = useImages();
+  const [broken, setBroken] = useState(null); // the picture id that failed to load
+  const picked = uploadIdOf(value);
+  const choose = () => openLibrary({ current: value, onPick: onChange });
+  if (picked && gid) {
+    return (
+      <div className="imagefield">
+        {broken === picked
+          ? <span className="img-thumb missing" role="img" aria-label="Missing picture">?</span>
+          : <img className="img-thumb" src={uploadPath(gid, picked)} alt="" onError={() => setBroken(picked)} />}
+        <div className="imagefield-info">
+          <span className="tiny">{broken === picked ? 'This picture was deleted.' : 'Uploaded picture'}</span>
+          <span className="row">
+            <button type="button" className="btn small" onClick={choose}>{broken === picked ? 'Choose another…' : 'Change…'}</button>
+            <button type="button" className="btn small ghost" onClick={() => onChange('')}>Remove</button>
+          </span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="idfield">
+      <input
+        id={id} type="text" value={value ?? ''} placeholder={field.placeholder || 'https://… or choose a picture'}
+        onChange={(e) => onChange(e.target.value)} onFocus={track(focusRef, onChange)} spellCheck={false}
+      />
+      <button type="button" className="btn small" disabled={!gid} onClick={choose}>Choose…</button>
+    </div>
   );
 }
 
@@ -145,6 +179,7 @@ export default function FieldEditor({ field, value, onChange, focusRef }) {
       );
       break;
     case 'id': control = <IdPicker field={field} value={value} onChange={onChange} focusRef={focusRef} />; break;
+    case 'image': control = <ImageField field={field} value={value} onChange={onChange} focusRef={focusRef} id={id} />; break;
     case 'list': control = <ListField field={field} value={value} onChange={onChange} focusRef={focusRef} />; break;
     default: control = null;
   }

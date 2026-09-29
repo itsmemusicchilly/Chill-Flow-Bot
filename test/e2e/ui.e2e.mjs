@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import sharp from 'sharp';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PORT = Number(process.env.E2E_PORT || 4100);
@@ -34,10 +35,12 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-// benign: the 401 from /api/me before logging in, and offline sandboxes blocking Discord's avatar CDN
-page.on('console', (m) => { if (m.type() === 'error' && !/401|ERR_CERT_AUTHORITY_INVALID|ERR_NAME_NOT_RESOLVED|ERR_TUNNEL/.test(m.text())) errors.push(`console: ${m.text()}`); });
+// benign: the 401 from /api/me before logging in, the deliberate 415 when a fake "picture" is refused, and offline sandboxes blocking Discord's avatar CDN
+page.on('console', (m) => { if (m.type() === 'error' && !/401|status of 415|ERR_CERT_AUTHORITY_INVALID|ERR_NAME_NOT_RESOLVED|ERR_TUNNEL/.test(m.text())) errors.push(`console: ${m.text()}`); });
 page.on('dialog', (d) => d.accept());
 const shot = (name) => (SHOTS ? page.screenshot({ path: path.join(SHOTS, `${name}.png`) }) : null);
+/** Has this <img> really loaded and decoded (a broken picture has no width)? */
+const loaded = (locator) => locator.evaluate(async (img) => { try { await img.decode(); } catch { return false; } return img.naturalWidth > 0; });
 
 try {
   // ---- login + picker ------------------------------------------------------------------------
@@ -259,6 +262,69 @@ try {
   await shot('16-responses');
   await dialog.getByRole('button', { name: 'Close' }).click();
 
+  // =================================================================================================
+  // Picture uploads: upload, choose for a page, see it on the public page, delete
+  // =================================================================================================
+  const bannerPng = await sharp({ create: { width: 300, height: 150, channels: 3, background: '#ff8800' } }).png().toBuffer();
+  await page.getByRole('button', { name: 'Pictures' }).click();
+  const library = page.getByRole('dialog', { name: 'Pictures' });
+  await library.getByText('No pictures yet').waitFor();
+  ok(await library.getByText(/BASE_URL/).isVisible(), 'the library explains that pictures in Discord messages need a public BASE_URL');
+  await library.getByLabel('Upload pictures').setInputFiles([
+    { name: 'banner.png', mimeType: 'image/png', buffer: bannerPng },
+    { name: 'sneaky.png', mimeType: 'image/png', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(1)</script></svg>') },
+  ]);
+  await library.locator('.img-tile', { hasText: 'banner.png' }).waitFor();
+  ok(await library.getByText('300×150').isVisible(), 'an uploaded picture appears in the library with its size');
+  ok(await library.locator('.upload-progress .error', { hasText: 'sneaky.png' }).isVisible(), 'a file that is not really a picture is refused, with a reason');
+  ok((await library.locator('.img-tile').count()) === 1, 'only the real picture was stored');
+  ok(await loaded(library.locator('.img-tile img')), 'the library shows the stored picture (served from /i/…)');
+  await shot('18-library');
+  await library.getByRole('button', { name: 'Close' }).click();
+
+  // choose it for the hero background and for a new image block
+  await outline.locator('.block-row', { hasText: 'Hero' }).click();
+  const bg = blockInspector.locator('.field', { has: page.locator('label', { hasText: /^Background image$/ }) });
+  await bg.getByRole('button', { name: 'Choose…' }).click();
+  await page.getByRole('dialog', { name: 'Choose a picture' }).getByRole('button', { name: 'Use banner.png' }).click();
+  await bg.getByText('Uploaded picture').waitFor();
+  ok(await loaded(bg.locator('img.img-thumb')), 'the chosen picture shows as a thumbnail in the field');
+  ok(await loaded(preview.locator('img.hero-bg')), 'the hero background shows in the live preview');
+  await outline.locator('.block-add', { hasText: 'Image' }).click();
+  const pic = blockInspector.locator('.field', { has: page.locator('label', { hasText: /^Image\b/ }) });
+  await pic.getByRole('button', { name: 'Choose…' }).click();
+  await page.getByRole('dialog', { name: 'Choose a picture' }).getByRole('button', { name: 'Use banner.png' }).click();
+  await blockInspector.getByLabel('Description (for screen readers)').fill('Orange banner');
+  ok(await loaded(preview.getByRole('img', { name: 'Orange banner' })), 'an image block shows the uploaded picture in the preview');
+  await shot('19-page-with-picture');
+  await page.getByRole('button', { name: /Save changes/ }).click();
+  await page.getByText('Saved — the public page is updated.').waitFor();
+
+  // visitors get it from this site, with locked-down headers
+  await visitorPage.goto(`${BASE}/s/${gid}/${slug}`);
+  const heroSrc = await visitorPage.locator('img.hero-bg').getAttribute('src');
+  ok(/^\/i\/\d+\/[a-z0-9]{16}\.webp$/.test(heroSrc ?? ''), 'the public page points at /i/<server>/<id>.webp on its own site');
+  ok(await loaded(visitorPage.locator('img.hero-bg')) && await loaded(visitorPage.getByRole('img', { name: 'Orange banner' })), 'the pictures load on the public page (allowed by its policy)');
+  if (SHOTS) await visitorPage.screenshot({ path: path.join(SHOTS, '20-public-with-picture.png'), fullPage: true });
+  const served = await page.request.get(`${BASE}${heroSrc}`);
+  ok(served.status() === 200 && served.headers()['content-type'] === 'image/webp' && served.headers()['x-content-type-options'] === 'nosniff' && /sandbox/.test(served.headers()['content-security-policy']), 'the file is served as a WebP with nosniff and a sandboxing policy');
+
+  // usage is shown, and deleting warns about where the picture is used
+  await page.getByRole('button', { name: 'Pictures' }).click();
+  await library.locator('.img-tile', { hasText: 'banner.png' }).getByText('Used in 1 place').waitFor();
+  ok(true, 'the library says where a picture is used');
+  const confirms = [];
+  const record = (d) => confirms.push(d.message());
+  page.on('dialog', record);
+  await library.getByRole('button', { name: 'Delete banner.png' }).click();
+  await library.getByText('No pictures yet').waitFor();
+  page.off('dialog', record);
+  ok(confirms.some((m) => /Staff applications/.test(m)), 'deleting a picture warns which page will lose it');
+  ok((await page.request.get(`${BASE}${heroSrc}`)).status() === 404, 'a deleted picture is gone from the public address');
+  await library.getByRole('button', { name: 'Close' }).click();
+  await outline.locator('.block-row', { hasText: 'Hero' }).locator('.badge.bad').waitFor();
+  ok(true, 'the page editor flags the block whose picture was deleted');
+
   // the flow's trigger lists the form, by name (the flow was created behind the editor's back, so reload to see it)
   await page.reload();
   await page.getByRole('tab', { name: 'Flows' }).click();
@@ -270,6 +336,19 @@ try {
   await page.locator('summary', { hasText: /Variables you can use/ }).click();
   ok(await page.getByRole('button', { name: '{{form.name}}' }).isVisible(), 'the form’s questions are offered as variables');
   await shot('17-form-trigger');
+
+  // pictures in message embeds: choose (here: upload) a picture for an embed image, right from the flow editor
+  await page.getByRole('tab', { name: 'Nodes' }).click();
+  await page.getByRole('button', { name: /Send Message/ }).click();
+  await page.locator('.fnode', { hasText: 'Send Message' }).click();
+  await page.getByLabel('Add an embed').check();
+  const embedImage = page.locator('.field', { has: page.locator('label', { hasText: /^Image$/ }) });
+  await embedImage.getByRole('button', { name: 'Choose…' }).click();
+  const chooser = page.getByRole('dialog', { name: 'Choose a picture' });
+  await chooser.getByLabel('Upload pictures').setInputFiles({ name: 'embed.png', mimeType: 'image/png', buffer: bannerPng });
+  await embedImage.getByText('Uploaded picture').waitFor();
+  ok(await loaded(embedImage.locator('img.img-thumb')), 'uploading from an image field uses the picture straight away (message embeds too)');
+  await shot('21-embed-picture');
 
   // unpublish: the public page disappears
   await page.getByRole('tab', { name: 'Pages' }).click();

@@ -48,6 +48,7 @@ describe('uploading', () => {
     assert.equal(file.subarray(0, 4).toString('latin1'), 'RIFF');
     assert.equal(file.subarray(8, 12).toString('latin1'), 'WEBP');
     assert.deepEqual(db().getUpload(A, u.id).createdBy, { id: 'u1', name: 'Mia' });
+    assert.ok(h.logger.recent(A, 50).some((e) => e.message === `Image “cat.png” (${u.bytes} B) was uploaded by Mia.`), 'the live log says who uploaded what, in sensible units');
   });
 
   it('never stores the owner name or GPS position of a photo', async () => {
