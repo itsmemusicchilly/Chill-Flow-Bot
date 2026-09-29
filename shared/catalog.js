@@ -1,6 +1,6 @@
 // Single source of truth for every node type. The editor renders its palette, cards and inspector from
 // this file; the server uses it to validate graphs, compute handles and activate triggers.
-import { area, bool, color, idField, isVisible, list, multi, num, select, text, VAR_NAME_RE, when, whenNot } from './fields.js';
+import { area, bool, color, idField, image, isVisible, list, multi, num, select, text, VAR_NAME_RE, when, whenNot } from './fields.js';
 import { uid } from './util.js';
 
 export { isVisible, VAR_NAME_RE };
@@ -60,8 +60,8 @@ const embedFields = () => [
   text('embedTitle', 'Embed title', { showIf: when('useEmbed', true) }),
   area('embedDescription', 'Embed description', { showIf: when('useEmbed', true), rows: 4 }),
   color('embedColor', 'Embed color', { showIf: when('useEmbed', true) }),
-  text('embedThumbnail', 'Thumbnail URL', { showIf: when('useEmbed', true) }),
-  text('embedImage', 'Image URL', { showIf: when('useEmbed', true) }),
+  image('embedThumbnail', 'Thumbnail', { showIf: when('useEmbed', true), help: 'An https link, {{a variable}}, or a picture you uploaded.' }),
+  image('embedImage', 'Image', { showIf: when('useEmbed', true), help: 'An https link, {{a variable}}, or a picture you uploaded.' }),
   text('embedFooter', 'Footer', { showIf: when('useEmbed', true) }),
   bool('embedTimestamp', 'Show timestamp', { showIf: when('useEmbed', true) }),
   list('embedFields', 'Embed fields', {

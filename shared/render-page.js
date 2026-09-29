@@ -2,10 +2,11 @@
 // its live preview, so what you see is exactly what visitors get.
 //
 // Security model: this file is the only place page content becomes HTML. Every value is escaped; URLs pass through
-// safeUrl(); there is no script, no inline event handler and no CSS url(). The server also sends a CSP that forbids script.
+// safeUrl() or assetSrc() (an https link, or the same-origin path of a picture uploaded to this server); there is no script,
+// no inline event handler and no CSS url(). The server also sends a CSP that forbids script.
 import { BLOCK_TYPES, THEME_DEFAULTS } from './blocks.js';
 import { parseOptions } from './forms.js';
-import { safeUrl } from './urls.js';
+import { assetSrc, safeUrl } from './urls.js';
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESC[c]);
@@ -72,13 +73,13 @@ const paragraph = (s) => (s ? `<p>${renderInline(s)}</p>` : '');
 const externalLink = (href, inner, cls = '') => `<a${cls ? ` class="${cls}"` : ''} href="${esc(href)}" target="_blank" rel="${REL}">${inner}</a>`;
 
 // ---- blocks -----------------------------------------------------------------------------------------------------------
-function renderHero(d) {
-  const bg = safeUrl(d.imageUrl, { httpsOnly: true });
+function renderHero(d, ctx) {
+  const bg = assetSrc(d.imageUrl, { guildId: ctx.guild.id, base: ctx.assetBase });
   const link = safeUrl(d.buttonUrl);
   return `<header class="hero${align(d)}">${bg ? `<img class="hero-bg" src="${esc(bg)}" alt="" referrerpolicy="no-referrer">` : ''}<h1>${esc(d.title)}</h1>${d.subtitle ? `<p class="sub">${renderInline(d.subtitle)}</p>` : ''}${link && d.buttonLabel ? `<p class="btn-row">${externalLink(link, esc(d.buttonLabel), 'btn')}</p>` : ''}</header>`;
 }
-function renderImage(d) {
-  const src = safeUrl(d.url, { httpsOnly: true });
+function renderImage(d, ctx) {
+  const src = assetSrc(d.url, { guildId: ctx.guild.id, base: ctx.assetBase });
   if (!src) return '';
   const link = safeUrl(d.link);
   const img = `<img src="${esc(src)}" alt="${esc(d.alt)}" loading="lazy" referrerpolicy="no-referrer">`;
@@ -151,10 +152,10 @@ function renderForm(block, ctx) {
 const signedIn = (ctx) => `<form class="signed" method="post" action="/auth/visitor/logout"><input type="hidden" name="next" value="${esc(ctx.pagePath)}"><span>Signed in as <b>${esc(ctx.visitor.name)}</b></span><button class="linkbtn" type="submit">Not you?</button></form>`;
 
 const RENDERERS = {
-  hero: (d) => renderHero(d),
+  hero: (d, ctx) => renderHero(d, ctx),
   heading: (d) => `<h${['1', '2', '3'].includes(String(d.level)) ? d.level : '2'} class="${align(d).trim()}">${esc(d.text)}</h${['1', '2', '3'].includes(String(d.level)) ? d.level : '2'}>`,
   text: (d) => `<div class="${align(d).trim()}">${renderMarkdown(d.body)}</div>`,
-  image: (d) => renderImage(d),
+  image: (d, ctx) => renderImage(d, ctx),
   button: (d) => { const href = safeUrl(d.url); return href ? `<p class="btn-row${align(d)}">${externalLink(href, esc(d.label), `btn${d.style === 'outline' ? ' outline' : ''}`)}</p>` : ''; },
   list: (d) => renderList(d),
   divider: () => '<hr>',
@@ -179,12 +180,13 @@ function shell({ title, theme = THEME_DEFAULTS, guild, body, robots, refreshTo }
  * @param {'public'|'preview'} [o.mode]
  * @param {{name: string}|null} [o.visitor]    the logged-in visitor, if any
  * @param {(blockId: string) => string} [o.csrf]
+ * @param {string} [o.assetBase]   put in front of the address of uploaded pictures: '' on the public site (same origin), the dashboard's origin in the editor preview
  * @param {Record<string, {blocked?: string, message?: string, errors?: object, values?: object, formError?: string}>} [o.formState]
  */
-export function renderPage({ page, guild, mode = 'public', visitor = null, csrf = () => '', formState = {} }) {
+export function renderPage({ page, guild, mode = 'public', visitor = null, csrf = () => '', formState = {}, assetBase = '' }) {
   const pagePath = `/s/${guild.id}/${page.slug}`;
-  const ctx = { mode, guild, visitor, csrf, formState, pagePath, loginHref: `/auth/visitor/login?next=${encodeURIComponent(pagePath)}` };
-  const body = page.blocks.map((b) => (b.type === 'form' ? renderForm(b, ctx) : BLOCK_TYPES[b.type] ? RENDERERS[b.type]?.(b.data) ?? '' : '')).join('\n');
+  const ctx = { mode, guild, visitor, csrf, formState, assetBase, pagePath, loginHref: `/auth/visitor/login?next=${encodeURIComponent(pagePath)}` };
+  const body = page.blocks.map((b) => (b.type === 'form' ? renderForm(b, ctx) : BLOCK_TYPES[b.type] ? RENDERERS[b.type]?.(b.data, ctx) ?? '' : '')).join('\n');
   return shell({ title: page.title || 'Untitled page', theme: page.theme, guild, body, robots: mode === 'preview' ? 'noindex' : undefined });
 }
 

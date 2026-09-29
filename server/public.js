@@ -12,8 +12,8 @@ import { friendlyError } from './engine/errors.js';
 import { RateLimiter } from './engine/rate-limit.js';
 
 const GID_RE = /^\d{5,25}$/;
-// No script at all, images only over https, forms may only post back to this site.
-const PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
+// No script at all, images only over https or from this site's own uploads, forms may only post back to this site.
+const PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' https: data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
 
 const visitorUser = (v) => ({
   id: v.id, username: v.name, globalName: v.name, bot: false,

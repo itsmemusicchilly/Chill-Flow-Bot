@@ -3,10 +3,12 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
+import { defaultBlockData } from '../shared/blocks.js';
 import { applyLimits, resetLimits } from '../shared/limits.js';
 import { FlowError } from '../server/engine/errors.js';
 import { cleanName, createUploads, isPublicBase } from '../server/uploads.js';
 import { A, B, startHarness } from './helpers/harness.js';
+import { assertInert } from './helpers/inert.js';
 import { animatedGif, html, jpegWithExif, pngBomb, png, SECRET, svg, truncatedPng } from './helpers/images.js';
 
 let h;
@@ -353,6 +355,63 @@ describe('addresses for messages', () => {
     for (const ok of ['https://bot.example.com', 'http://bot.example.com:8080', 'https://8.8.8.8', 'https://172.32.0.1', 'https://[2606:4700::1]']) assert.equal(isPublicBase(ok), true, ok);
     for (const no of ['http://localhost:3000', 'http://127.0.0.1', 'http://0.0.0.0', 'http://10.1.2.3', 'http://192.168.1.5', 'http://172.16.0.1', 'http://172.31.255.255', 'http://169.254.1.1', 'http://100.64.0.1',
       'http://bot', 'http://bot.local', 'http://x.localhost', 'http://nas.lan', 'http://[::1]:3000', 'http://[fd00::1]', 'ftp://bot.example.com', 'not a url', '']) assert.equal(isPublicBase(no), false, no);
+  });
+});
+
+describe('pages using uploaded pictures', () => {
+  const imageBlock = (url, id = 'img1') => ({ id, type: 'image', data: { ...defaultBlockData('image'), url, alt: 'A cat' } });
+  const heroBlock = (imageUrl) => ({ id: 'hero1', type: 'hero', data: { ...defaultBlockData('hero'), title: 'Hello', imageUrl } });
+  const publish = (slug, blocks, guildId = A) => h.db.createPage({ guildId, slug, title: 'Gallery', theme: {}, blocks, published: true });
+
+  it('a public page shows the picture from this site, under the strict page policy', async () => {
+    const u = (await upload(await png(56, 22, { noise: true }), { name: 'gallery.png' })).json.upload;
+    publish('gallery', [heroBlock(u.ref), imageBlock(u.ref)]);
+    const r = await call('GET', `/s/${A}/gallery`, { sid: null });
+    assert.equal(r.status, 200);
+    const csp = r.res.headers.get('content-security-policy');
+    assert.match(csp, /default-src 'none'/);
+    assert.match(csp, /img-src 'self' https: data:/);
+    assert.doesNotMatch(csp, /script-src|unsafe-eval/);
+    assert.ok(r.text.includes(`<img class="hero-bg" src="/i/${A}/${u.id}.webp"`));
+    assert.ok(r.text.includes(`<img src="/i/${A}/${u.id}.webp" alt="A cat"`));
+    assertInert(r.text);
+    const file = await rawGet(`/i/${A}/${u.id}.webp`);
+    assert.equal(file.status, 200);
+    assert.equal(file.headers['content-type'], 'image/webp');
+  });
+
+  it('a reference to another server\'s picture shows nothing there: the file is only ever found under its own server', async () => {
+    const theirs = (await upload(await png(57, 22, { noise: true }), { gid: B })).json.upload;
+    const mine = publish('borrowed', [imageBlock(theirs.ref)]);
+    const r = await call('GET', `/s/${A}/borrowed`, { sid: null });
+    const src = /<img src="([^"]+)"/.exec(r.text)?.[1];
+    assert.equal(src, `/i/${A}/${theirs.id}.webp`, 'the address is built from the page\'s own server');
+    assert.equal((await rawGet(src)).status, 404);
+    const warned = (await call('GET', `/api/guilds/${A}/pages/${mine.id}`)).json.page.issues;
+    assert.deepEqual(warned.map((i) => [i.kind, i.level]), [['image', 'warning']]);
+  });
+
+  it('the dashboard warns about a picture deleted after it was chosen, without unpublishing the page', async () => {
+    const u = (await upload(await png(58, 22, { noise: true }))).json.upload;
+    const created = (await call('POST', `/api/guilds/${A}/pages`, { body: { templateId: 'blank', title: 'Warn me' } })).json.page;
+    const saved = await call('PUT', `/api/guilds/${A}/pages/${created.id}`, { body: { published: true, blocks: [imageBlock(u.ref)] } });
+    assert.equal(saved.status, 200);
+    assert.equal(saved.json.page.published, true);
+    assert.deepEqual(saved.json.page.issues, []);
+    assert.equal((await call('DELETE', `/api/guilds/${A}/uploads/${u.id}`)).status, 200);
+    const after = (await call('GET', `/api/guilds/${A}/pages/${created.id}`)).json.page;
+    assert.equal(after.published, true, 'deleting a picture never takes a page offline');
+    assert.deepEqual(after.issues.map((i) => [i.kind, i.level, i.blockId]), [['image', 'warning', 'img1']]);
+    assert.equal((await call('GET', `/api/guilds/${A}/pages`)).json.find((p) => p.id === created.id).issues, 1);
+  });
+
+  it('a mangled reference is a real problem: the page is saved but switched off', async () => {
+    const created = (await call('POST', `/api/guilds/${A}/pages`, { body: { templateId: 'blank', title: 'Mangled' } })).json.page;
+    const saved = await call('PUT', `/api/guilds/${A}/pages/${created.id}`, { body: { published: true, blocks: [imageBlock('upload:not-a-real-id')] } });
+    assert.equal(saved.status, 200);
+    assert.equal(saved.json.unpublished, true);
+    assert.equal(saved.json.page.published, false);
+    assert.match(saved.json.page.issues[0].message, /not a valid uploaded image/);
   });
 });
 

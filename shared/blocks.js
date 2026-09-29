@@ -1,10 +1,10 @@
 // Page blocks: the building material of the website builder. Defined with the same field DSL as flow nodes, so the
 // editor's inspector renders them with no extra code. Pages are pure data — never HTML — which is what lets the renderer
 // (render-page.js) guarantee that nothing an admin types can become script.
-import { area, bool, checkFields, color, defaultsForFields, list, num, select, text, when } from './fields.js';
+import { area, bool, checkFields, color, defaultsForFields, image, list, num, select, text, when } from './fields.js';
 import { CHOICE_TYPES, FIELD_ID_RE, RESERVED_FIELD_IDS, parseOptions } from './forms.js';
 import { isCapped, LIMITS } from './limits.js';
-import { safeUrl } from './urls.js';
+import { looksLikeUpload, safeUrl, uploadIdOf } from './urls.js';
 import { uid } from './util.js';
 
 export const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
@@ -21,6 +21,8 @@ export const THEME_FIELDS = [
 
 const ALIGN = select('align', 'Alignment', [['left', 'Left'], ['center', 'Centred']], { default: 'left' });
 const urlProblem = (value, label, httpsOnly = false) => (value && !safeUrl(value, { httpsOnly }) ? [`${label} must be a full ${httpsOnly ? 'https' : 'http(s)'} link.`] : []);
+/** An image field holds an uploaded picture (`upload:<id>`, checked by checkFields) or an https link. */
+const imageProblem = (value, label) => (looksLikeUpload(value) ? [] : urlProblem(value, label, true));
 
 const FIELD_TYPES = [
   ['short', 'Short answer'], ['long', 'Long answer'], ['number', 'Number'], ['select', 'Dropdown'], ['radio', 'Pick one (radio buttons)'],
@@ -34,11 +36,11 @@ def('hero', {
   label: 'Hero', icon: '🌟', description: 'A big title with an optional subtitle, background image and button.',
   fields: [
     text('title', 'Title', { default: 'Welcome' }), text('subtitle', 'Subtitle'),
-    text('imageUrl', 'Background image (https link)'), text('buttonLabel', 'Button label'), text('buttonUrl', 'Button link'),
+    image('imageUrl', 'Background image'), text('buttonLabel', 'Button label'), text('buttonUrl', 'Button link'),
     { ...ALIGN, default: 'center' },
   ],
   summary: (d) => d.title,
-  check: (d) => [...urlProblem(d.imageUrl, 'The background image', true), ...urlProblem(d.buttonUrl, 'The button link'), ...(d.buttonLabel && !d.buttonUrl ? ['The button needs a link.'] : [])],
+  check: (d) => [...imageProblem(d.imageUrl, 'The background image'), ...urlProblem(d.buttonUrl, 'The button link'), ...(d.buttonLabel && !d.buttonUrl ? ['The button needs a link.'] : [])],
 });
 def('heading', {
   label: 'Heading', icon: '🔤', description: 'A section heading.',
@@ -51,13 +53,13 @@ def('text', {
   summary: (d) => d.body,
 });
 def('image', {
-  label: 'Image', icon: '🖼️', description: 'A picture from an https link (upload it somewhere first, e.g. Discord or Imgur).',
+  label: 'Image', icon: '🖼️', description: 'A picture: upload one from your computer, or paste an https link.',
   fields: [
-    text('url', 'Image address (https link)', { required: true }), text('alt', 'Description (for screen readers)'), text('caption', 'Caption'),
+    image('url', 'Image', { required: true }), text('alt', 'Description (for screen readers)'), text('caption', 'Caption'),
     text('link', 'Make it a link (optional)'), select('width', 'Size', [['full', 'Full width'], ['medium', 'Medium'], ['small', 'Small']], { default: 'full' }),
   ],
-  summary: (d) => d.alt || d.url,
-  check: (d) => [...urlProblem(d.url, 'The image address', true), ...urlProblem(d.link, 'The link')],
+  summary: (d) => d.alt || (uploadIdOf(d.url) ? 'Uploaded image' : d.url),
+  check: (d) => [...imageProblem(d.url, 'The image'), ...urlProblem(d.link, 'The link')],
 });
 def('button', {
   label: 'Button', icon: '🔘', description: 'A button that links to another page, e.g. your Discord invite.',
@@ -149,10 +151,12 @@ export function normalizePage(input) {
 }
 
 /**
- * @returns {{blockId: string|null, level: 'error'|'warning', kind: 'structure'|'config', message: string}[]}
+ * @param {{uploads?: Set<string>}} [known] the ids of this server's uploaded images, when known: a picture that was deleted
+ *   since it was chosen is then reported (as a warning: the page still publishes, that spot just shows nothing)
+ * @returns {{blockId: string|null, level: 'error'|'warning', kind: 'structure'|'config'|'image', message: string}[]}
  * `structure` issues make a page unsavable; `config` issues are shown as to-dos and block *publishing* forms with problems.
  */
-export function validatePage(page) {
+export function validatePage(page, { uploads } = {}) {
   const issues = [];
   const add = (blockId, kind, message) => issues.push({ blockId, level: 'error', kind, message });
   if (!page.title) add(null, 'config', 'Give the page a title.');
@@ -168,6 +172,12 @@ export function validatePage(page) {
     if (JSON.stringify(b.data).length > MAX_BLOCK_BYTES) { add(b.id, 'structure', 'This block holds too much content.'); continue; }
     checkFields(d.fields, b.data, '', (m) => add(b.id, 'config', m));
     for (const m of d.check?.(b.data) || []) add(b.id, 'config', m);
+    if (uploads) {
+      for (const f of d.fields) {
+        const id = f.type === 'image' ? uploadIdOf(b.data[f.key]) : null;
+        if (id && !uploads.has(id)) issues.push({ blockId: b.id, level: 'warning', kind: 'image', message: `“${f.label}”: that uploaded image no longer exists. Choose another one.` });
+      }
+    }
   }
   return issues;
 }

@@ -144,11 +144,12 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
 
   // ---- pages (website builder) --------------------------------------------------------------
   const pagePath = (p) => `/s/${p.guildId}/${p.slug}`;
-  const pageSummary = (p) => ({
+  // `known` = the ids of this server's uploaded images, so a picture that was deleted since it was chosen shows up as an issue
+  const pageSummary = (p, known = db.uploadIds(p.guildId)) => ({
     id: p.id, title: p.title, slug: p.slug, published: p.published, updatedAt: p.updatedAt, updatedBy: p.updatedBy,
-    blocks: p.blocks.length, forms: formsOf(p).length, issues: validatePage(p).length, path: pagePath(p), url: `${config.baseUrl}${pagePath(p)}`,
+    blocks: p.blocks.length, forms: formsOf(p).length, issues: validatePage(p, { uploads: known }).length, path: pagePath(p), url: `${config.baseUrl}${pagePath(p)}`,
   });
-  const pageFull = (p) => ({ ...pageSummary(p), theme: p.theme, createdAt: p.createdAt, blocks: p.blocks, issues: validatePage(p) });
+  const pageFull = (p, known = db.uploadIds(p.guildId)) => ({ ...pageSummary(p, known), theme: p.theme, createdAt: p.createdAt, blocks: p.blocks, issues: validatePage(p, { uploads: known }) });
   const pagesFull = (gid) => isCapped(LIMITS.pagesPerGuild) && db.countPages(gid) >= LIMITS.pagesPerGuild;
   const findPage = (req) => {
     const p = db.getPage(req.params.gid, req.params.pid); // scoped by server: another server's page id is simply a 404
@@ -164,7 +165,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
     return { page, issues };
   }
 
-  guildRouter.get('/pages', (req, res) => res.json(db.listPages(req.params.gid).map(pageSummary)));
+  guildRouter.get('/pages', (req, res) => { const known = db.uploadIds(req.params.gid); res.json(db.listPages(req.params.gid).map((p) => pageSummary(p, known))); });
 
   guildRouter.post('/pages', (req, res) => {
     const { gid } = req.params;

@@ -231,6 +231,7 @@ export class Database {
   // ---- uploaded images (metadata; the files live in DATA_DIR/uploads) — every query is scoped by guild_id --------------------
   listUploads(guildId) { return this.#stmt('SELECT * FROM uploads WHERE guild_id = ? ORDER BY created_at DESC, id').all(guildId).map(toUpload); }
   getUpload(guildId, id) { return toUpload(this.#stmt('SELECT * FROM uploads WHERE id = ? AND guild_id = ?').get(id, guildId)); }
+  uploadIds(guildId) { return new Set(this.#stmt('SELECT id FROM uploads WHERE guild_id = ?').all(guildId).map((r) => r.id)); }
   getUploadByHash(guildId, sha256) { return toUpload(this.#stmt('SELECT * FROM uploads WHERE guild_id = ? AND sha256 = ?').get(guildId, sha256)); }
   uploadUsage(guildId) {
     const r = this.#stmt('SELECT COUNT(*) AS count, COALESCE(SUM(bytes), 0) AS bytes FROM uploads WHERE guild_id = ?').get(guildId);

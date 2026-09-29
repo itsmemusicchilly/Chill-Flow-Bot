@@ -1,5 +1,6 @@
 // Tiny field DSL shared by node definitions (catalog.js) and page blocks (blocks.js), plus the one field checker
 // both editors use. Fields are plain data: the inspector renders them, validation reads them.
+import { looksLikeUpload, uploadIdOf } from './urls.js';
 import { isBlank } from './util.js';
 
 export const pairs = (arr) => arr.map((x) => (Array.isArray(x) ? { value: x[0], label: x[1] } : { value: x, label: x }));
@@ -8,6 +9,8 @@ export const area = (key, label, o = {}) => ({ type: 'textarea', key, label, def
 export const num = (key, label, o = {}) => ({ type: 'number', key, label, default: '', ...o });
 export const bool = (key, label, o = {}) => ({ type: 'boolean', key, label, default: false, ...o });
 export const color = (key, label, o = {}) => ({ type: 'color', key, label, default: '#5865f2', ...o });
+/** A picture: an uploaded one (`upload:<id>`, chosen in the image library) or an https link. Stored as a plain string. */
+export const image = (key, label, o = {}) => ({ type: 'image', key, label, default: '', ...o });
 export const select = (key, label, options, o = {}) => {
   const opts = pairs(options);
   return { type: 'select', key, label, options: opts, default: opts[0].value, ...o };
@@ -64,5 +67,7 @@ export function checkFields(fields, data, prefix, push) {
       }
     }
     if (f.type === 'select' && !f.options.some((o) => o.value === v)) push(`${name} has an invalid value.`);
+    // Anything that starts with "upload:" is meant as an uploaded picture, so a mangled one is a mistake, not a link.
+    if (f.type === 'image' && !isTemplate(v) && looksLikeUpload(v) && !uploadIdOf(v)) push(`${name} is not a valid uploaded image. Choose it again.`);
   }
 }
