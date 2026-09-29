@@ -18,14 +18,14 @@ export const DEFER_AFTER_MS = 2200;
 const EPHEMERAL = MessageFlags.Ephemeral;
 
 export class Runtime {
-  /** @param {{db: import('../db.js').Database, logger: import('../logger.js').Logger, intents?: {members: boolean, messageContent: boolean}}} deps */
-  constructor({ db, logger, intents = { members: false, messageContent: false } }) {
+  /** @param {{db: import('../db.js').Database, logger: import('../logger.js').Logger, intents?: {members: boolean, messageContent: boolean}, uploads?: {publicUrl: (guildId: string, ref: string) => string}}} deps */
+  constructor({ db, logger, intents = { members: false, messageContent: false }, uploads = null }) {
     this.db = db;
     this.logger = logger;
     this.intents = intents;
     this.client = null;
     this.services = {
-      db, logger,
+      db, logger, uploads,
       selfActions: new SelfActions(),
       cooldowns: new Map(),
       components: new ComponentState(),

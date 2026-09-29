@@ -20,6 +20,9 @@ export const LIMIT_ENV = {
   pagesPerGuild: 'LIMIT_PAGES_PER_GUILD',
   blocksPerPage: 'LIMIT_BLOCKS_PER_PAGE',
   responsesPerGuild: 'LIMIT_RESPONSES_PER_GUILD',
+  uploadBytes: 'LIMIT_UPLOAD_BYTES',
+  uploadsPerGuild: 'LIMIT_UPLOADS_PER_GUILD',
+  storageBytesPerGuild: 'LIMIT_STORAGE_BYTES_PER_GUILD',
 };
 const DEFAULT_REQUEST_BYTES = 50 * 1024 * 1024;
 const MAX_REQUEST_BYTES = 1024 ** 3;

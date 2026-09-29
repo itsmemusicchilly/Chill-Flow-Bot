@@ -33,6 +33,12 @@ CREATE TABLE IF NOT EXISTS form_responses (
 );
 CREATE INDEX IF NOT EXISTS responses_form ON form_responses(guild_id, page_id, block_id, created_at);
 CREATE INDEX IF NOT EXISTS responses_user ON form_responses(guild_id, page_id, block_id, user_id);
+CREATE TABLE IF NOT EXISTS uploads (
+  id TEXT PRIMARY KEY, guild_id TEXT NOT NULL, name TEXT NOT NULL, bytes INTEGER NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL,
+  animated INTEGER NOT NULL DEFAULT 0, sha256 TEXT NOT NULL, created_at INTEGER NOT NULL, created_by TEXT,
+  UNIQUE (guild_id, sha256)
+);
+CREATE INDEX IF NOT EXISTS uploads_guild ON uploads(guild_id, created_at);
 `;
 
 const VAR_NAME = /^[A-Za-z_][\w-]{0,31}$/;
@@ -48,6 +54,10 @@ export class SlugTakenError extends Error {}
 const toPage = (r) => (r ? {
   id: r.id, guildId: r.guild_id, slug: r.slug, title: r.title, published: Boolean(r.published), theme: JSON.parse(r.theme), blocks: JSON.parse(r.blocks),
   createdAt: r.created_at, updatedAt: r.updated_at, updatedBy: r.updated_by ? JSON.parse(r.updated_by) : null,
+} : null);
+const toUpload = (r) => (r ? {
+  id: r.id, guildId: r.guild_id, name: r.name, bytes: r.bytes, width: r.width, height: r.height, animated: Boolean(r.animated),
+  sha256: r.sha256, createdAt: r.created_at, createdBy: r.created_by ? JSON.parse(r.created_by) : null,
 } : null);
 const toResponse = (r) => ({ id: r.id, pageId: r.page_id, blockId: r.block_id, userId: r.user_id, userName: r.user_name, answers: JSON.parse(r.answers), createdAt: r.created_at });
 
@@ -216,6 +226,41 @@ export class Database {
   /** When did this person last answer this form? (ms, or undefined) */
   lastResponseAt(guildId, pageId, blockId, userId) {
     return this.#stmt('SELECT MAX(created_at) AS t FROM form_responses WHERE guild_id=? AND page_id=? AND block_id=? AND user_id=?').get(guildId, pageId, blockId, userId)?.t ?? undefined;
+  }
+
+  // ---- uploaded images (metadata; the files live in DATA_DIR/uploads) — every query is scoped by guild_id --------------------
+  listUploads(guildId) { return this.#stmt('SELECT * FROM uploads WHERE guild_id = ? ORDER BY created_at DESC, id').all(guildId).map(toUpload); }
+  getUpload(guildId, id) { return toUpload(this.#stmt('SELECT * FROM uploads WHERE id = ? AND guild_id = ?').get(id, guildId)); }
+  getUploadByHash(guildId, sha256) { return toUpload(this.#stmt('SELECT * FROM uploads WHERE guild_id = ? AND sha256 = ?').get(guildId, sha256)); }
+  uploadUsage(guildId) {
+    const r = this.#stmt('SELECT COUNT(*) AS count, COALESCE(SUM(bytes), 0) AS bytes FROM uploads WHERE guild_id = ?').get(guildId);
+    return { count: r.count, bytes: r.bytes };
+  }
+
+  addUpload({ guildId, name, bytes, width, height, animated, sha256, createdBy = null }) {
+    const id = uid(16);
+    this.#stmt('INSERT INTO uploads (id, guild_id, name, bytes, width, height, animated, sha256, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?,?)')
+      .run(id, guildId, name, bytes, width, height, animated ? 1 : 0, sha256, Date.now(), createdBy ? JSON.stringify(createdBy) : null);
+    return this.getUpload(guildId, id);
+  }
+
+  deleteUpload(guildId, id) { return this.#stmt('DELETE FROM uploads WHERE id = ? AND guild_id = ?').run(id, guildId).changes > 0; }
+
+  /**
+   * Where each uploaded image is used in this server: Map(uploadId → { pages: [{id, title}], flows: [{id, name}] }).
+   * One pass over the server's pages and flows (not one per image). A reference built by a template is not found.
+   */
+  uploadUses(guildId) {
+    const uses = new Map();
+    const note = (text, kind, item) => {
+      for (const m of text.matchAll(/upload:([a-z0-9]{16})/g)) {
+        const entry = uses.get(m[1]) ?? uses.set(m[1], { pages: [], flows: [] }).get(m[1]);
+        if (!entry[kind].some((x) => x.id === item.id)) entry[kind].push(item);
+      }
+    };
+    for (const p of this.#stmt('SELECT id, title, blocks, theme FROM pages WHERE guild_id = ? ORDER BY title').all(guildId)) note(p.blocks + p.theme, 'pages', { id: p.id, title: p.title });
+    for (const f of this.#stmt('SELECT id, name, graph FROM flows WHERE guild_id = ? ORDER BY name').all(guildId)) note(f.graph, 'flows', { id: f.id, name: f.name });
+    return uses;
   }
 
   // ---- sessions (only a hash of the id is stored) ---------------------------------------------

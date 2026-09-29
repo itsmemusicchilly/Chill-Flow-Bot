@@ -8,6 +8,7 @@ import { toCsv } from './csv.js';
 import { SlugTakenError } from './db.js';
 import { FlowError } from './engine/errors.js';
 import { RateLimiter } from './engine/rate-limit.js';
+import { available as imagesAvailable, IMAGE_LIMITS } from './images.js';
 import { SNOWFLAKE } from './engine/resolve.js';
 
 export class HttpError extends Error {
@@ -17,7 +18,7 @@ export class HttpError extends Error {
 const avatarUrl = (u) => (u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png?size=64` : 'https://cdn.discordapp.com/embed/avatars/0.png');
 const iconUrl = (g) => (g.icon ? `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png?size=64` : null);
 
-export function createApi({ config, db, runtime, bot, sync, logger, auth }) {
+export function createApi({ config, db, runtime, bot, sync, logger, auth, uploads }) {
   const router = express.Router();
   const perUser = new RateLimiter(300, 60_000);
   const streams = new Map();
@@ -34,6 +35,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth }) {
       })),
       meta: {
         intents: config.intents, limits: limitsToJSON(), minPermission: config.minPermission,
+        uploads: { available: imagesAvailable(), publicBase: uploads.publicBase, maxBytes: Math.min(IMAGE_LIMITS.maxInputBytes, isCapped(LIMITS.uploadBytes) ? LIMITS.uploadBytes : Infinity) },
         templates: TEMPLATES.map((t) => ({ id: t.id, name: t.name, description: t.description })),
       },
     });
@@ -270,6 +272,9 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth }) {
     const heartbeat = setInterval(() => res.write(': ♥\n\n'), 25_000);
     req.on('close', () => { off(); clearInterval(heartbeat); streams.set(uid, Math.max(0, (streams.get(uid) ?? 1) - 1)); });
   });
+
+  // ---- uploaded images (see server/uploads.js) ------------------------------------------------
+  guildRouter.use('/uploads', uploads.api);
 
   router.use('/guilds/:gid', guildRouter);
   return router;

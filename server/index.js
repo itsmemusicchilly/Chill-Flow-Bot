@@ -3,7 +3,9 @@ import { applyLimits } from '../shared/limits.js';
 import { ConfigError, loadConfig } from './config.js';
 import { Database } from './db.js';
 import { Runtime } from './engine/runtime.js';
+import { warmUp } from './images.js';
 import { Logger } from './logger.js';
+import { createUploads } from './uploads.js';
 import { createApp } from './app.js';
 import { CommandSync } from './bot/commands.js';
 import { BotManager } from './bot/manager.js';
@@ -20,10 +22,12 @@ applyLimits(config.limits);
 
 const logger = new Logger();
 const db = new Database(path.join(config.dataDir, 'flowbot.sqlite'));
-const runtime = new Runtime({ db, logger, intents: config.intents });
+const uploads = createUploads({ config, db, logger });
+warmUp(); // load the image library now, so the first upload is not slow (and a missing binary shows up in the log at start)
+const runtime = new Runtime({ db, logger, intents: config.intents, uploads });
 const sync = new CommandSync({ db, runtime, logger, config });
 const bot = new BotManager({ config, runtime, logger, sync });
-const app = createApp({ config, db, runtime, bot, sync, logger });
+const app = createApp({ config, db, runtime, bot, sync, logger, uploads });
 
 const server = app.listen(config.port, config.host, () => {
   console.log(`Dashboard: ${config.baseUrl}  (listening on ${config.host}:${config.port})`);

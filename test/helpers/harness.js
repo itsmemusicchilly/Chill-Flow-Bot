@@ -1,9 +1,13 @@
 // A real Express app + SQLite (in memory) + runtime, with a fake bot and stubbed Discord HTTP, listening on a random port.
+import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 import { createApp } from '../../server/app.js';
 import { Database } from '../../server/db.js';
 import { Runtime } from '../../server/engine/runtime.js';
 import { Logger } from '../../server/logger.js';
+import { createUploads } from '../../server/uploads.js';
 import { fakeGuild, fakeUser } from './fakes.js';
 
 export const ORIGIN = 'http://localhost:3999';
@@ -11,8 +15,9 @@ export const A = '111111';
 export const B = '222222';
 
 export async function startHarness({ config: over = {} } = {}) {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowbot-test-')); // uploaded images go here, never into the repo
   const config = {
-    token: 't', clientId: 'cid', clientSecret: 'secret', baseUrl: ORIGIN, port: 0, host: '127.0.0.1',
+    token: 't', clientId: 'cid', clientSecret: 'secret', baseUrl: ORIGIN, port: 0, host: '127.0.0.1', dataDir,
     intents: { members: true, messageContent: false }, minPermission: 'Administrator', sessionTtlMs: 3600e3, trustProxy: false, ...over,
   };
   const state = {
@@ -21,7 +26,8 @@ export async function startHarness({ config: over = {} } = {}) {
   };
   const db = new Database(':memory:');
   const logger = new Logger({ console: false });
-  const runtime = new Runtime({ db, logger, intents: config.intents });
+  const uploads = createUploads({ config, db, logger });
+  const runtime = new Runtime({ db, logger, intents: config.intents, uploads });
   const guilds = { [A]: fakeGuild({ id: A, name: 'Pixel Café' }), [B]: fakeGuild({ id: B, name: 'Dev Sandbox' }) };
   guilds[A].name = 'Pixel Café';
   guilds[B].name = 'Dev Sandbox';
@@ -53,7 +59,7 @@ export async function startHarness({ config: over = {} } = {}) {
     return { ok: false, status: 404, json: async () => ({}) };
   };
 
-  const app = createApp({ config, db, runtime, bot, sync, logger, fetchImpl, distDir: '/nonexistent' });
+  const app = createApp({ config, db, runtime, bot, sync, logger, fetchImpl, uploads, distDir: '/nonexistent' });
   const server = http.createServer(app);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -62,20 +68,21 @@ export async function startHarness({ config: over = {} } = {}) {
   const visitorSession = (user = { id: 'v1', name: 'Vee', avatar: null }) => db.createSession(user.id, { visitor: true, user }, 3600e3);
 
   /** JSON API call by default (dashboard cookie); pass `form` for an urlencoded public POST, `visitor` for the visitor cookie. */
-  async function call(method, path, { body, form, sid = session(), visitor, origin = ORIGIN, headers = {} } = {}) {
+  async function call(method, path, { body, form, raw, type = 'image/png', sid = session(), visitor, origin = ORIGIN, headers = {} } = {}) {
     const cookies = [sid && `fc_session=${sid}`, visitor && `fc_visitor=${visitor}`, headers.cookie].filter(Boolean).join('; ');
     const res = await fetch(`${base}${path}`, {
       method, redirect: 'manual',
       headers: {
-        ...(body ? { 'Content-Type': 'application/json' } : {}), ...(form ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
+        ...(body ? { 'Content-Type': 'application/json' } : {}), ...(form ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}), ...(raw ? { 'Content-Type': type } : {}),
         ...(cookies ? { Cookie: cookies } : {}), ...(origin ? { Origin: origin } : {}), ...headers, ...(cookies ? { Cookie: cookies } : {}),
       },
-      body: body ? JSON.stringify(body) : form ? new URLSearchParams(Object.entries(form).flatMap(([k, v]) => (Array.isArray(v) ? v.map((x) => [k, x]) : [[k, v]]))).toString() : undefined,
+      body: raw ?? (body ? JSON.stringify(body) : form ? new URLSearchParams(Object.entries(form).flatMap(([k, v]) => (Array.isArray(v) ? v.map((x) => [k, x]) : [[k, v]]))).toString() : undefined),
     });
     const text = await res.text();
     let json; try { json = JSON.parse(text); } catch { /* not json */ }
     return { status: res.status, json, text, res };
   }
 
-  return { config, state, db, logger, runtime, guilds, bot, base, call, session, visitorSession, close: async () => { server.close(); db.close(); } };
+  const close = async () => { server.close(); db.close(); fs.rmSync(dataDir, { recursive: true, force: true }); };
+  return { config, state, db, logger, runtime, guilds, bot, base, call, session, visitorSession, uploads, dataDir, close };
 }
