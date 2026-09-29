@@ -85,7 +85,7 @@ export function createPublic({ config, db, runtime, bot, logger, auth }) {
     const who = req.visitor ? (member !== undefined ? member : needMember ? await bot.getMember(page.guildId, req.visitor.id) : null) : null;
     const formState = { ...(await gates(page, req.visitor, who)), ...overrides };
     return html(res, status, renderPage({
-      page, guild, visitor: req.visitor ? { name: req.visitor.name } : null,
+      page, guild, baseUrl: config.baseUrl, visitor: req.visitor ? { name: req.visitor.name } : null,
       csrf: (blockId) => (req.visitor ? auth.csrfToken(req.visitor.sessionId, page.id, blockId) : ''), formState,
     }));
   }

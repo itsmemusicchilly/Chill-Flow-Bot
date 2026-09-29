@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 // ---- an allowlist-based structural HTML check: any injected tag, handler or bad URL fails ------------------------------
 const TAGS = new Set(['html', 'head', 'meta', 'title', 'style', 'body', 'main', 'div', 'span', 'p', 'a', 'h1', 'h2', 'h3', 'strong', 'em', 'br', 'img', 'figure', 'figcaption', 'ul', 'ol', 'li', 'hr', 'header', 'section', 'footer', 'form', 'input', 'textarea', 'select', 'option', 'label', 'button', 'fieldset', 'b']);
-const ATTRS = new Set(['lang', 'charset', 'name', 'content', 'class', 'href', 'src', 'alt', 'target', 'rel', 'loading', 'referrerpolicy', 'http-equiv', 'id', 'for', 'type', 'value', 'checked', 'selected', 'required', 'placeholder', 'maxlength', 'minlength', 'min', 'max', 'step', 'rows', 'method', 'action', 'autocomplete', 'disabled', 'role', 'aria-hidden', 'aria-labelledby']);
+const ATTRS = new Set(['lang', 'charset', 'name', 'property', 'content', 'class', 'href', 'src', 'alt', 'target', 'rel', 'loading', 'referrerpolicy', 'http-equiv', 'id', 'for', 'type', 'value', 'checked', 'selected', 'required', 'placeholder', 'maxlength', 'minlength', 'min', 'max', 'step', 'rows', 'method', 'action', 'autocomplete', 'disabled', 'role', 'aria-hidden', 'aria-labelledby']);
 const TAG = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)((?:\s+[^\s"'<>/=]+(?:=(?:"[^"]*"|[^\s"'<>=`]+))?)*)\s*\/?>/y;
 const ATTR = /([^\s"'<>/=]+)(?:=(?:"([^"]*)"|([^\s"'<>=`]+)))?/g;
 

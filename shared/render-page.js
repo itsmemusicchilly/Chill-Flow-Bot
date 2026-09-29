@@ -6,6 +6,7 @@
 // no inline event handler and no CSS url(). The server also sends a CSP that forbids script.
 import { BLOCK_TYPES, THEME_DEFAULTS } from './blocks.js';
 import { parseOptions } from './forms.js';
+import { pageMeta } from './page-meta.js';
 import { assetSrc, safeUrl } from './urls.js';
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -163,14 +164,24 @@ const RENDERERS = {
 };
 
 // ---- documents ----------------------------------------------------------------------------------------------------------
-function shell({ title, theme = THEME_DEFAULTS, guild, body, robots, refreshTo }) {
+/** The <meta> tags that make a pasted link show a card (Discord reads Open Graph; `theme-color` becomes the card's edge colour). */
+function linkPreviewTags(meta) {
+  const tags = [
+    ['name', 'description', meta.description], ['property', 'og:type', 'website'], ['property', 'og:site_name', meta.siteName],
+    ['property', 'og:title', meta.title], ['property', 'og:description', meta.description], ['property', 'og:url', meta.url],
+    ['property', 'og:image', meta.image], ['name', 'twitter:card', meta.card], ['name', 'theme-color', meta.color],
+  ];
+  return tags.filter(([, , value]) => value).map(([attr, key, value]) => `<meta ${attr}="${key}" content="${esc(value)}">`).join('');
+}
+
+function shell({ title, theme = THEME_DEFAULTS, guild, body, robots, refreshTo, meta }) {
   const t = { ...THEME_DEFAULTS, ...theme };
   const accent = /^#[0-9a-f]{6}$/i.test(t.accent) ? t.accent : THEME_DEFAULTS.accent;
   const vars = `${THEMES[t.mode] || THEMES.dark};--accent:${accent};--on:${onAccent(accent)};--w:${WIDTHS[t.width] || WIDTHS.normal}`;
   const icon = guild?.icon && /^https:\/\/cdn\.discordapp\.com\//.test(guild.icon) ? `<img src="${esc(guild.icon)}" alt="" referrerpolicy="no-referrer">` : `<span class="ico" aria-hidden="true">${esc(String(guild?.name ?? '?').trim().slice(0, 1).toUpperCase())}</span>`;
   const brand = guild ? `<div class="brand">${icon}<span>${esc(guild.name)}</span></div>` : '';
   const foot = guild ? `<footer class="site-foot">This page was made by the admins of ${esc(guild.name)}. It is not made or endorsed by Discord. Never type your password, token or login codes into a web form.</footer>` : '';
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="same-origin">${robots ? `<meta name="robots" content="${esc(robots)}">` : ''}${refreshTo ? `<meta http-equiv="refresh" content="0;url=${esc(refreshTo)}">` : ''}<title>${esc(title)}</title><style>:root{${vars}}${CSS}</style></head><body><main class="wrap">${brand}${body}${foot}</main></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="same-origin">${robots ? `<meta name="robots" content="${esc(robots)}">` : ''}${meta ? linkPreviewTags(meta) : ''}${refreshTo ? `<meta http-equiv="refresh" content="0;url=${esc(refreshTo)}">` : ''}<title>${esc(title)}</title><style>:root{${vars}}${CSS}</style></head><body><main class="wrap">${brand}${body}${foot}</main></body></html>`;
 }
 
 /**
@@ -180,14 +191,16 @@ function shell({ title, theme = THEME_DEFAULTS, guild, body, robots, refreshTo }
  * @param {'public'|'preview'} [o.mode]
  * @param {{name: string}|null} [o.visitor]    the logged-in visitor, if any
  * @param {(blockId: string) => string} [o.csrf]
+ * @param {string} [o.baseUrl]     the site's public address: with it (and `mode: 'public'`) the page carries link-preview tags
  * @param {string} [o.assetBase]   put in front of the address of uploaded pictures: '' on the public site (same origin), the dashboard's origin in the editor preview
  * @param {Record<string, {blocked?: string, message?: string, errors?: object, values?: object, formError?: string}>} [o.formState]
  */
-export function renderPage({ page, guild, mode = 'public', visitor = null, csrf = () => '', formState = {}, assetBase = '' }) {
+export function renderPage({ page, guild, mode = 'public', visitor = null, csrf = () => '', formState = {}, assetBase = '', baseUrl = '' }) {
   const pagePath = `/s/${guild.id}/${page.slug}`;
   const ctx = { mode, guild, visitor, csrf, formState, assetBase, pagePath, loginHref: `/auth/visitor/login?next=${encodeURIComponent(pagePath)}` };
   const body = page.blocks.map((b) => (b.type === 'form' ? renderForm(b, ctx) : BLOCK_TYPES[b.type] ? RENDERERS[b.type]?.(b.data, ctx) ?? '' : '')).join('\n');
-  return shell({ title: page.title || 'Untitled page', theme: page.theme, guild, body, robots: mode === 'preview' ? 'noindex' : undefined });
+  const meta = mode === 'public' && baseUrl ? pageMeta(page, { guild, baseUrl }) : null; // notices, 404s, previews and gate pages never carry one
+  return shell({ title: page.title || 'Untitled page', theme: page.theme, guild, body, robots: mode === 'preview' ? 'noindex' : undefined, meta });
 }
 
 /** A small page for thank-you / blocked / error messages, in the page's own theme. */
