@@ -3,7 +3,7 @@
 > Generated from `shared/blocks.js` by `npm run docs` — do not edit by hand.
 
 Pages are made of blocks, top to bottom. Text fields accept a little formatting — `**bold**`, `*italic*`, `[link text](https://example.com)` —
-and never raw HTML. Links and images must be full `https://` (links may also be `http://`) addresses.
+and never raw HTML. Links must be full `https://` (or `http://`) addresses. Images are pictures you upload in the editor (**Choose…**) or full `https://` addresses.
 
 ## Page settings
 
@@ -21,7 +21,7 @@ and never raw HTML. Links and images must be full `https://` (links may also be 
 | --- | --- | --- |
 | Title | text |  |
 | Subtitle | text |  |
-| Background image (https link) | text |  |
+| Background image | image | a picture you uploaded, or a full https link |
 | Button label | text |  |
 | Button link | text |  |
 | Alignment | select | options: Left, Centred |
@@ -47,11 +47,11 @@ and never raw HTML. Links and images must be full `https://` (links may also be 
 
 ## 🖼️ Image
 
-`image` — A picture from an https link (upload it somewhere first, e.g. Discord or Imgur).
+`image` — A picture: upload one from your computer, or paste an https link.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| Image address (https link) | text | required |
+| Image | image | required; a picture you uploaded, or a full https link |
 | Description (for screen readers) | text |  |
 | Caption | text |  |
 | Make it a link (optional) | text |  |

@@ -308,8 +308,8 @@ triggered this flow”.
 | Embed title | text | shown when `useEmbed` is `true` |
 | Embed description | textarea | shown when `useEmbed` is `true` |
 | Embed color | color | shown when `useEmbed` is `true` |
-| Thumbnail URL | text | shown when `useEmbed` is `true` |
-| Image URL | text | shown when `useEmbed` is `true` |
+| Thumbnail | image | shown when `useEmbed` is `true`; An https link, {{a variable}}, or a picture you uploaded. |
+| Image | image | shown when `useEmbed` is `true`; An https link, {{a variable}}, or a picture you uploaded. |
 | Footer | text | shown when `useEmbed` is `true` |
 | Show timestamp | boolean | shown when `useEmbed` is `true` |
 | Embed fields | list | shown when `useEmbed` is `true`; up to 25 items |
@@ -347,8 +347,8 @@ triggered this flow”.
 | Embed title | text | shown when `useEmbed` is `true` |
 | Embed description | textarea | shown when `useEmbed` is `true` |
 | Embed color | color | shown when `useEmbed` is `true` |
-| Thumbnail URL | text | shown when `useEmbed` is `true` |
-| Image URL | text | shown when `useEmbed` is `true` |
+| Thumbnail | image | shown when `useEmbed` is `true`; An https link, {{a variable}}, or a picture you uploaded. |
+| Image | image | shown when `useEmbed` is `true`; An https link, {{a variable}}, or a picture you uploaded. |
 | Footer | text | shown when `useEmbed` is `true` |
 | Show timestamp | boolean | shown when `useEmbed` is `true` |
 | Embed fields | list | shown when `useEmbed` is `true`; up to 25 items |

@@ -13,6 +13,7 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **Website builder.** Publish small pages — a landing page, rules, an application form — from blocks (hero, text, images,
   buttons, lists, **forms**). Visitors log in with Discord to fill a form; a **Form Submitted** flow can react, and responses are
   saved for you to review and export (see [Pages & forms](#pages--forms)).
+* **Upload pictures** instead of hunting for an image host: pick them for page images and Discord embeds (see [Pictures](#pictures)).
 * **Multi-server, Discord login.** Admins sign in with Discord and can only edit servers where they are an
   administrator (configurable). Every flow, variable, slash command and log is scoped to one server.
 * **Every button is its own path.** A *Send Message* node can carry several buttons and a select menu; each one becomes an
@@ -24,8 +25,8 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (175 unit/integration tests plus a
-> 43-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (240 unit/integration tests plus a
+> 59-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it.
 
 ## Quick start
@@ -62,7 +63,7 @@ real dashboard and API against a fake in-memory Discord — useful for developme
 | `BASE_URL` | `http://localhost:PORT` | Public URL of the dashboard. Also used for the redirect URI and the CSRF `Origin` check |
 | `PORT` / `HOST` | `3000` / `127.0.0.1` | Listen address. Use `HOST=0.0.0.0` only behind HTTPS |
 | `TRUST_PROXY` | off | Number of reverse proxies in front (or `true`) so client IPs and `https` are detected correctly |
-| `DATA_DIR` | `data` | Where `flowbot.sqlite` lives. Back this up |
+| `DATA_DIR` | `data` | Where `flowbot.sqlite` and the `uploads/` folder (uploaded pictures) live. Back both up |
 | `DASHBOARD_MIN_PERMISSION` | `Administrator` | Or `ManageGuild`. Flows run with the **bot's** permissions, so the default is the safe one |
 | `ENABLE_MEMBERS_INTENT` | `false` | Needed by *Member Joined / Left / Kicked / Timed Out* and *Role Given/Removed* triggers |
 | `ENABLE_MESSAGE_CONTENT_INTENT` | `false` | Needed by the *Message Received* trigger |
@@ -85,6 +86,7 @@ loop iterations, steps per run and as long a wait as you like. On a private bot 
 | `LIMIT_RUNS_PER_10S` · `LIMIT_CONCURRENT_RUNS` · `LIMIT_ACTIONS_PER_10S` | flow starts, simultaneous runs and Discord actions per server |
 | `LIMIT_STEPS_PER_RUN` · `LIMIT_LOOP_ITERATIONS` · `LIMIT_WAIT_SECONDS` | nodes executed per run, loop length, longest single wait |
 | `LIMIT_PAGES_PER_GUILD` · `LIMIT_BLOCKS_PER_PAGE` · `LIMIT_RESPONSES_PER_GUILD` | pages per server, blocks per page, stored form responses per server |
+| `LIMIT_UPLOAD_BYTES` · `LIMIT_UPLOADS_PER_GUILD` · `LIMIT_STORAGE_BYTES_PER_GUILD` | size of one uploaded picture, pictures per server, total picture storage per server |
 | `LIMIT_REQUEST_BYTES` | HTTP request body (default 50 MB; always has a ceiling, max 1 GB) |
 
 `.env.example` contains a commented **public-host preset** with sensible caps.
@@ -93,7 +95,8 @@ loop iterations, steps per run and as long a wait as you like. On a private bot 
 per message, 25 options per slash command, 5 form inputs, 2000 characters per message, 100 slash commands per server,
 memory and CPU, `setTimeout`'s maximum (~24.8 days), the form wait (10 min: Discord's interaction tokens expire), and the
 login/API/public-site rate limits that protect the site itself (10 form submissions per minute per visitor, 60 per IP, 600 page views
-per IP; a form answer is at most 10 000 characters and a public request 256 KB).
+per IP; a form answer is at most 10 000 characters and a public request 256 KB; an uploaded picture is at most 32 MB and 64 megapixels
+and 30 uploads per minute per person).
 
 **How it stays safe without a step cap:** a run that loops forever uses constant memory and yields to the event loop, so the
 bot keeps answering everyone else (measured: 650k steps in 4 s, worst stall 7 ms). **To stop a runaway flow, switch it Off
@@ -165,7 +168,24 @@ Form Submitted ─▶ Send Message (to #staff-applications): "New application fr
 responses” is off, no answers are stored — only, when “one response per person” or a wait is on, a receipt (who and when) so those
 rules still work. Deleting a page erases its responses.
 
-**Safe by construction.** Pages are data, never HTML: everything is escaped, links/images must be `https`, there is **no
+### Pictures
+
+Any image field — a page's hero background and image blocks, and the **Image** / **Thumbnail** of a *Send Message* embed — has a
+**Choose…** button that opens the server's picture library (also reachable from **Pictures** in the top bar). Upload one or several
+pictures with the button or by dropping files (PNG, JPEG, WebP or GIF). Every upload is **re-encoded on the server**: the real format is
+checked (SVG and HTML are refused whatever they are called), photo metadata such as GPS location is removed, rotation is applied,
+big pictures are shrunk to at most 2400 px and everything is stored as WebP (animated GIFs stay animated). The library shows each
+picture's size and **where it is used**, and asks before deleting one that is in use (a page then shows nothing in that spot and the
+editor flags it; a message node fails with a clear error).
+
+Pictures are public by address — anyone who has the link can open it — because pages and Discord must be able to load them:
+`https://your-site/i/<serverId>/<id>.webp`. The id is 16 random characters and only that server's pictures resolve under its id.
+In **messages**, Discord downloads the picture from your site, so `BASE_URL` must be a public address (not `localhost`); pages work anywhere.
+Pictures belong to one server: a flow exported to another server keeps its `upload:` reference but the picture must be uploaded there
+again (the node then reports it clearly). Optional caps: `LIMIT_UPLOAD_BYTES`, `LIMIT_UPLOADS_PER_GUILD`, `LIMIT_STORAGE_BYTES_PER_GUILD`. Uploads need the `sharp` image
+library (installed with `npm install`; if it cannot load on your platform, only uploads are disabled).
+
+**Safe by construction.** Pages are data, never HTML: everything is escaped, links must be `https` and images are uploaded pictures or `https`, there is **no
 JavaScript on public pages** (and the CSP forbids it), every page carries a footer saying it was made by the server’s admins and
 not Discord, forms show what data is shared, and there is deliberately no password field. Submissions need a Discord login, a
 per-form CSRF token, a same-origin request, and are rate limited (10 per minute per visitor, 60 per IP). Visitor logins are a separate
@@ -180,7 +200,8 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 * **Authorisation**: every server-scoped request re-checks, live through the bot, that you are the owner/Administrator
   (cached ≤ 60 s). Stale sessions cannot keep access after a demotion. Flow lookups are always filtered by server id.
 * **CSRF**: state-changing requests must come from `BASE_URL`'s origin; security headers + a strict CSP are sent (scripts only from
-  this site; the dashboard allows `https:` images so the page preview can show the pictures you add — public pages themselves allow no script at all).
+  this site; the dashboard allows `https:` images so the page preview can show the pictures you add — public pages themselves allow no script at all
+  and load images only from this site or over `https`).
 * **Execution isolation**: executors only resolve channels, roles and members through the flow's own server and re-check
   ownership, so pasting a foreign id does nothing. DMs go only to members of that server. Variables are per server
   (there is deliberately no global scope). Logs are per server and never persisted.
@@ -188,6 +209,11 @@ This is a multi-tenant service: many servers share one bot process, so isolation
   (`javascript:`/`data:`/credential-carrying links refused), served with a no-script CSP, `X-Frame-Options: DENY` and
   `Referrer-Policy: same-origin`; unpublished, unknown and other-server pages are indistinguishable 404s; “check, then insert” for
   one-per-person rules is atomic so simultaneous submissions cannot both pass; CSV exports defuse spreadsheet formulas.
+* **Uploaded pictures**: never served as sent — decoded, stripped of metadata and re-encoded as WebP by the server (only pixels we
+  encoded reach a visitor; no SVG, no polyglot files), refused from their header when they declare an absurd size, at most two decoded
+  at once. Files are named by random id, never by the uploaded name; paths are built only from validated ids; each picture is looked up
+  by `(id, server)`, so another server's id is a 404. Served with `nosniff`, a sandboxing CSP and no cookies. Caps are race-free.
+  As with any host that lets people upload images: you are the operator, so cap uploads (`LIMIT_*`) if you host for strangers.
 * **Safe defaults**: `@everyone`/role pings are off unless a node opts in; audit-log reasons say `[Flow name]`;
   user-supplied regexes run under a hard timeout (a catastrophic pattern cannot freeze the bot).
 * **Limits**: none by default — see [Limits](#limits) for the caps you can turn on (recommended when hosting for others).
@@ -198,12 +224,13 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 
 * Put HTTPS in front (Caddy/nginx), set `BASE_URL=https://…` and `TRUST_PROXY=1`. Cookies become `Secure` automatically.
 * One process, no sharding — fine up to a couple of thousand servers. The bot caches everything discord.js caches by default.
-* Back up `DATA_DIR/flowbot.sqlite`. Deleting a server's flows/variables is up to you (data is kept if the bot is removed).
+* Back up `DATA_DIR/flowbot.sqlite` **and** `DATA_DIR/uploads/` together (a database row without its file shows a missing picture).
+  Deleting a server's flows/variables is up to you (data is kept if the bot is removed).
 
 ## Development
 
 ```bash
-npm test          # 175 unit + API + event + public-page tests (fake Discord objects, in-memory SQLite)
+npm test          # 240 unit + API + event + public-page + upload tests (fake Discord objects, in-memory SQLite)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
@@ -211,7 +238,7 @@ npm run docs      # regenerate docs/NODES.md from the catalog
 
 ```
 shared/   catalog.js (every node) · blocks.js (page blocks) · forms.js · render-page.js · validate.js · templates — used by the editor AND server
-server/   app/api/auth/public (the /s pages) · db (node:sqlite) · engine/ (runner, templates, executors, responder) · bot/ (events, commands)
+server/   app/api/auth/public (the /s pages) · uploads + images (the /i pictures) · db (node:sqlite) · engine/ (runner, templates, executors, responder) · bot/ (events, commands)
 web/      React + @xyflow/react editor
 test/     node:test suites · e2e/ (Playwright) · helpers/fakes.js
 ```
@@ -233,11 +260,14 @@ Not yet automated — please run through this once on a test server:
 - [ ] Pages: publish a page with a form; open it in a private window — **Log in with Discord** works on your real domain and returns
       you to the page; a member can submit; a non-member of a members-only form is told why; the Form Submitted flow reacts.
 - [ ] A form with “redirect to another address” lands on that address; the response and its CSV appear in the dashboard.
+- [ ] Pictures: upload a photo taken with a phone (it comes out upright, without location data); pick it for a page and open the
+      public page in a private window; on your real domain, use an uploaded picture in a *Send Message* embed and check Discord shows it.
+- [ ] `DATA_DIR/uploads/` is part of your backup; restoring the database and the folder together brings the pictures back.
 - [ ] Bot restarts: an old button still works; slash commands are not re-registered needlessly.
 - [ ] Build a flow that loops forever (two Log nodes pointing at each other), run it, confirm other commands still answer,
       then switch the flow Off and confirm it stops.
 
 ## Ideas not done yet
 
-Page columns/nesting, image uploads, custom domains, page analytics, email/webhook notifications for forms, HTTP/webhook node with SSRF protection, autocomplete options, sub-commands, embed preview, undo/redo, flow version history,
+Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, HTTP/webhook node with SSRF protection, autocomplete options, sub-commands, embed preview, undo/redo, flow version history,
 persisting run variables across restarts, sharding.

@@ -16,6 +16,7 @@ function fieldRows(fields, indent = '') {
     if (f.required) notes.push('required');
     if (f.showIf) notes.push(`shown when \`${f.showIf.key}\` ${f.showIf.in ? `is ${f.showIf.in.map((v) => `\`${v}\``).join(' / ')}` : `is not ${f.showIf.notIn.map((v) => `\`${v}\``).join(' / ')}`}`);
     if (f.type === 'select' || f.type === 'multiselect') notes.push(`options: ${f.options.map((o) => o.label).join(', ')}`);
+    if (f.type === 'image' && !f.help) notes.push('a picture you uploaded, or a full https link');
     if (f.type === 'list' && Number.isFinite(f.max)) notes.push(`up to ${f.max} items`);
     else if (f.type !== 'list' && (f.min !== undefined || f.max !== undefined)) notes.push(`range ${f.min ?? '…'}–${f.max ?? '…'}`);
     if (f.help) notes.push(f.help);
@@ -63,7 +64,7 @@ const blocks = [
   '> Generated from `shared/blocks.js` by `npm run docs` — do not edit by hand.',
   '',
   'Pages are made of blocks, top to bottom. Text fields accept a little formatting — `**bold**`, `*italic*`, `[link text](https://example.com)` —',
-  'and never raw HTML. Links and images must be full `https://` (links may also be `http://`) addresses.',
+  'and never raw HTML. Links must be full `https://` (or `http://`) addresses. Images are pictures you upload in the editor (**Choose…**) or full `https://` addresses.',
   '',
   '## Page settings',
   '',
