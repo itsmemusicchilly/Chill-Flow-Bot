@@ -556,6 +556,31 @@ def('data.variable.get', {
   outputs: ACTION_OUTS, summary: (d) => `${d.scope}.${d.name || '?'} → ${d.saveAs || '?'}`,
 });
 
+// Maths: Set Variable *changes a remembered number*; Math *calculates a new value from any values* (other variables, the member
+// count, an option…) and hands it on as {{var.<name>}}, optionally remembering it as well.
+const MATH_OPS = [['add', '+  Add'], ['sub', '−  Subtract'], ['mul', '×  Multiply'], ['div', '÷  Divide'], ['mod', 'Remainder after dividing'], ['pow', 'To the power of'], ['min', 'The smaller of the two'], ['max', 'The larger of the two']];
+const MATH_SYMBOLS = { add: '+', sub: '−', mul: '×', div: '÷', mod: 'mod', pow: '^', min: 'min', max: 'max' };
+def('data.math', {
+  category: 'data', label: 'Math', icon: '🧮',
+  description: 'Calculate a number from any values — variables, the member count, an option… — and use it in the next nodes as {{var.<name>}}. Tick “Also remember it” to keep it as a server or per-user variable. To just change a remembered number, Set Variable is quicker.',
+  fields: [
+    select('mode', 'How', [['two', 'Two values'], ['formula', 'Formula']]),
+    text('a', 'First value', { showIf: when('mode', 'two'), required: true, placeholder: '{{guild.vars.joins}}' }),
+    select('op', 'Operation', MATH_OPS, { showIf: when('mode', 'two') }),
+    text('b', 'Second value', { showIf: when('mode', 'two'), required: true, placeholder: '1' }),
+    text('formula', 'Formula', {
+      showIf: when('mode', 'formula'), required: true, placeholder: '({{var.a}} + {{var.b}}) * 2',
+      help: 'Use + - * / % ^, brackets and round(), floor(), ceil(), abs(), sqrt(), min(), max(). An empty variable breaks a formula: write {{var.x | default:0}}.',
+    }),
+    select('round', 'Round the result', [['none', 'Do not round'], ['0', 'To a whole number'], ['1', 'To 1 decimal'], ['2', 'To 2 decimals']]),
+    text('saveAs', 'Save result as', { required: true, placeholder: 'total', help: 'Use it in the next nodes as {{var.total}}.', ...VAR_NAME }),
+    select('remember', 'Also remember it', [['none', 'No — only for this run'], ['guild', 'Yes, as a server variable'], ['user', 'Yes, as a per-user variable']], { help: 'Remembered under the same name.' }),
+    idField('targetId', 'User', 'user', { showIf: when('remember', 'user'), placeholder: 'blank = the user who triggered this' }),
+  ],
+  outputs: ACTION_OUTS,
+  summary: (d) => `${d.mode === 'formula' ? d.formula || '?' : `${d.a || '?'} ${MATH_SYMBOLS[d.op] ?? '?'} ${d.b || '?'}`} → ${d.saveAs || '?'}`,
+});
+
 // ---- logic --------------------------------------------------------------------------------------
 const COND_OPS = [['equals', 'equals'], ['notEquals', 'does not equal'], ['contains', 'contains'], ['notContains', 'does not contain'], ['startsWith', 'starts with'], ['endsWith', 'ends with'], ['gt', 'is greater than'], ['gte', 'is at least'], ['lt', 'is less than'], ['lte', 'is at most'], ['matches', 'matches regex'], ['isEmpty', 'is empty'], ['isNotEmpty', 'is not empty']];
 def('logic.condition', {
@@ -666,6 +691,7 @@ export function availableVariables(nodes, edges, nodeId, extra = {}) {
       if (sd.outputVar) add(`var.${sd.outputVar}`, `Saved by “${d.label}”`);
       if (src.type === 'data.variable.set' && sd.scope === 'run' && sd.name) add(`var.${sd.name}`, 'Run variable');
       if (src.type === 'data.variable.get' && sd.saveAs) add(`var.${sd.saveAs}`, 'Loaded variable');
+      if (src.type === 'data.math' && sd.saveAs) add(`var.${sd.saveAs}`, 'Math result');
       if (src.type === 'action.message.send' && sd.menuEnabled) { add('select.value', 'Selected menu option'); }
     }
   }

@@ -28,6 +28,12 @@ const castSet = (value, type) => {
   }
 };
 
+const divisor = (b) => { if (b === 0) throw new FlowError('Cannot divide by zero.'); return b; };
+const MATH = {
+  add: (a, b) => a + b, sub: (a, b) => a - b, mul: (a, b) => a * b,
+  div: (a, b) => a / divisor(b), mod: (a, b) => a % divisor(b), pow: (a, b) => a ** b, min: Math.min, max: Math.max,
+};
+
 export const dataExecutors = {
   async 'data.variable.set'({ ctx, d }) {
     const { scope, id } = scopeTarget(ctx, d);
@@ -58,6 +64,27 @@ export const dataExecutors = {
       }
       case 'delete': if (scope === 'run') delete ctx.vars[d.name]; else ctx.services.db.deleteVar(gid, scope, id, d.name); break;
       default: throw new FlowError(`Unknown operation “${d.operation}”.`);
+    }
+  },
+
+  /** Calculates a number and hands it on as {{var.<saveAs>}}; a blank value counts as 0 (a first-ever run must not fail). */
+  async 'data.math'({ ctx, d }) {
+    let result;
+    if (d.mode === 'formula') {
+      try { result = evaluate(d.formula); } catch (e) { throw new FlowError(`${e.message} If a variable was empty, write {{name | default:0}}.`); }
+    } else {
+      const op = MATH[d.op];
+      if (!op) throw new FlowError(`Unknown operation “${d.op}”.`);
+      result = op(toNumber(d.a, 0), toNumber(d.b, 0));
+    }
+    if (!Number.isFinite(result)) throw new FlowError('The result is not a finite number.');
+    const places = { 0: 0, 1: 1, 2: 2 }[d.round];
+    if (places !== undefined) result = Math.round(result * 10 ** places) / 10 ** places;
+    result = Number(result.toPrecision(12)); // 0.1 + 0.2 is 0.3, not 0.30000000000000004
+    ctx.vars[d.saveAs] = result;
+    if (d.remember === 'guild' || d.remember === 'user') {
+      const { scope, id } = scopeTarget(ctx, { scope: d.remember, targetId: d.targetId });
+      ctx.services.db.setVar(ctx.guild.id, scope, id, d.saveAs, result);
     }
   },
 

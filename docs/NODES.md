@@ -672,6 +672,24 @@ triggered this flow”.
 
 **Outputs:** Next, On error
 
+### 🧮 Math
+
+`data.math` — Calculate a number from any values — variables, the member count, an option… — and use it in the next nodes as {{var.<name>}}. Tick “Also remember it” to keep it as a server or per-user variable. To just change a remembered number, Set Variable is quicker.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| How | select | options: Two values, Formula |
+| First value | text | required; shown when `mode` is `two` |
+| Operation | select | shown when `mode` is `two`; options: +  Add, −  Subtract, ×  Multiply, ÷  Divide, Remainder after dividing, To the power of, The smaller of the two, The larger of the two |
+| Second value | text | required; shown when `mode` is `two` |
+| Formula | text | required; shown when `mode` is `formula`; Use + - * / % ^, brackets and round(), floor(), ceil(), abs(), sqrt(), min(), max(). An empty variable breaks a formula: write {{var.x \| default:0}}. |
+| Round the result | select | options: Do not round, To a whole number, To 1 decimal, To 2 decimals |
+| Save result as | text | required; Use it in the next nodes as {{var.total}}. |
+| Also remember it | select | options: No — only for this run, Yes, as a server variable, Yes, as a per-user variable; Remembered under the same name. |
+| User | user | shown when `remember` is `user` |
+
+**Outputs:** Next, On error
+
 ## Logic
 
 ### 🔀 Condition (If)
