@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # playwright-core only — browsers are not bundled; install Chromium for e2e
+      # (same as: npx playwright-core install chromium, or CHROMIUM_PATH on bare hosts)
+      - name: Install Chromium for e2e
+        run: npx playwright-core install --with-deps chromium
+
+      - name: E2E
+        run: npm run e2e
