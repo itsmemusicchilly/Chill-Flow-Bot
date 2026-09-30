@@ -87,7 +87,10 @@ export function fakeChannel(guild, o = {}) {
     async send(p) {
       const m = { id: nextId(), ...p };
       ch.sent.push(p); ch.sentIds.push(m.id);
-      ch.addMessage({ id: m.id, content: p.content ?? '', author: { id: 'BOT', username: 'flowbot', bot: true }, embeds: (p.embeds ?? []).map((e) => e.data ?? e) });
+      ch.addMessage({
+        id: m.id, content: p.content ?? '', author: { id: 'BOT', username: 'flowbot', bot: true }, embeds: (p.embeds ?? []).map((e) => e.data ?? e),
+        components: (p.components ?? []).map((r) => r.toJSON?.() ?? r),
+      });
       return m;
     },
     addMessage(o = {}) {
@@ -99,6 +102,14 @@ export function fakeChannel(guild, o = {}) {
         author: o.author ?? { id: '222222', username: 'mia', bot: false }, member: o.member,
         attachments: list(o.attachments), embeds: o.embeds ?? [], stickers: list(o.stickers), reference: o.reference ?? null,
         system: o.system ?? false, type: o.type ?? 0,
+        channelId: ch.id, components: o.components ?? [], // rows as Discord's API shapes them: { type: 1, components: [{ type: 2, custom_id, label, … }] }
+      };
+      // Like discord.js: an edit that names `components` replaces them, and one that leaves them out keeps them.
+      msg.edit = async (p) => {
+        ch.calls.push(['messageEdit', id, p]);
+        if (p.components) msg.components = p.components.map((r) => r.toJSON?.() ?? r);
+        if (p.content !== undefined) msg.content = p.content;
+        return msg;
       };
       ch.messages.store.set(id, msg);
       return msg;

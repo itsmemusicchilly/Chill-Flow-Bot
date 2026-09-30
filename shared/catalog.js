@@ -473,6 +473,42 @@ def('action.message.edit', {
   ],
   outputs: ACTION_OUTS, summary: (d) => d.messageId || '',
 });
+const BUTTON_MODES = [['add', 'Add or update buttons'], ['remove', 'Remove specific buttons'], ['clear', 'Remove all buttons'], ['disable', 'Disable buttons'], ['enable', 'Enable buttons']];
+def('action.message.buttons', {
+  category: 'message', label: 'Change Buttons', icon: '🔘',
+  description: 'Add, remove, disable or enable the buttons of a message the bot already sent, without touching its text. Leave the message ID blank to change the message that triggered the flow. Only the bot\'s own messages can be changed, not “only visible to you” replies.',
+  fields: [
+    idField('channelId', 'Channel', 'channel', { placeholder: 'blank = current channel' }),
+    idField('messageId', 'Message ID', 'message', { placeholder: 'blank = the triggering message, or {{channel.vars.panel}}' }),
+    select('mode', 'What to do', BUTTON_MODES),
+    buttonList({ showIf: when('mode', 'add') }),
+    list('targets', 'Which buttons', {
+      create: () => ({ id: uid(6), match: '' }),
+      label: (t) => t.match,
+      fields: [text('match', 'Button ID or label', { required: true, placeholder: 'open_ticket or Close' })],
+    }, { showIf: when('mode', 'remove', 'disable', 'enable'), help: 'A button matches by its Button ID, or by its label (capital letters do not matter). To disable or enable every button, leave this empty.' }),
+    bool('restrictToInvoker', 'Only the person who triggered this can use the added buttons', { showIf: when('mode', 'add') }),
+  ],
+  outputs: (d) => [
+    OUT,
+    ...(d.mode === 'add' ? (d.buttons || []).filter((b) => b.style !== 'Link' && !buttonKey(b)).map((b) => ({ id: `btn_${b.id}`, label: b.label || 'Button', kind: 'button' })) : []),
+    ERR,
+  ],
+  summary: (d) => {
+    const n = ((d.mode === 'add' ? d.buttons : d.targets) || []).length;
+    const what = { add: `add ${n} button${n === 1 ? '' : 's'}`, remove: `remove ${n} button${n === 1 ? '' : 's'}`, clear: 'remove all buttons', disable: n ? `disable ${n}` : 'disable all', enable: n ? `enable ${n}` : 'enable all' }[d.mode] || '';
+    return `${what}${d.messageId ? ` on ${d.messageId}` : ''}`;
+  },
+  check(d) {
+    const e = [];
+    if (d.mode === 'add') {
+      if (!(d.buttons || []).length) e.push('Add at least one button.');
+      e.push(...buttonIdErrors(d.buttons));
+    }
+    if (d.mode === 'remove' && !(d.targets || []).length) e.push('Say which buttons to remove (a Button ID or a label), or choose “Remove all buttons”.');
+    return e;
+  },
+});
 def('action.message.delete', {
   category: 'message', label: 'Delete Message', icon: '🗑️', description: 'Delete a message. Leave the ID blank to delete the message that triggered the flow.',
   fields: [idField('channelId', 'Channel', 'channel', { placeholder: 'blank = current channel' }), idField('messageId', 'Message ID', 'message', { placeholder: 'blank = the triggering message' })],

@@ -118,6 +118,7 @@ describe('limit mechanics', () => {
       'action.message.send.buttons': 25,
       'action.message.send.menuOptions': 25,
       'action.message.edit.embedFields': 25,
+      'action.message.buttons.buttons': 25,
       'action.modal.show.inputs': 5,
     });
   });

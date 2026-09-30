@@ -292,7 +292,7 @@ export class Runtime {
     const stale = (content) => this.#stale(interaction, content);
     const flow = this.flowsById.get(parsed.flowId);
     if (!flow || (interaction.guildId && flow.guildId !== interaction.guildId)) return stale('This button is no longer active.');
-    const node = flow.graph.nodes.find((n) => n.id === parsed.nodeId && n.type === 'action.message.send');
+    const node = flow.graph.nodes.find((n) => n.id === parsed.nodeId && (n.type === 'action.message.send' || n.type === 'action.message.buttons'));
     if (!node) return stale('This button is no longer active.');
     const isMenu = parsed.handle === 'sel';
     const handle = isMenu ? `opt_${interaction.values?.[0]}` : parsed.handle;
