@@ -1,5 +1,5 @@
 {
-  "name": "discord-bot-flowchart",
+  "name": "chill-flow-bot",
   "version": "0.1.0",
   "private": true,
   "description": "A shared Discord bot whose behaviour server admins build in a web flowchart editor.",
