@@ -21,15 +21,16 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **Reusable panels.** Give a button a *Button ID* and handle it with a **Button Clicked** trigger instead: it works on any
   copy of the message, from any flow, survives restarts, and **Toggle Role** turns a button into a one-press role switch.
   Ready-made *Ticket panel* and *Button role panel* templates show how.
-* **55 nodes**: 27 triggers (commands, buttons, messages, joins/leaves/kicks/bans/timeouts, server boosts, role and channel events,
-  reactions, voice, schedule, manual, form submitted) and 28 actions/logic nodes (messages with buttons/menus/forms, member moderation,
-  channels and ticket transcripts, roles, variables, conditions, loops, cooldowns, waits). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
-* **Remembers things**: run, per-server and per-user variables, usable everywhere as `{{templates}}`.
+* **56 nodes**: 27 triggers (commands, buttons, messages, joins/leaves/kicks/bans/timeouts, server boosts, role and channel events,
+  reactions, voice, schedule, manual, form submitted) and 29 actions/logic nodes (messages with buttons/menus/forms, member moderation,
+  channels and ticket transcripts, roles, variables and maths, conditions, loops, cooldowns, waits). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
+* **Remembers things**: run, per-server and per-user variables, usable everywhere as `{{templates}}` — with maths built in
+  (see [Doing maths](#doing-maths)).
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (372 unit/integration tests plus a
-> 75-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (415 unit/integration tests plus a
+> 79-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it.
 
 ## Quick start
@@ -199,8 +200,52 @@ server (both need `ENABLE_MEMBERS_INTENT`). Handy for a thank-you message: *"Tha
 | `loop.index .item`, `error.message`, `cooldown.remaining`, `now.iso .date .time .timestamp` | misc |
 | `executor.*`, `reason`, `timeout.*` | moderator details for kick/ban/timeout triggers |
 
-Filters: `default:x`, `upper`, `lower`, `trim`, `length`, `json`, `round`. Substituted text is never evaluated again, so
-member-supplied text cannot inject templates.
+Filters: `default:x`, `upper`, `lower`, `trim`, `length`, `json`, plus the maths filters below. Filters chain left to right.
+Substituted text is never evaluated again, so member-supplied text cannot inject templates.
+
+### Doing maths
+
+Three tools, from smallest to biggest — pick the one that fits:
+
+| You want to… | Use |
+| --- | --- |
+| change a number you already **store** (add one to a counter, subtract points) | **Set Variable** → *Add* / *Subtract* / *Multiply* / *Divide* / *Calculate expression* |
+| **calculate a new value** from any values and use it in the next nodes (optionally remember it) | the **Math** block (*Variables* category) |
+| show a calculated number **inside text** without adding a node | maths filters in `{{ … }}` |
+
+**Maths filters** (any text field): `add:N`, `sub:N`, `mul:N`, `div:N`, `mod:N`, `min:N`, `max:N`, `abs`, `floor`, `ceil`,
+`round` / `round:2`, `fixed:2` (keeps trailing zeros: `3.50`) and `commas` (`1234567` → `1,234,567`). The number after the colon
+can be a number **or a variable** (`add:var.bonus`, `mul:guild.vars.rate`).
+
+```
+Joined so far: {{guild.vars.joins | default:0 | add:1 | commas}}
+Price with tax: {{var.price | mul:1.2 | fixed:2}}
+```
+
+* An **empty or missing** value counts as `0`, so the first time works without any set-up. Text that is not a number, dividing by
+  zero, or a result that is not a finite number leaves the value **as it was** (a text field has nowhere to show an error). Use the
+  **Math** block when you want to be told.
+* Results are tidied to 12 significant digits, so `0.1 + 0.2` shows `0.3`.
+
+**The Math block** has two modes. *Two values*: a first value, an operation (`+ − × ÷`, remainder, power, smaller, larger) and a
+second value. *Formula*: one line such as `({{var.score}} + 10) * 2` (`+ - * / % ^`, brackets, `round floor ceil abs sqrt min max`).
+Either way the answer is available to the next nodes as `{{var.<name>}}` (the name you give under **Save result as**), can be
+rounded, and — with **Also remember it** — is saved as a server or per-user variable under the same name. A blank value counts as
+`0`; a real problem (text, ÷ 0, a broken formula) follows the block's **On error** output.
+
+**Recipes** (both are in the *New flow* templates — pick the channel, switch on):
+
+* **Member counter** — *Member Joined* and *Member Left* → *Update Channel* named `👥 Members: {{guild.memberCount | commas}}`
+  (needs the Server Members intent).
+* **Join counter** — *Member Joined* → **Math** (`{{guild.vars.joins}}` + 1, remembered as the server variable `joins`) →
+  *Update Channel* named `Joined so far: {{var.joins | commas}}`.
+
+**Renaming a channel has a Discord limit.** Discord only allows about **two name/topic changes per channel every 10 minutes**.
+The bot counts its own changes: the first two are made at once, and while the limit is used up the *newest* name is held and made
+**once** when Discord allows it (the log says *"…is held back; the newest one is applied in about N minutes"* and later
+*"The held change … was made"*). Runs never hang, the counter never runs behind, and the channel always ends with the latest
+number. Held changes are forgotten if the bot restarts or is removed from the server. Other channel settings (slowmode, parent,
+NSFW, permissions) are never held back.
 
 ## Pages & forms
 
@@ -308,7 +353,7 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 ## Development
 
 ```bash
-npm test          # 372 unit + API + event + button/transcript + public-page + upload + draft/live + access tests (fake Discord objects, in-memory SQLite)
+npm test          # 415 unit + API + event + button/transcript + public-page + upload + draft/live + access + maths + counter tests (fake Discord objects, in-memory SQLite)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
@@ -340,6 +385,10 @@ Not yet automated — please run through this once on a test server:
 - [ ] Boosts: boost the server with a test account → *Member Boosted Server* fires once (not again for a second boost); remove the boost
       → *Member Stopped Boosting* fires. Check it still fires for a member who was not cached (restart the bot first).
 - [ ] Two accounts press the same panel button at the same time: each only sees their own variables.
+- [ ] Counters: switch on the *Member counter* template, pick a channel, then have several people join/leave within a few minutes —
+      the first two renames appear at once, the log says the next is held back, and about ten minutes later the name settles on the
+      correct member count. Repeat with the *Join counter* (server variable `joins`); check `{{guild.memberCount}}` is right at the
+      moment of a real join, and that a held rename never triggers a *Channel Updated* flow.
 - [ ] Use one Button ID in two flows: the log warns that the newer flow is ignored for it.
 - [ ] Member Joined (with the Members intent) greets and gives a role; Kicked vs Left is told apart (with *View Audit Log*).
 - [ ] Reaction Added with message + emoji filter gives a role.
