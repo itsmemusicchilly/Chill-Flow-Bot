@@ -473,10 +473,10 @@ def('action.message.edit', {
   ],
   outputs: ACTION_OUTS, summary: (d) => d.messageId || '',
 });
-const BUTTON_MODES = [['add', 'Add or update buttons'], ['remove', 'Remove specific buttons'], ['clear', 'Remove all buttons'], ['disable', 'Disable buttons'], ['enable', 'Enable buttons']];
+const BUTTON_MODES = [['add', 'Add or update buttons'], ['remove', 'Remove specific buttons'], ['clear', 'Remove all buttons'], ['disable', 'Disable buttons'], ['enable', 'Enable buttons'], ['delete', 'Delete the message']];
 def('action.message.buttons', {
   category: 'message', label: 'Change Buttons', icon: '🔘',
-  description: 'Add, remove, disable or enable the buttons of a message the bot already sent, without touching its text. Leave the message ID blank to change the message that triggered the flow. Only the bot\'s own messages can be changed, not “only visible to you” replies.',
+  description: 'Add, remove, disable or enable the buttons of a message the bot already sent, without touching its text — or delete the message. Leave the message ID blank to use the message that triggered the flow. Buttons can only be changed on the bot\'s own messages, and neither works on “only visible to you” replies.',
   fields: [
     idField('channelId', 'Channel', 'channel', { placeholder: 'blank = current channel' }),
     idField('messageId', 'Message ID', 'message', { placeholder: 'blank = the triggering message, or {{channel.vars.panel}}' }),
@@ -496,7 +496,7 @@ def('action.message.buttons', {
   ],
   summary: (d) => {
     const n = ((d.mode === 'add' ? d.buttons : d.targets) || []).length;
-    const what = { add: `add ${n} button${n === 1 ? '' : 's'}`, remove: `remove ${n} button${n === 1 ? '' : 's'}`, clear: 'remove all buttons', disable: n ? `disable ${n}` : 'disable all', enable: n ? `enable ${n}` : 'enable all' }[d.mode] || '';
+    const what = { add: `add ${n} button${n === 1 ? '' : 's'}`, remove: `remove ${n} button${n === 1 ? '' : 's'}`, clear: 'remove all buttons', disable: n ? `disable ${n}` : 'disable all', enable: n ? `enable ${n}` : 'enable all', delete: 'delete the message' }[d.mode] || '';
     return `${what}${d.messageId ? ` on ${d.messageId}` : ''}`;
   },
   check(d) {

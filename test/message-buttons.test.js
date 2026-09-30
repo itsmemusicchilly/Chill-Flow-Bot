@@ -259,6 +259,60 @@ describe('removing, disabling and enabling buttons', () => {
   });
 });
 
+describe('deleting the message', () => {
+  const deletes = () => channel.calls.filter((c) => c[0] === 'messageDelete');
+
+  it('deletes the message with that ID, and nothing else', async () => {
+    const msg = post([row(btn('Open', 'open'))]);
+    const other = post([row(btn('Keep', 'keep'))]);
+    change({ mode: 'delete', messageId: msg.id });
+    await run(slash());
+    assert.deepEqual(deletes(), [['messageDelete', msg.id]]);
+    assert.equal(await channel.messages.fetch(msg.id), null);
+    assert.ok(await channel.messages.fetch(other.id), 'other messages are left alone');
+    assert.equal(edits().length, 0);
+    assert.deepEqual(oops(), []);
+  });
+
+  it('works on a message somebody else posted too, like Delete Message (Discord decides whether the bot may)', async () => {
+    const msg = post([], { author: { id: '999999', username: 'someone', bot: false }, content: 'rude words' });
+    change({ mode: 'delete', messageId: msg.id });
+    await run(slash());
+    assert.deepEqual(deletes(), [['messageDelete', msg.id]]);
+    assert.deepEqual(oops(), []);
+  });
+
+  it('with no message ID it deletes the message the button was pressed on', async () => {
+    const msg = post([row(btn('Dismiss', 'dismiss'))], { id: '700002' });
+    install({
+      nodes: [node('h', 'trigger.button.clicked', { customId: 'dismiss' }), node('b', 'action.message.buttons', { mode: 'delete', messageId: '' })],
+      edges: [edge('h', 'b')],
+    });
+    await click(buildButtonId({ id: 'dismiss' }), msg.id);
+    assert.equal(await channel.messages.fetch(msg.id), null);
+  });
+
+  it('follows the error output when the message is already gone', async () => {
+    change({ mode: 'delete', messageId: '123456789012345678' });
+    await run(slash());
+    assert.match(oops()[0], /was not found in #general/);
+  });
+
+  it('can delete the panel a channel variable remembers', async () => {
+    install(commandFlow(
+      [node('m', 'action.message.send', { target: 'current_channel', content: 'Vote now', outputVar: 'msg', buttons: [item('Vote', { customId: 'vote' })] }),
+        node('v', 'data.variable.set', { scope: 'channel', name: 'panel', operation: 'set', value: '{{var.msg}}' })],
+      [edge('t', 'm'), edge('m', 'v')], 'panel',
+    ));
+    install(commandFlow([node('b', 'action.message.buttons', { mode: 'delete', messageId: '{{channel.vars.panel}}' })], [edge('t', 'b')], 'close'));
+    await run(slash('panel'));
+    const msg = [...channel.messages.store.values()].find((m) => m.content === 'Vote now');
+    assert.ok(msg);
+    await run(slash('close'));
+    assert.equal(await channel.messages.fetch(msg.id), null, 'the panel is gone');
+  });
+});
+
 describe('what it will not touch', () => {
   it('another author’s message', async () => {
     const msg = post([row(btn('Theirs', 'theirs'))], { author: { id: '999999', username: 'someone', bot: false } });
@@ -289,6 +343,8 @@ describe('Change Buttons in the editor', () => {
     assert.deepEqual(shown('remove'), ['channelId', 'messageId', 'mode', 'targets']);
     assert.deepEqual(shown('disable'), ['channelId', 'messageId', 'mode', 'targets']);
     assert.deepEqual(shown('clear'), ['channelId', 'messageId', 'mode']);
+    assert.deepEqual(shown('delete'), ['channelId', 'messageId', 'mode']);
+    assert.deepEqual(getOutputs('action.message.buttons', { mode: 'delete', buttons: [item('A')] }).map((o) => o.id), ['out', 'error']);
   });
 
   it('gives each wired button an output only in "add" mode', () => {
@@ -309,6 +365,7 @@ describe('Change Buttons in the editor', () => {
     assert.equal(def.summary({ mode: 'add', buttons: [item('A'), item('B')] }), 'add 2 buttons');
     assert.equal(def.summary({ mode: 'clear', messageId: '123' }), 'remove all buttons on 123');
     assert.equal(def.summary({ mode: 'disable', targets: [] }), 'disable all');
+    assert.equal(def.summary({ mode: 'delete', messageId: '{{channel.vars.panel}}' }), 'delete the message on {{channel.vars.panel}}');
   });
 });
 

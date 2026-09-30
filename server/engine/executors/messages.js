@@ -63,6 +63,8 @@ const matchesTarget = (c, target) => target !== '' && (buttonIdOf(c) === target 
 
 async function changeButtons({ ctx, d, node }) {
   const message = await fetchMessage(ctx, d.channelId, d.messageId);
+  // Deleting follows Delete Message: any message the bot is allowed to delete, not only its own.
+  if (d.mode === 'delete') { await message.delete(); return; }
   if (message.author.id !== ctx.guild.client.user.id) throw new FlowError('The bot can only change the buttons of its own messages.');
   const log = (level, text) => ctx.services.logger.log(ctx.guild.id, level, text, ctx.logMeta);
   let rows = (message.components || []).map((r) => ActionRowBuilder.from(r));

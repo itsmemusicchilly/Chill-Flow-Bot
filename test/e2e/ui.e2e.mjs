@@ -675,6 +675,9 @@ try {
   await mode.selectOption('disable');
   await page.waitForTimeout(250);
   ok((await cb.getByRole('button', { name: '+ Add' }).isVisible()) && (await cbNode.locator('.badge.bad').count()) === 0, '“Disable” accepts an empty list (it then means every button)');
+  await mode.selectOption('delete');
+  await page.waitForTimeout(250);
+  ok((await cb.getByRole('button', { name: '+ Add' }).count()) === 0 && (await cbNode.locator('.badge.bad').count()) === 0 && (await cbNode.getByText('delete the message').count()) === 1, '“Delete the message” needs no list, and the node says what it will do');
 
   await page.getByRole('tab', { name: 'Nodes' }).click();
   await page.getByRole('button', { name: /Set Variable/ }).click();

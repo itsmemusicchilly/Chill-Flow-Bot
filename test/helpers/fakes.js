@@ -111,6 +111,7 @@ export function fakeChannel(guild, o = {}) {
         if (p.content !== undefined) msg.content = p.content;
         return msg;
       };
+      msg.delete = async () => { ch.calls.push(['messageDelete', id]); ch.messages.store.delete(id); return msg; };
       ch.messages.store.set(id, msg);
       return msg;
     },
