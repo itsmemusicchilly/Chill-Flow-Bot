@@ -258,3 +258,84 @@ label.btn:focus-within { outline: 2px solid #8ea1ff; outline-offset: 2px; }
 .page-editor .flowbar { gap: 8px; }
 .page-editor .flowbar .flow-name { width: auto; flex: 0 1 200px; min-width: 110px; }
 .page-editor .slug input { width: 110px; }
+
+/* ---- phones and touch screens -------------------------------------------------------------------------------------------
+   Kept last so they win over the tablet rules above. `phone-only` / `wide-only` mark things that exist for one size only. */
+.phone-only, .insp-close, .pane-tabs, .scrim { display: none; }
+.insp-close { margin-left: auto; align-self: flex-start; }
+@media (max-width: 1000px) { .insp-close { display: inline-grid; } }
+
+/* touch: no hover to reveal the row actions, and fingers need bigger targets */
+@media (hover: none) { .flow-actions, .block-actions { display: flex; } }
+@media (pointer: coarse) {
+  .icon-btn { width: 40px; height: 40px; }
+  .btn, .btn.small { min-height: 40px; }
+  .btn.small { padding: 6px 12px; }
+  .chip { padding: 8px 13px; }
+  .tabs button, .flow-open, .block-row, .palette-item, .block-add, .list-title { min-height: 44px; }
+  .field.check label, .access-choice { min-height: 36px; }
+  input[type=checkbox] { width: 20px; height: 20px; }
+  .react-flow__handle.h-in, .react-flow__handle.h-out { width: 22px; height: 22px; }
+  .react-flow__controls-button { width: 36px !important; height: 36px !important; }
+  .block-actions .icon-btn, .flow-actions .icon-btn { width: 34px; }
+}
+
+@media (max-width: 720px) {
+  .wide-only { display: none !important; }
+  .phone-only { display: inline-flex; }
+  .app { height: 100dvh; }
+  input[type=text], input[type=number], input[type=search], input:not([type]), select, textarea { font-size: 16px; } /* smaller and iOS zooms the page in */
+
+  /* top bar: ☰ · ← · icon · name · … · ⋯ */
+  .topbar { gap: 4px; padding: 0 6px; }
+  .guild-title { max-width: none; flex: 1 1 0; min-width: 0; }
+  .topbar .spacer { display: none; }
+  .more-menu.phone-only { display: block; } .nav-toggle, .more-menu.phone-only > summary { font-size: 20px; color: var(--text); }
+  .more-menu.phone-only .more-panel { min-width: 200px; }
+
+  /* the sidebar becomes a drawer under the top bar */
+  .sidebar { position: fixed; top: 48px; bottom: 0; left: 0; width: min(340px, 88vw); z-index: 40; box-shadow: var(--shadow); transform: translateX(-104%); transition: transform .18s ease-out, visibility 0s .18s; visibility: hidden; }
+  .sidebar.open { transform: none; visibility: visible; transition: transform .18s ease-out, visibility 0s; }
+  .scrim { display: block; position: fixed; inset: 48px 0 0 0; z-index: 35; padding: 0; border: 0; background: rgba(0, 0, 0, .55); }
+
+  /* flow editor */
+  .flowbar { position: relative; gap: 8px; padding: 8px; }
+  .flowbar .flow-name { flex: 1 1 100%; width: 100%; }
+  .page-editor .flowbar .flow-name { flex: 1 1 52%; width: auto; min-width: 0; }
+  .issue-menu { position: static; }
+  .issue-pop { left: 8px; right: 8px; top: 100%; width: auto; max-height: 40dvh; }
+  .inspector:not(.page-inspector) { top: auto; left: 0; right: 0; bottom: 0; width: 100%; height: 62dvh; border-left: 0; border-top: 1px solid var(--line); border-radius: 16px 16px 0 0; z-index: 30; }
+  .insp-close { display: inline-grid; }
+  .logs { height: 34dvh; }
+  .logs header { flex-wrap: wrap; row-gap: 0; }
+  .logs header > .muted { display: none; }
+  .log { gap: 6px; padding: 1px 8px; }
+  .toasts { left: 8px; right: 8px; bottom: 8px; max-width: none; }
+  .empty-stage { padding: 16px; }
+
+  /* page builder: one pane at a time, switched from a bottom tab bar */
+  .page-editor .flowbar { row-gap: 6px; }
+  .page-editor .flowbar > .btn { flex: 1 1 auto; }
+  .page-editor .slug { flex: 1 1 38%; min-width: 0; } .page-editor .slug input { width: 100%; min-width: 0; }
+  .pane-tabs { display: grid; grid-template-columns: repeat(3, 1fr); flex: none; background: var(--panel); border-top: 1px solid var(--line); }
+  .pane-tabs button { min-height: 48px; padding: 8px 4px; background: none; border: 0; border-top: 2px solid transparent; color: var(--muted); font-weight: 600; cursor: pointer; }
+  .pane-tabs button.on { color: var(--text); border-top-color: var(--brand); }
+  .page-body > .outline, .page-body > .preview-wrap, .page-body > .page-inspector { display: none; width: 100%; position: static; box-shadow: none; border: 0; flex: 1 1 auto; min-width: 0; }
+  .page-body[data-pane=blocks] > .outline { display: flex; }
+  .page-body[data-pane=preview] > .preview-wrap { display: flex; }
+  .page-body[data-pane=settings] > .page-inspector { display: flex; }
+  .block-palette { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+
+  /* dialogs */
+  .modal-back { padding: 8px; }
+  .modal, .modal.wide { width: 100%; max-height: 94dvh; }
+  .modal-head { padding: 12px 14px; } .modal-body { padding: 12px 14px 18px; }
+  .template-grid { grid-template-columns: 1fr; }
+  .img-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); max-height: 60dvh; }
+  .vars-table { display: block; overflow-x: auto; }
+  .var-form select { width: 100%; }
+  .responses { max-height: 65dvh; }
+  .picker { padding: 16px 12px 40px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .login-card { padding: 24px 18px; }
+}

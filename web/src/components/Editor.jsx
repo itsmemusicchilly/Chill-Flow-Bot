@@ -5,12 +5,14 @@ import { ImagesContext, useToast } from '../context.js';
 import FlowWorkspace from './FlowWorkspace.jsx';
 import ImageLibrary from './ImageLibrary.jsx';
 import LogsPanel from './LogsPanel.jsx';
+import MoreMenu from './MoreMenu.jsx';
 import NewFlowDialog from './NewFlowDialog.jsx';
 import NewPageDialog from './NewPageDialog.jsx';
 import PageEditor from './PageEditor.jsx';
 import PagesList from './PagesList.jsx';
 import Palette from './Palette.jsx';
 import VariablesDialog from './VariablesDialog.jsx';
+import { matches, PHONE } from '../hooks/useMediaQuery.js';
 import { usePages } from '../pages/usePages.js';
 import { useUploads } from '../uploads/useUploads.js';
 
@@ -26,7 +28,9 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
   const [flow, setFlow] = useState(null);
   const [tab, setTab] = useState(pageId ? 'pages' : 'flows');
   const [dialog, setDialog] = useState(null); // 'new' | 'newpage' | 'vars'
-  const [showLogs, setShowLogs] = useState(true);
+  const [showLogs, setShowLogs] = useState(() => !matches(PHONE)); // logs take a third of a phone screen: start closed there
+  const [navOpen, setNavOpen] = useState(() => matches(PHONE) && !flowId && !pageId); // on a phone the sidebar is a drawer; open it when there is nothing else to show
+
   const [logs, setLogs] = useState([]);
   const [flash, setFlash] = useState({});
   const [loadError, setLoadError] = useState('');
@@ -43,6 +47,7 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
     openLibrary: (opts = {}) => setLibrary(opts),
   }), [gid, me.meta.uploads.available, me.meta.uploads.publicBase, uploads.ids]);
   useEffect(() => { if (pageId) setTab('pages'); else if (flowId) setTab('flows'); }, [pageId, flowId]);
+  useEffect(() => { if (pageId || flowId) setNavOpen(false); }, [pageId, flowId]);
 
   // ---- initial load ---------------------------------------------------------------------------
   useEffect(() => {
@@ -83,7 +88,7 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
 
   const guildData = useMemo(() => ({ channels, roles, forms: pagesApi.forms }), [channels, roles, pagesApi.forms]);
 
-  const openFlow = (id) => { if (id !== flowId && confirmLeave()) navigate(gid, id); };
+  const openFlow = (id) => { setNavOpen(false); if (id !== flowId && confirmLeave()) navigate(gid, id); };
 
   const summaryOf = (f) => ({ id: f.id, name: f.name, enabled: f.enabled, updatedAt: f.updatedAt, updatedBy: f.updatedBy, nodes: f.nodes ?? f.graph?.nodes.length, issues: f.issues?.filter?.((i) => i.level === 'error').length ?? f.issues });
   const onSaved = useCallback((saved, sync) => {
@@ -137,21 +142,29 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
     <ImagesContext.Provider value={imagesCtx}>
     <div className="app">
       <header className="topbar">
+        <button className="icon-btn nav-toggle phone-only" aria-label="Flows, pages and nodes" aria-expanded={navOpen} onClick={() => setNavOpen((o) => !o)}>☰</button>
         <button className="icon-btn" aria-label="Back to servers" title="All servers" onClick={() => confirmLeave() && navigate(null)}>←</button>
         {guild.icon ? <img className="guild-icon sm" src={guild.icon} alt="" width="26" height="26" /> : <span className="guild-icon sm fallback" aria-hidden="true">{guild.name[0]}</span>}
         <b className="guild-title">{guild.name}</b>
         <span className="spacer" />
-        <button className="btn ghost small" onClick={() => setDialog('vars')}>Variables</button>
-        <button className="btn ghost small" onClick={() => setLibrary({})}>Pictures</button>
-        <button className="btn ghost small" onClick={() => setShowLogs((s) => !s)} aria-pressed={showLogs}>{showLogs ? 'Hide logs' : 'Show logs'}</button>
-        <img className="avatar" src={me.user.avatar} alt="" width="26" height="26" />
-        <button className="btn ghost small" onClick={onLogout}>Log out</button>
+        <button className="btn ghost small wide-only" onClick={() => setDialog('vars')}>Variables</button>
+        <button className="btn ghost small wide-only" onClick={() => setLibrary({})}>Pictures</button>
+        <button className="btn ghost small wide-only" onClick={() => setShowLogs((s) => !s)} aria-pressed={showLogs}>{showLogs ? 'Hide logs' : 'Show logs'}</button>
+        <MoreMenu className="phone-only" label="⋯" ariaLabel="More actions">
+          <button className="btn ghost small" onClick={() => setDialog('vars')}>Variables</button>
+          <button className="btn ghost small" onClick={() => setLibrary({})}>Pictures</button>
+          <button className="btn ghost small" onClick={() => setShowLogs((s) => !s)}>{showLogs ? 'Hide logs' : 'Show logs'}</button>
+          <button className="btn ghost small" onClick={onLogout}>Log out</button>
+        </MoreMenu>
+        <img className="avatar wide-only" src={me.user.avatar} alt="" width="26" height="26" />
+        <button className="btn ghost small wide-only" onClick={onLogout}>Log out</button>
       </header>
 
       {sync && sync.ok === false && <div className="banner bad" role="alert">Slash commands could not be updated: {sync.error}. Other parts of your flows keep working.</div>}
 
       <div className="main">
-        <aside className="sidebar">
+        {navOpen && <button type="button" className="scrim" aria-label="Close menu" onClick={() => setNavOpen(false)} />}
+        <aside className={`sidebar ${navOpen ? 'open' : ''}`}>
           <div className="tabs" role="tablist">
             <button role="tab" aria-selected={tab === 'flows'} className={tab === 'flows' ? 'on' : ''} onClick={() => setTab('flows')}>Flows</button>
             <button role="tab" aria-selected={tab === 'pages'} className={tab === 'pages' ? 'on' : ''} onClick={() => setTab('pages')}>Pages</button>
@@ -160,11 +173,11 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
           {tab === 'pages' ? (
             <PagesList
               pages={pagesApi.pages} pageId={pageId} limit={me.meta.limits.pagesPerGuild}
-              onOpen={pagesApi.openPage} onNew={() => setDialog('newpage')} onDuplicate={pagesApi.duplicatePage} onRemove={pagesApi.removePage}
+              onOpen={(id) => { setNavOpen(false); pagesApi.openPage(id); }} onNew={() => { setNavOpen(false); setDialog('newpage'); }} onDuplicate={pagesApi.duplicatePage} onRemove={pagesApi.removePage}
             />
           ) : tab === 'flows' ? (
             <div className="flow-list">
-              <button className="btn primary block" onClick={() => setDialog('new')}>+ New flow</button>
+              <button className="btn primary block" onClick={() => { setNavOpen(false); setDialog('new'); }}>+ New flow</button>
               {flows.length === 0 && <p className="muted tiny">No flows yet. Start from a template — it is the quickest way to see how things connect.</p>}
               {flows.map((f) => (
                 <div key={f.id} className={`flow-item ${f.id === flowId ? 'active' : ''}`}>
@@ -182,7 +195,7 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
               <p className="tiny muted">{flows.length}{me.meta.limits.flowsPerGuild ? `/${me.meta.limits.flowsPerGuild}` : ''} {flows.length === 1 ? 'flow' : 'flows'}</p>
             </div>
           ) : (
-            <Palette intents={me.meta.intents} onAdd={(type) => apiRef.current?.addNode(type)} />
+            <Palette intents={me.meta.intents} onAdd={(type) => { apiRef.current?.addNode(type); setNavOpen(false); }} />
           )}
         </aside>
 

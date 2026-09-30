@@ -7,25 +7,11 @@ import { useImages, useToast } from '../context.js';
 import AccessSettings from './AccessSettings.jsx';
 import { FieldList } from './FieldEditor.jsx';
 import LinkPreviewCard from './LinkPreviewCard.jsx';
+import MoreMenu from './MoreMenu.jsx';
 import ResponsesDialog from './ResponsesDialog.jsx';
 
 // What the editor works on: the DRAFT (title, look, link preview, blocks), the address and who may open the page.
 const pick = (page) => structuredClone({ title: page.title, slug: page.slug, theme: page.theme, blocks: page.blocks, access: page.access, roleIds: page.roleIds });
-/** A small dropdown for the less common actions, so the top bar stays on one line. Closes on a click outside or on an item. */
-function MoreMenu({ children }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const close = (e) => { if (ref.current?.open && !ref.current.contains(e.target)) ref.current.open = false; };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, []);
-  return (
-    <details className="more-menu" ref={ref}>
-      <summary className="btn ghost small">More ▾</summary>
-      <div className="more-panel" onClick={() => { ref.current.open = false; }}>{children}</div>
-    </details>
-  );
-}
 const problemText = (e) => `${e.message}${e.data?.issues?.length ? ` ${e.data.issues.map((i) => i.message).join(' ')}` : ''}`;
 
 export default function PageEditor({ gid, guild, roles, page, dirtyRef, onSaved }) {
@@ -33,6 +19,7 @@ export default function PageEditor({ gid, guild, roles, page, dirtyRef, onSaved 
   const { ids: pictureIds } = useImages();
   const [draft, setDraft] = useState(() => pick(page));
   const [selected, setSelected] = useState(null); // block id, or null for page settings
+  const [pane, setPane] = useState('blocks'); // phones show one of blocks | preview | settings at a time (see the bottom tabs)
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false); // publishing, unpublishing or discarding
@@ -60,6 +47,7 @@ export default function PageEditor({ gid, guild, roles, page, dirtyRef, onSaved 
       return [...bs.slice(0, at), block, ...bs.slice(at)];
     });
     setSelected(block.id);
+    setPane('settings');
   };
   const move = (id, d) => setBlocks((bs) => {
     const i = bs.findIndex((b) => b.id === id);
@@ -181,7 +169,7 @@ export default function PageEditor({ gid, guild, roles, page, dirtyRef, onSaved 
         <button className="btn primary" disabled={!canPublish} onClick={publish} title={blocked ? 'Fix the problems in the list first' : 'Make this the version visitors see'}>{page.published ? 'Publish changes' : 'Publish'}</button>
       </div>
 
-      <div className="page-body">
+      <div className="page-body" data-pane={pane}>
         <aside className="outline" aria-label="Blocks">
           <h3>Add a block</h3>
           <div className="block-palette">
@@ -194,7 +182,7 @@ export default function PageEditor({ gid, guild, roles, page, dirtyRef, onSaved 
           <h3>Page</h3>
           <ol className="block-list">
             <li>
-              <button className={`block-row ${selected === null ? 'on' : ''}`} onClick={() => setSelected(null)}>
+              <button className={`block-row ${selected === null ? 'on' : ''}`} onClick={() => { setSelected(null); setPane('settings'); }}>
                 <span aria-hidden="true">⚙️</span><span className="block-label">Page settings</span>
                 {issuesByBlock._page && <span className="badge bad" title={issuesByBlock._page.map((i) => i.message).join('\n')}>!</span>}
               </button>
@@ -205,7 +193,7 @@ export default function PageEditor({ gid, guild, roles, page, dirtyRef, onSaved 
               const bi = issuesByBlock[b.id] || [];
               return (
                 <li key={b.id} className={`block-item ${selected === b.id ? 'on' : ''}`}>
-                  <button className="block-row" onClick={() => setSelected(b.id)} aria-current={selected === b.id}>
+                  <button className="block-row" onClick={() => { setSelected(b.id); setPane('settings'); }} aria-current={selected === b.id}>
                     <span aria-hidden="true">{d?.icon ?? '❓'}</span>
                     <span className="block-label">{d?.label ?? b.type}<small>{String(d?.summary?.(b.data) ?? '').slice(0, 34)}</small></span>
                     {bi.length > 0 && <span className="badge bad" title={bi.map((x) => x.message).join('\n')}>!</span>}
@@ -271,6 +259,11 @@ export default function PageEditor({ gid, guild, roles, page, dirtyRef, onSaved 
           )}
         </aside>
       </div>
+      <nav className="pane-tabs" role="tablist" aria-label="Page editor sections">
+        {[['blocks', 'Blocks'], ['preview', 'Preview'], ['settings', selectedBlock ? 'Block settings' : 'Page settings']].map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={pane === id} className={pane === id ? 'on' : ''} onClick={() => setPane(id)}>{label}</button>
+        ))}
+      </nav>
       {showResponses && <ResponsesDialog gid={gid} page={page} onClose={() => setShowResponses(false)} />}
     </div>
   );

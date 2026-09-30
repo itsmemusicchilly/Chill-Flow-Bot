@@ -13,7 +13,7 @@ function insertAtCaret(target, text) {
   requestAnimationFrame(() => { try { el.focus(); el.setSelectionRange(start + text.length, start + text.length); } catch { /* element gone */ } });
 }
 
-export default function Inspector({ node, nodes, edges, issues, onChange, onDuplicate, onDelete }) {
+export default function Inspector({ node, nodes, edges, issues, onChange, onDuplicate, onDelete, onClose }) {
   const focusRef = useRef(null);
   const def = node ? NODE_TYPES[node.type] : null;
   const { guildData } = useEditor();
@@ -39,6 +39,7 @@ export default function Inspector({ node, nodes, edges, issues, onChange, onDupl
           <h2>{def.label}</h2>
           <p className="muted tiny">{def.description}</p>
         </div>
+        {onClose && <button type="button" className="icon-btn insp-close" aria-label="Close settings" onClick={onClose}>✕</button>}
       </header>
 
       {issues.length > 0 && (

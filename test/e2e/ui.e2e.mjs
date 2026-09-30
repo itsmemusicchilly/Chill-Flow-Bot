@@ -43,7 +43,7 @@ const shot = (name) => (SHOTS ? page.screenshot({ path: path.join(SHOTS, `${name
 const savedDraft = () => page.getByRole('button', { name: 'Saved', exact: true }).waitFor();
 const publishedLive = () => page.locator('.status-chip.live').waitFor();
 /** Opens the page editor's "More" menu (Copy link, Responses, Discard changes, Unpublish) if it is closed. */
-const openMore = async () => { const d = page.locator('details.more-menu'); if (!(await d.evaluate((e) => e.open))) await d.locator('summary').click(); };
+const openMore = async () => { const d = page.locator('.page-editor details.more-menu'); if (!(await d.evaluate((e) => e.open))) await d.locator('summary').click(); };
 /** Has this <img> really loaded and decoded (a broken picture has no width)? */
 const loaded = (locator) => locator.evaluate(async (img) => { try { await img.decode(); } catch { return false; } return img.naturalWidth > 0; });
 
@@ -554,6 +554,84 @@ try {
   await page.waitForTimeout(300);
   await shot('11-narrow');
   ok(errors.length === 0, `no browser errors (${errors.slice(0, 3).join(' | ')})`);
+
+  // =================================================================================================
+  // Phones: a 390×844 touch device with its own login. Nothing scrolls sideways, the sidebar is a drawer,
+  // the node settings a bottom sheet, the page builder three panes, and the controls are big enough to tap.
+  // =================================================================================================
+  const phoneCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  const phone = await phoneCtx.newPage();
+  const phoneErrors = [];
+  phone.on('pageerror', (e) => phoneErrors.push(`pageerror: ${e.message}`));
+  phone.on('dialog', (d) => d.accept());
+  const phoneShot = (name) => (SHOTS ? phone.screenshot({ path: path.join(SHOTS, `${name}.png`) }) : null);
+  const fits = async (what) => ok(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `phone: ${what} does not scroll sideways`);
+  const inView = async (locator) => { const b = await locator.boundingBox(); return Boolean(b) && b.x >= -1 && b.y >= -1 && b.x + b.width <= 391 && b.y + b.height <= 845; };
+
+  await phone.goto(`${BASE}/demo-login`);
+  await phone.getByRole('heading', { name: 'Choose a server' }).waitFor();
+  await fits('the server picker');
+  await phone.getByRole('button', { name: /Pixel Café/ }).click();
+  await phone.locator('.topbar').waitFor();
+  ok(await phone.locator('.sidebar.open').isVisible(), 'phone: with nothing open, the flow list is what you see first (the sidebar drawer starts open)');
+  await fits('the flow list');
+  await phoneShot('30-phone-drawer');
+  const flowRows = phone.locator('.flow-item');
+  ok((await flowRows.count()) > 0 && await flowRows.first().getByRole('button', { name: /^Duplicate/ }).isVisible(), 'phone: a flow\'s Duplicate and Delete buttons are always visible (there is no hover on a touch screen)');
+
+  await phone.locator('.flow-open').first().tap();
+  await phone.locator('.fnode').first().waitFor();
+  ok((await phone.locator('.sidebar.open').count()) === 0, 'phone: picking a flow closes the drawer');
+  ok(await phone.locator('.react-flow').isVisible() && (await phone.locator('.react-flow__minimap').count()) === 0, 'phone: the canvas has the whole screen (no minimap)');
+  await fits('a flow');
+  await phoneShot('31-phone-flow');
+  const first = phone.locator('.fnode').first();
+  await first.scrollIntoViewIfNeeded();
+  await first.tap();
+  const sheet = phone.getByRole('complementary', { name: 'Node settings' });
+  await sheet.waitFor();
+  const sb = await sheet.boundingBox();
+  ok(sb.width >= 389 && sb.y > 250 && Math.round(sb.y + sb.height) >= 843, 'phone: tapping a node opens its settings as a bottom sheet, leaving the canvas above it');
+  await fits('the node settings sheet');
+  await phoneShot('32-phone-node-settings');
+  await sheet.getByRole('button', { name: 'Close settings' }).tap();
+  await phone.getByRole('complementary', { name: 'Node settings' }).waitFor({ state: 'detached' });
+  ok(true, 'phone: the sheet has a ✕ that closes it');
+
+  const targets = await phone.evaluate(() => Object.fromEntries(['.nav-toggle', '.topbar .icon-btn[aria-label="Back to servers"]', '.flowbar .btn.primary'].map((sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return [sel, Math.round(Math.min(r.width, r.height))]; })));
+  ok(Object.values(targets).every((n) => n >= 40), `phone: the main buttons are at least 40 px to tap (${JSON.stringify(targets)})`);
+  ok(await phone.locator('.flow-name').evaluate((el) => parseFloat(getComputedStyle(el).fontSize) >= 16), 'phone: text fields are 16 px, so iOS does not zoom the page when one is focused');
+
+  await phone.locator('summary[aria-label="More actions"]').tap();
+  await phone.getByRole('button', { name: 'Variables' }).waitFor();
+  ok(await inView(phone.locator('.topbar .more-panel')), 'phone: the ⋯ menu holds Variables, Pictures, logs and Log out, inside the screen');
+  await phone.getByRole('button', { name: 'Variables' }).tap();
+  const dlg = phone.getByRole('dialog', { name: 'Variables' });
+  await dlg.waitFor();
+  ok(await inView(dlg), 'phone: a dialog fits the screen');
+  await fits('a dialog');
+  await phoneShot('33-phone-dialog');
+  await dlg.getByRole('button', { name: 'Close' }).tap();
+
+  await phone.getByRole('button', { name: 'Flows, pages and nodes' }).tap();
+  await phone.getByRole('tab', { name: 'Pages' }).tap();
+  await phone.locator('.flow-open').first().tap();
+  await phone.locator('.pane-tabs').waitFor();
+  ok(await phone.locator('.outline').isVisible() && !(await phone.locator('.preview-wrap').isVisible()) && !(await phone.locator('.page-inspector').isVisible()), 'phone: the page builder shows one pane at a time, starting with the blocks');
+  await fits('the page builder (blocks)');
+  await phoneShot('34-phone-page-blocks');
+  await phone.locator('.pane-tabs').getByRole('tab', { name: 'Preview' }).tap();
+  await phone.locator('.preview').waitFor();
+  ok(!(await phone.locator('.outline').isVisible()) && await inView(phone.locator('.preview')), 'phone: the Preview tab gives the live preview the whole screen');
+  await fits('the page preview');
+  await phone.locator('.pane-tabs').getByRole('tab', { name: 'Blocks' }).tap();
+  await phone.locator('.block-item .block-row').first().tap();
+  await phone.locator('.page-inspector').waitFor();
+  ok(!(await phone.locator('.outline').isVisible()) && (await phone.locator('.pane-tabs [aria-selected="true"]').textContent()).includes('settings'), 'phone: tapping a block jumps to its settings');
+  await fits('a block\'s settings');
+  await phoneShot('35-phone-block-settings');
+  await phoneCtx.close();
+  ok(phoneErrors.length === 0, `phone: no browser errors (${phoneErrors.slice(0, 3).join(' | ')})`);
 } catch (err) {
   problems.push(`crashed: ${err.message}`);
   console.error(err);

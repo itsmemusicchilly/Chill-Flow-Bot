@@ -29,8 +29,8 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (493 unit/integration tests plus a
-> 90-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (495 unit/integration tests plus a
+> 112-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it.
 
 ## Quick start
@@ -289,6 +289,18 @@ The bot counts its own changes: the first two are made at once, and while the li
 number. Held changes are forgotten if the bot restarts or is removed from the server. Other channel settings (slowmode, parent,
 NSFW, permissions) are never held back.
 
+## Using it on a phone
+
+The dashboard, the flow editor and the page builder work on a phone (and the public pages you publish always did).
+
+* **Menu.** ☰ opens the list of flows, pages and nodes as a drawer; picking something closes it. Variables, Pictures, logs and Log out are under ⋯.
+* **Flows.** The canvas gets the whole screen and starts at the first trigger, at a readable size — drag to pan, pinch to zoom. Tap a node to edit it in a
+  sheet from the bottom (✕ closes it), tap a **Nodes** entry to add one, and drag from one dot to another to connect (the dots are bigger on touch screens).
+  Dragging a node off the palette is a desktop nicety; tapping works everywhere.
+* **Pages.** Three tabs at the bottom — **Blocks**, **Preview**, **Settings**. Tapping a block opens its settings.
+* Fields are 16 px, so iOS does not zoom the page in when you type. Logs start hidden on a phone.
+* Building a big flow is still easier on a larger screen; the phone layout is for checking, tweaking and switching things on and off.
+
 ## Pages & forms
 
 Open the **Pages** tab → **+ New page** (start from *Landing page*, *Staff application form*, *Contact form*, *Rules & verification*
@@ -395,7 +407,7 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 ## Development
 
 ```bash
-npm test          # 493 unit + API + event + button/transcript + public-page + upload + draft/live + access + maths + counter + cron/schedule tests (fake Discord objects, in-memory SQLite, a fake clock)
+npm test          # 495 unit + API + event + button/transcript + public-page + upload + draft/live + access + maths + counter + cron/schedule tests (fake Discord objects, in-memory SQLite, a fake clock)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
@@ -430,6 +442,8 @@ Not yet automated — please run through this once on a test server:
 - [ ] Schedules: set *At a set time of day* two minutes ahead in your own time zone — the log shows one “▶ … Schedule” run in that minute
       and none after it; restart the bot and it does not run again. A cron schedule of `*/5 * * * *` runs on the clock (10:05, 10:10 …), and saving
       other flows does not delay an “Every 1 hour” schedule.
+- [ ] On a real phone (iOS Safari and Android Chrome): log in, open a flow from ☰, pan and zoom, tap a node and edit a field (the page must not zoom), connect two
+      nodes by dragging, add one from **Nodes**, save; open the page builder, switch the three tabs, publish; open a published page and its link preview.
 - [ ] Two accounts press the same panel button at the same time: each only sees their own variables.
 - [ ] Counters: switch on the *Member counter* template, pick a channel, then have several people join/leave within a few minutes —
       the first two renames appear at once, the log says the next is held back, and about ten minutes later the name settles on the

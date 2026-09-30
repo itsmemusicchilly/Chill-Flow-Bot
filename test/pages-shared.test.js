@@ -152,6 +152,20 @@ describe('block catalog and page validation', () => {
   });
 });
 
+describe('rendering on a phone', () => {
+  const html = renderPage({ page: { title: 'x', slug: 'x', theme: {}, blocks: BLOCK_LIST.map((d) => newBlock(d.type)) }, guild });
+  it('scales to the screen and has small-screen rules (padding, wide pictures, full-width buttons)', () => {
+    assert.match(html, /<meta name="viewport" content="width=device-width,initial-scale=1">/);
+    assert.match(html, /@media\(max-width:520px\)\{[^}]*\.wrap\{padding:16px 14px 40px\}/);
+    assert.match(html, /figure\.medium,figure\.small\{max-width:100%\}/);
+    assert.match(html, /img\{max-width:100%;height:auto/);
+  });
+  it('the small-screen rules are inside the one style block and add nothing that could run', () => {
+    assert.equal((html.match(/<style>/g) || []).length, 1);
+    assertInert(html);
+  });
+});
+
 describe('rendering is inert', () => {
   it('escapes and neutralises hostile content in EVERY field of EVERY block', () => {
     for (const payload of PAYLOADS) {

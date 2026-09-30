@@ -4,6 +4,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { defaultsFor, getOutputs, isTriggerType, NODE_TYPES } from '@shared/catalog.js';
 import { localTimeZone } from '@shared/cron.js';
+import { PHONE, useMediaQuery } from '../hooks/useMediaQuery.js';
 import { toggleConnection } from '@shared/connections.js';
 import { LIMITS } from '@shared/limits.js';
 import { uid } from '@shared/util.js';
@@ -47,6 +48,7 @@ const plain = (g) => ({
 export default function FlowWorkspace({ gid, flow, meta, guildData, flash, apiRef, dirtyRef, onSaved, onToggle }) {
   const toast = useToast();
   const rf = useReactFlow();
+  const phone = useMediaQuery(PHONE);
   const wrapRef = useRef(null);
   const [graph, setGraph] = useState(() => ({ nodes: flow.graph.nodes.map((n) => ({ ...n })), edges: flow.graph.edges.map((e) => ({ ...e })) }));
   const [name, setName] = useState(flow.name);
@@ -59,8 +61,17 @@ export default function FlowWorkspace({ gid, flow, meta, guildData, flash, apiRe
   const initialized = useNodesInitialized();
   const fitted = useRef(false);
   useEffect(() => {
-    if (initialized && !fitted.current) { fitted.current = true; rf.fitView({ maxZoom: 0.9, padding: 0.25 }); }
-  }, [initialized, rf]);
+    if (!initialized || fitted.current) return;
+    fitted.current = true;
+    // A wide flow fitted into a phone screen is too small to read: start at its first trigger instead, at a readable size, and let the person pan.
+    const box = wrapRef.current?.getBoundingClientRect();
+    const nodes = rf.getNodes();
+    const span = nodes.length ? Math.max(...nodes.map((n) => n.position.x + (n.measured?.width ?? 264))) - Math.min(...nodes.map((n) => n.position.x)) : 0;
+    if (phone && box && span * 0.7 > box.width) {
+      const first = [...nodes].sort((a, b) => (isTriggerType(b.type) - isTriggerType(a.type)) || (a.position.x - b.position.x))[0];
+      rf.setViewport({ x: 16 - first.position.x * 0.75, y: 40 - first.position.y * 0.75, zoom: 0.75 });
+    } else rf.fitView({ maxZoom: 0.9, padding: 0.25 });
+  }, [initialized, rf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const markDirty = useCallback(() => { setDirty(true); dirtyRef.current = true; }, [dirtyRef]);
   useEffect(() => { dirtyRef.current = false; return () => { dirtyRef.current = false; }; }, [dirtyRef]);
@@ -239,11 +250,11 @@ export default function FlowWorkspace({ gid, flow, meta, guildData, flash, apiRe
               onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} isValidConnection={isValidConnection}
               deleteKeyCode={['Backspace', 'Delete']} colorMode="dark"
               minZoom={0.2} maxZoom={1.6} proOptions={{ hideAttribution: true }} snapToGrid snapGrid={[10, 10]}
-              connectionRadius={28}
+              connectionRadius={phone ? 44 : 28}
             >
               <Background gap={22} size={1.2} color="#3a3d44" />
               <Controls showInteractive={false} />
-              <MiniMap pannable zoomable nodeColor={(n) => `${{ trigger: '#f59e0b', message: '#5865f2', member: '#3ba55d', channel: '#14b8a6', role: '#ec4899', data: '#a855f7', logic: '#f97316' }[NODE_TYPES[n.type]?.category] ?? '#888'}`} maskColor="rgba(20,21,24,.7)" />
+              {!phone && <MiniMap pannable zoomable nodeColor={(n) => `${{ trigger: '#f59e0b', message: '#5865f2', member: '#3ba55d', channel: '#14b8a6', role: '#ec4899', data: '#a855f7', logic: '#f97316' }[NODE_TYPES[n.type]?.category] ?? '#888'}`} maskColor="rgba(20,21,24,.7)" />}
             </ReactFlow>
             {graph.nodes.length === 0 && (
               <div className="canvas-empty">
@@ -258,6 +269,7 @@ export default function FlowWorkspace({ gid, flow, meta, guildData, flash, apiRe
           <Inspector
             node={selected} nodes={graph.nodes} edges={graph.edges} issues={issuesByNode[selected.id] || []}
             onChange={patchNode} onDuplicate={duplicateNode} onDelete={deleteNode}
+            onClose={() => setGraph((g) => ({ ...g, nodes: g.nodes.map((n) => (n.selected ? { ...n, selected: false } : n)) }))}
           />
         )}
       </div>
