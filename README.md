@@ -28,8 +28,8 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (363 unit/integration tests plus a
-> 72-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (372 unit/integration tests plus a
+> 75-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it.
 
 ## Quick start
@@ -118,6 +118,8 @@ Development with hot reload: `npm run dev` (server + Vite). Set `BASE_URL=http:/
 
 * **Triggers** start a flow; everything connected after them runs in order. When one output goes to several nodes they
   run **top to bottom**, then left to right.
+* **Connecting** is a toggle: drag from an output to a node to connect them, drag the **same** connection again to disconnect
+  them (or select a connection and press Delete). Two different outputs of one node may still lead to the same node.
 * **Errors**: every action has an **On error** output. Connect it to react (`{{error.message}}`); unconnected, the error
   is logged and that branch ends. Interactions never end with Discord's red “interaction failed”.
 * **Slow flows** are fine: after ~2 s the bot defers the reply for you, and the next *Send Message → reply* fills it in.
@@ -306,7 +308,7 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 ## Development
 
 ```bash
-npm test          # 363 unit + API + event + button/transcript + public-page + upload + draft/live + access tests (fake Discord objects, in-memory SQLite)
+npm test          # 372 unit + API + event + button/transcript + public-page + upload + draft/live + access tests (fake Discord objects, in-memory SQLite)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog

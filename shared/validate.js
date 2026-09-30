@@ -1,5 +1,6 @@
 // Graph normalisation + validation, shared by the editor (live warnings) and the server (authoritative).
 import { NODE_TYPES, getOutputs, isTriggerType } from './catalog.js';
+import { connectionKey } from './connections.js';
 import { checkFields } from './fields.js';
 import { isCapped, LIMITS } from './limits.js';
 
@@ -59,7 +60,7 @@ export function validateFlow(graph, { intents } = {}) {
       add(src.id, 'error', 'structure', `A connection leaves an output (“${e.sourceHandle}”) that no longer exists.`);
       continue;
     }
-    const key = `${e.source}|${e.sourceHandle}|${e.target}`;
+    const key = connectionKey(e);
     if (edgeKeys.has(key)) add(src.id, 'error', 'structure', 'Duplicate connection.');
     edgeKeys.add(key);
   }
