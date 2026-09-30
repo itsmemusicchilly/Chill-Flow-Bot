@@ -25,7 +25,7 @@ export class Runtime {
     this.intents = intents;
     this.client = null;
     this.services = {
-      db, logger, uploads,
+      db, logger, uploads, intents,
       selfActions: new SelfActions(),
       cooldowns: new Map(),
       components: new ComponentState({ db }),

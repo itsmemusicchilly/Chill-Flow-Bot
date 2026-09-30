@@ -65,9 +65,47 @@ export function fakeGuild(over = {}) {
 export function fakeChannel(guild, o = {}) {
   const ch = {
     id: o.id ?? nextId(), name: o.name ?? 'general', guild, guildId: guild.id, type: o.type ?? ChannelType.GuildText, parentId: null, topic: '',
-    sent: [], sentIds: [], calls: [], messages: { store: new Map(), async fetch(id) { return ch.messages.store.get(id) ?? null; } },
+    sent: [], sentIds: [], calls: [],
+    // fetch(id) → one message; fetch({ limit, after, before }) → a page, like Discord: `after` gives the OLDEST `limit` messages
+    // after that id, anything else the NEWEST `limit`. `order` sets the order inside the page ('desc' = newest first, as Discord sends it).
+    messages: {
+      store: new Map(), fetchCalls: [], order: 'desc',
+      async fetch(arg) {
+        if (typeof arg !== 'object' || arg === null) return ch.messages.store.get(arg) ?? null;
+        ch.messages.fetchCalls.push(arg);
+        let list = [...ch.messages.store.values()].sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1));
+        if (arg.after !== undefined) list = list.filter((m) => BigInt(m.id) > BigInt(arg.after));
+        if (arg.before !== undefined) list = list.filter((m) => BigInt(m.id) < BigInt(arg.before));
+        const limit = arg.limit ?? 50;
+        list = arg.after !== undefined ? list.slice(0, limit) : list.slice(-limit);
+        if (ch.messages.order === 'desc') list.reverse();
+        return new Coll(list.map((m) => [m.id, m]));
+      },
+    },
     isTextBased: () => [0, 5, 2, 13].includes(ch.type) === true && ch.type !== 2 && ch.type !== 13,
-    async send(p) { const m = { id: nextId(), ...p }; ch.sent.push(p); ch.sentIds.push(m.id); return m; },
+    // what the bot posts is also part of the channel's history
+    async send(p) {
+      const m = { id: nextId(), ...p };
+      ch.sent.push(p); ch.sentIds.push(m.id);
+      ch.addMessage({ id: m.id, content: p.content ?? '', author: { id: 'BOT', username: 'flowbot', bot: true }, embeds: (p.embeds ?? []).map((e) => e.data ?? e) });
+      return m;
+    },
+    addMessage(o = {}) {
+      const id = o.id ?? nextId();
+      const list = (x) => new Coll((x ?? []).map((v, i) => [String(i), v]));
+      const msg = {
+        id, channel: ch, createdTimestamp: o.at ?? Date.now(), editedTimestamp: o.editedTimestamp ?? null,
+        content: o.content ?? '', cleanContent: o.cleanContent ?? o.content ?? '',
+        author: o.author ?? { id: '222222', username: 'mia', bot: false }, member: o.member,
+        attachments: list(o.attachments), embeds: o.embeds ?? [], stickers: list(o.stickers), reference: o.reference ?? null,
+        system: o.system ?? false, type: o.type ?? 0,
+      };
+      ch.messages.store.set(id, msg);
+      return msg;
+    },
+    // who can see this channel: everyone unless a test lists `hidden` ids
+    hidden: new Set(),
+    permissionsFor: (who) => ({ has: () => !ch.hidden.has(who?.id) }),
     async delete(reason) { ch.calls.push(['delete', reason]); guild.channels.cache.delete(ch.id); },
     async edit(p) { ch.calls.push(['edit', p]); },
     permissionOverwrites: { async edit(t, perms, opt) { ch.calls.push(['overwrite', t.id, perms, opt]); } },

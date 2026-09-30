@@ -24,6 +24,7 @@ export const LIMIT_ENV = {
   uploadBytes: 'LIMIT_UPLOAD_BYTES',
   uploadsPerGuild: 'LIMIT_UPLOADS_PER_GUILD',
   storageBytesPerGuild: 'LIMIT_STORAGE_BYTES_PER_GUILD',
+  transcriptMessages: 'LIMIT_TRANSCRIPT_MESSAGES',
 };
 const DEFAULT_REQUEST_BYTES = 50 * 1024 * 1024;
 const MAX_REQUEST_BYTES = 1024 ** 3;

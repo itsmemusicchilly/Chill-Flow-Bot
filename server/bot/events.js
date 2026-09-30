@@ -107,6 +107,15 @@ export function wireEvents({ client, runtime, logger, sync, auditDelayMs = 1000 
           runtime.fire(type, { guild, user, member: newM, role, info: { isBot: user.bot, byBot, roleId: role.id, roleName: role.name } });
         }
       }
+      // Boosts. Only with a real "before": a partial old member reads as "not boosting" and would look like a new boost.
+      const wasBoosting = Boolean(oldM.premiumSinceTimestamp);
+      const isBoosting = Boolean(newM.premiumSinceTimestamp);
+      const boostType = isBoosting ? 'trigger.user.boostserver' : 'trigger.user.unboostserver';
+      if (wasBoosting !== isBoosting && has(guild, boostType)) {
+        const since = isBoosting ? newM.premiumSinceTimestamp : oldM.premiumSinceTimestamp;
+        const days = isBoosting ? 0 : Math.max(0, Math.floor((Date.now() - since) / 86400000));
+        runtime.fire(boostType, { guild, user, member: newM, data: { boost: { since: new Date(since).toISOString(), days } }, info: { isBot: user.bot } });
+      }
     }
     const until = newM.communicationDisabledUntilTimestamp;
     if (has(guild, 'trigger.member.timeout') && until && until > Date.now() && (oldM.partial || oldM.communicationDisabledUntilTimestamp !== until)) {

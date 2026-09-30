@@ -61,8 +61,8 @@ try {
   await page.getByRole('button', { name: /Support tickets/ }).click();
   await page.locator('.fnode').first().waitFor();
   await page.waitForTimeout(600);
-  ok((await page.locator('.fnode').count()) === 7, 'ticket template renders 7 nodes');
-  ok((await page.locator('.react-flow__edge').count()) === 6, 'ticket template renders 6 connections');
+  ok((await page.locator('.fnode').count()) === 9, 'ticket template renders 9 nodes (with the transcript step)');
+  ok((await page.locator('.react-flow__edge').count()) === 8, 'ticket template renders 8 connections');
   ok((await page.locator('.out.button').count()) === 1, 'the Close button has its own output');
   const vp = page.locator('.canvas');
   const canvasBox = await vp.boundingBox();

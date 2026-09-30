@@ -3,7 +3,9 @@ import { describe, it } from 'node:test';
 import { PermissionFlagsBits } from 'discord.js';
 import { CHANNEL_PERMISSIONS, COMMAND_PERMISSIONS, NODE_LIST, NODE_TYPES, ROLE_PERMISSIONS, availableVariables, buttonKey, defaultsFor, getOutputs, isTriggerType } from '../shared/catalog.js';
 import { TEMPLATES } from '../shared/templates.js';
-import { applyLimits, resetLimits } from '../shared/limits.js';
+import { applyLimits, LIMIT_KEYS, LIMITS, resetLimits } from '../shared/limits.js';
+import { LIMIT_ENV } from '../server/config.js';
+import { guildData, memberData } from '../server/engine/serialize.js';
 import { hasStructureErrors, normalizeGraph, validateFlow } from '../shared/validate.js';
 import { Database } from '../server/db.js';
 import { evalCondition, evalConditions } from '../server/engine/conditions.js';
@@ -327,5 +329,56 @@ describe('logger', () => {
     off();
     lg.log('A', 'info', 'after');
     assert.equal(seen.length, 5);
+  });
+});
+
+describe('boost triggers and transcripts (catalog)', () => {
+  const issuesFor = (nodes, edges, intents) => validateFlow(normalizeGraph({ nodes, edges }), { intents });
+
+  it('exposes safe boost data for members and servers, whatever discord.js gives us', () => {
+    const at = Date.UTC(2026, 5, 1, 12);
+    assert.equal(memberData({ premiumSinceTimestamp: at }).boostingSince, new Date(at).toISOString());
+    assert.equal(memberData({ premiumSinceTimestamp: null }).boostingSince, '');
+    assert.equal(memberData({}).boostingSince, '');
+    assert.deepEqual([guildData({ id: '1', premiumSubscriptionCount: 14, premiumTier: 3 }).boostCount, guildData({ id: '1', premiumSubscriptionCount: 14, premiumTier: 3 }).boostTier], [14, 3]);
+    const bare = guildData({ id: '1' });
+    assert.deepEqual([bare.boostCount, bare.boostTier], [0, 0]);
+  });
+
+  it('the two boost triggers are ordinary triggers that offer who, when and the server\'s boosts', () => {
+    for (const type of ['trigger.user.boostserver', 'trigger.user.unboostserver']) {
+      const d = NODE_TYPES[type];
+      assert.ok(isTriggerType(type) && d.requires === 'members' && d.fields.length === 0, type);
+      const paths = availableVariables([node('t', type), node('r', 'action.message.send', { content: 'x' })], [edge('t', 'r')], 'r').map((v) => v.path);
+      for (const p of ['user.mention', 'member.boostingSince', 'guild.boostCount', 'guild.boostTier', 'boost.since', 'boost.days']) assert.ok(paths.includes(p), `${type} offers ${p}`);
+    }
+  });
+
+  it('Save Transcript needs a log channel and has an On error output', () => {
+    const d = NODE_TYPES['action.channel.transcript'];
+    assert.equal(d.fields.find((f) => f.key === 'sendChannelId').required, true);
+    assert.deepEqual(getOutputs(d.type, defaultsFor(d.type)).map((o) => o.id), ['out', 'error']);
+    const issues = issuesFor([node('t', 'trigger.manual'), node('s', 'action.channel.transcript', {})], [edge('t', 's')], { members: true, messageContent: true });
+    assert.ok(issues.some((i) => i.nodeId === 's' && i.level === 'error' && /Post the transcript in/.test(i.message)));
+    const paths = availableVariables([node('t', 'trigger.manual'), node('s', 'action.channel.transcript', {}), node('r', 'action.message.send', { content: 'x' })], [edge('t', 's'), edge('s', 'r')], 'r').map((v) => v.path);
+    for (const p of ['transcript.messages', 'transcript.name', 'transcript.truncated', 'transcript.dm']) assert.ok(paths.includes(p), p);
+  });
+
+  it('warns — but never blocks — when the Message Content intent is off', () => {
+    const graph = [node('t', 'trigger.manual'), node('s', 'action.channel.transcript', { sendChannelId: '123456' })];
+    const off = issuesFor(graph, [edge('t', 's')], { members: true, messageContent: false });
+    const warn = off.find((i) => i.nodeId === 's' && i.kind === 'intent');
+    assert.ok(warn && warn.level === 'warning' && /Message Content/.test(warn.message), JSON.stringify(warn));
+    assert.ok(!off.some((i) => i.nodeId === 's' && i.level === 'error'), 'the flow is still usable');
+    assert.ok(!hasStructureErrors(off));
+    const on = issuesFor(graph, [edge('t', 's')], { members: true, messageContent: true });
+    assert.ok(!on.some((i) => i.kind === 'intent'));
+    assert.ok(!issuesFor(graph, [edge('t', 's')], undefined).some((i) => i.kind === 'intent'), 'no intents given (nothing to compare) → no warning');
+  });
+
+  it('the transcript message cap is an operator limit with an environment variable', () => {
+    assert.ok(LIMIT_KEYS.includes('transcriptMessages'));
+    assert.equal(LIMIT_ENV.transcriptMessages, 'LIMIT_TRANSCRIPT_MESSAGES');
+    assert.equal(LIMITS.transcriptMessages, Infinity, 'unlimited by default');
   });
 });

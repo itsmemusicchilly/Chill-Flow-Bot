@@ -84,6 +84,10 @@ export function validateFlow(graph, { intents } = {}) {
     if (d.requires && intents && !intents[d.requires]) {
       add(n.id, 'error', 'intent', `This trigger needs the ${d.requires === 'members' ? 'Server Members' : 'Message Content'} intent, which the bot operator has not enabled — it will not run.`);
     }
+    // `wants` = works better with an intent but does not need it: warn, never block.
+    if (d.wants && intents && !intents[d.wants]) {
+      add(n.id, 'warning', 'intent', d.wantsNote || `This works better with the ${d.wants === 'members' ? 'Server Members' : 'Message Content'} intent, which the bot operator has not enabled.`);
+    }
     if (d.isTrigger) {
       if (!edges.some((e) => e.source === n.id)) add(n.id, 'warning', 'graph', 'Connect this trigger to something to do.');
     } else if (!reachable.has(n.id)) {

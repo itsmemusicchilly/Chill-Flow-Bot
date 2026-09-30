@@ -484,6 +484,8 @@ describe('reusable buttons and persistent panels', () => {
     const t = TEMPLATES.find((x) => x.id === 'ticket-panel').build();
     t.nodes.find((x) => x.id === 't1').data.channelId = channel.id;
     t.nodes.find((x) => x.id === 'w1').data.seconds = 0; // do not really wait 5 s
+    const logCh = guild.addChannel({ name: 'ticket-log' });
+    t.nodes.find((x) => x.id === 'ts1').data.sendChannelId = logCh.id;
     const flow = install(t);
     const panel = await post(flow, 't1');
     const open = rows(panel.payload)[0];
@@ -504,6 +506,208 @@ describe('reusable buttons and persistent panels', () => {
     const closed = await run(fakeComponent({ guild, channel: ticket, user: staff, member: guild.addMember({ user: staff }), customId: close.custom_id, messageId: ticket.sentIds[0] }));
     assert.equal(closed.calls[0][1].content, 'Closing this ticket (opened by <@222222>) in 5 seconds…');
     assert.ok(ticket.calls.some((c) => c[0] === 'delete'), 'the ticket channel was deleted');
+
+    // the transcript went to the log channel and to the opener before the channel disappeared
+    const file = logCh.sent[0].files[0];
+    assert.match(file.name, /^transcript-ticket-mia-\d{4}-\d{2}-\d{2}-\d{4}\.html$/);
+    assert.match(file.attachment.toString('utf8'), /opened a ticket\. Someone from the team/);
+    assert.match(logCh.sent[0].content, /opened by <@222222>, closed by <@555555>/);
+    const dm = member.calls.find((c) => c[0] === 'dm');
+    assert.ok(dm, 'the opener got a copy');
+    assert.equal(dm[1].files[0].name, file.name);
+  });
+
+  it('the Ticket panel does NOT close when the transcript cannot be saved (no log channel picked)', async () => {
+    const t = TEMPLATES.find((x) => x.id === 'ticket-panel').build();
+    t.nodes.find((x) => x.id === 't1').data.channelId = channel.id;
+    t.nodes.find((x) => x.id === 'w1').data.seconds = 0;
+    const flow = install(t); // ts1.sendChannelId is still blank
+    const panel = await post(flow, 't1');
+    await run(click(rows(panel.payload)[0].custom_id, { messageId: panel.messageId }));
+    const ticket = guild.channels.cache.find((c) => c.name === 'ticket-mia');
+    const close = rows(ticket.sent[0]).find((c) => c.label === 'Close ticket');
+    const closed = await run(fakeComponent({ guild, channel: ticket, user, member, customId: close.custom_id, messageId: ticket.sentIds[0] }));
+    assert.match(closed.calls[0][1].content, /transcript could not be saved, so this ticket was \*\*not\*\* closed: Choose the channel to post the transcript in/);
+    assert.ok(!ticket.calls.some((c) => c[0] === 'delete'), 'the ticket is still there');
+  });
+
+  it('the /ticket template saves a transcript on close too', async () => {
+    const t = TEMPLATES.find((x) => x.id === 'ticket').build();
+    t.nodes.find((x) => x.id === 'w1').data.seconds = 0;
+    const logCh = guild.addChannel({ name: 'ticket-log' });
+    t.nodes.find((x) => x.id === 'ts1').data.sendChannelId = logCh.id;
+    install(t);
+    await run(slash('ticket', [{ name: 'reason', value: 'billing' }]));
+    const ticket = guild.channels.cache.find((c) => c.name === 'ticket-mia');
+    ticket.addMessage({ content: 'my invoice is wrong', author: { id: '222222', username: 'mia', bot: false } });
+    const close = rows(ticket.sent[0]).find((c) => c.label === 'Close ticket');
+    const staff = fakeUser({ id: '555555', username: 'sam' });
+    const closed = await run(fakeComponent({ guild, channel: ticket, user: staff, member: guild.addMember({ user: staff }), customId: close.custom_id, messageId: ticket.sentIds[0] }));
+    assert.equal(closed.calls[0][1].content, 'Closing this ticket in 5 seconds…');
+    const html = logCh.sent[0].files[0].attachment.toString('utf8');
+    assert.match(html, /my invoice is wrong/);
+    assert.match(html, /Reason:<\/b> billing|\*\*Reason:\*\* billing/);
+    assert.ok(ticket.calls.some((c) => c[0] === 'delete'));
+    assert.ok(member.calls.some((c) => c[0] === 'dm' && c[1].files?.length), 'the opener got the file');
+  });
+});
+
+describe('Save Transcript', () => {
+  let logCh;
+  const human = (id = '222222', username = 'mia') => ({ id, username, bot: false });
+  const saved = (over = {}) => install(commandFlow([
+    node('ts', 'action.channel.transcript', { sendChannelId: logCh.id, ...over }),
+    node('ok', 'action.message.send', { target: 'reply', content: 'saved={{transcript.messages}} dm={{transcript.dm}} cut={{transcript.truncated}} name={{transcript.name}}' }),
+    node('bad', 'action.message.send', { target: 'reply', content: 'FAILED {{error.message}}' }),
+  ], [edge('t', 'ts'), edge('ts', 'ok'), edge('ts', 'bad', 'error')]));
+  const said = (i) => i.calls.find((c) => c[0] === 'reply' || c[0] === 'editReply')[1].content;
+  const html = (ch = logCh) => ch.sent[0].files[0].attachment.toString('utf8');
+
+  beforeEach(() => { logCh = guild.addChannel({ name: 'ticket-log' }); });
+
+  it('records the channel and posts it as an .html file in the log channel', async () => {
+    channel.addMessage({ content: 'hello there', author: human() });
+    channel.addMessage({ content: 'how can I help?', author: { id: '999', username: 'sam', bot: false } });
+    saved({ channelMessage: 'Transcript of #{{channel.name}}' });
+    const i = await run(slash());
+    assert.match(said(i), /^saved=2 dm=skipped cut=false name=transcript-general-\d{4}-\d{2}-\d{2}-\d{4}\.html$/);
+    assert.equal(logCh.sent.length, 1);
+    assert.equal(logCh.sent[0].content, 'Transcript of #general');
+    assert.deepEqual(logCh.sent[0].allowedMentions, { parse: [] }, 'a transcript never pings anyone');
+    assert.match(logCh.sent[0].files[0].name, /\.html$/);
+    const out = html();
+    assert.ok(out.indexOf('hello there') < out.indexOf('how can I help?'));
+    assert.match(out, /Channel: #general/);
+    assert.equal(channel.sent.length, 0, 'nothing is posted in the recorded channel itself');
+  });
+
+  it('reads long channels page by page, oldest first, whichever order Discord sends a page in', async () => {
+    for (const order of ['desc', 'asc']) {
+      channel.messages.store.clear(); channel.messages.fetchCalls.length = 0; logCh.sent.length = 0; channel.messages.order = order;
+      for (let n = 0; n < 250; n += 1) channel.addMessage({ content: `msg-${String(n).padStart(3, '0')}`, author: human() });
+      const flow = saved();
+      const i = await run(slash());
+      assert.match(said(i), /^saved=250 /, order);
+      assert.equal(channel.messages.fetchCalls.length, 3, `${order}: 100 + 100 + 50`);
+      assert.deepEqual(channel.messages.fetchCalls.map((c) => [c.limit, c.cache]), [[100, false], [100, false], [100, false]]);
+      assert.equal(channel.messages.fetchCalls[0].after, '0');
+      const out = html();
+      assert.ok(out.indexOf('msg-000') < out.indexOf('msg-100') && out.indexOf('msg-100') < out.indexOf('msg-249'), `${order}: in order`);
+      assert.equal((out.match(/msg-\d{3}/g) || []).length, 250, `${order}: none lost or repeated`);
+      db.deleteFlow(guild.id, flow.id);
+      runtime.loadGuild(guild.id);
+    }
+  });
+
+  it('sends a copy to the person by direct message when asked', async () => {
+    const opener = guild.addMember({ user: fakeUser({ id: '700001', username: 'olly' }) });
+    channel.addMessage({ content: 'hi', author: human('700001', 'olly') });
+    saved({ sendUserId: '{{user.id}}', dmMessage: 'Your copy, {{user.name}}' });
+    const i = await run(fakeCommand({ guild, channel, user: opener.user, member: opener, commandName: 'cmd' }));
+    assert.match(said(i), /dm=sent/);
+    const [, dm] = opener.calls.find((c) => c[0] === 'dm');
+    assert.equal(dm.content, 'Your copy, olly');
+    assert.equal(dm.files[0].name, logCh.sent[0].files[0].name);
+    assert.deepEqual(dm.allowedMentions, { parse: [] });
+    assert.ok(dm.files[0].attachment.equals(logCh.sent[0].files[0].attachment), 'the same file');
+  });
+
+  it('a closed DM does not fail the node: the log copy stands, the run carries on, a warning is logged', async () => {
+    const opener = guild.addMember({ user: fakeUser({ id: '700002', username: 'quiet' }) });
+    opener.send = async () => { const e = new Error('Cannot send messages to this user'); e.code = 50007; throw e; };
+    saved({ sendUserId: opener.id });
+    const i = await run(slash());
+    assert.match(said(i), /dm=failed/);
+    assert.equal(logCh.sent.length, 1);
+    assert.ok(logs().some((l) => l.startsWith('warn:') && /direct message/.test(l) && /DMs are closed/.test(l)), logs().join('\n'));
+  });
+
+  it('does not DM someone who can no longer see the channel', async () => {
+    const opener = guild.addMember({ user: fakeUser({ id: '700003', username: 'gone' }) });
+    channel.hidden.add(opener.id);
+    saved({ sendUserId: opener.id });
+    const i = await run(slash());
+    assert.match(said(i), /dm=skipped/);
+    assert.ok(!opener.calls.some((c) => c[0] === 'dm'));
+    assert.equal(logCh.sent.length, 1);
+  });
+
+  it('follows On error, and sends nothing, when there is no usable log channel', async () => {
+    const opener = guild.addMember({ user: fakeUser({ id: '700004' }) });
+    saved({ sendChannelId: '', sendUserId: opener.id });
+    assert.match(said(await run(slash())), /^FAILED Choose the channel to post the transcript in/, 'blank would otherwise mean "this channel"');
+    db.deleteFlow(guild.id, db.listFlows(guild.id)[0].id);
+    saved({ sendChannelId: channel.id });
+    assert.match(said(await run(slash())), /^FAILED Post the transcript in a different channel/);
+    db.deleteFlow(guild.id, db.listFlows(guild.id)[0].id);
+    saved({ sendChannelId: '999999999' });
+    assert.match(said(await run(slash())), /^FAILED Channel “999999999” was not found/);
+    assert.equal(logCh.sent.length, 0);
+    assert.ok(!opener.calls.some((c) => c[0] === 'dm'), 'no DM when the log copy could not be saved');
+  });
+
+  it('follows On error when Discord refuses the log post, before any DM is sent', async () => {
+    const opener = guild.addMember({ user: fakeUser({ id: '700005' }) });
+    logCh.send = async () => { const e = new Error('Missing Permissions'); e.code = 50013; throw e; };
+    saved({ sendUserId: opener.id });
+    assert.match(said(await run(slash())), /^FAILED Missing permissions/);
+    assert.ok(!opener.calls.some((c) => c[0] === 'dm'));
+  });
+
+  it('follows On error when the history cannot be read', async () => {
+    channel.messages.fetch = async () => { const e = new Error('Missing Access'); e.code = 50001; throw e; };
+    saved();
+    assert.match(said(await run(slash())), /^FAILED Missing access/);
+    assert.equal(logCh.sent.length, 0);
+  });
+
+  it('refuses to record the same channel twice at the same time (a double-click on Close)', async () => {
+    channel.addMessage({ content: 'x', author: human() });
+    const real = channel.messages.fetch.bind(channel.messages);
+    let release; const gate = new Promise((r) => { release = r; });
+    channel.messages.fetch = async (a) => { await gate; return real(a); };
+    saved();
+    const first = run(slash());
+    await new Promise((r) => setTimeout(r, 20));
+    assert.match(said(await run(slash())), /^FAILED A transcript of #general is already being saved/);
+    release();
+    assert.match(said(await first), /^saved=1/);
+    assert.equal(logCh.sent.length, 1, 'only one transcript was posted');
+    channel.messages.fetch = real;
+    assert.match(said(await run(slash())), /^saved=1/, 'and the channel can be recorded again afterwards');
+  });
+
+  it('still delivers without the Message Content intent, with a warning in the log and a banner in the file', async () => {
+    runtime.services.intents = { members: true, messageContent: false };
+    channel.addMessage({ content: '', author: human() });
+    saved();
+    assert.match(said(await run(slash())), /^saved=1/);
+    assert.ok(logs().some((l) => l.startsWith('warn:') && /Message Content intent is off/.test(l)));
+    assert.match(html(), /Message text is not included/);
+    assert.match(html(), /\[content unavailable\]/);
+  });
+
+  it('honours the operator\'s cap on messages and says the transcript is cut short', async () => {
+    applyLimits({ transcriptMessages: 5 });
+    for (let n = 0; n < 20; n += 1) channel.addMessage({ content: `m${n}`, author: human() });
+    saved();
+    assert.match(said(await run(slash())), /^saved=5 dm=skipped cut=true/);
+    assert.match(html(), /stops here: the message limit was reached/);
+  });
+
+  it('a transcript of an empty channel is still a valid file', async () => {
+    saved();
+    assert.match(said(await run(slash())), /^saved=0 /);
+    assert.match(html(), /There are no messages in this channel/);
+  });
+
+  it('stops paging when the flow is switched off mid-way', async () => {
+    for (let n = 0; n < 300; n += 1) channel.addMessage({ content: `m${n}`, author: human() });
+    const real = channel.messages.fetch.bind(channel.messages);
+    channel.messages.fetch = async (a) => { const page = await real(a); for (const ctx of runtime.live) runtime.abortRun(ctx); return page; };
+    saved();
+    await run(slash());
+    assert.equal(logCh.sent.length, 0, 'nothing was posted');
   });
 });
 

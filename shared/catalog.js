@@ -44,8 +44,8 @@ const ERR = { id: 'error', label: 'On error', kind: 'error' };
 const ACTION_OUTS = [OUT, ERR];
 
 const USER = [['user.id', 'User ID'], ['user.name', 'Username'], ['user.displayName', 'Display name'], ['user.mention', 'Mention'], ['user.tag', 'Tag'], ['user.avatar', 'Avatar URL'], ['user.isBot', 'Is a bot']];
-const MEMBER = [['member.nickname', 'Nickname'], ['member.joinedAt', 'Joined at'], ['member.roleIds', 'Role IDs'], ['member.permissions', 'Permissions']];
-const GUILD = [['guild.id', 'Server ID'], ['guild.name', 'Server name'], ['guild.memberCount', 'Member count']];
+const MEMBER = [['member.nickname', 'Nickname'], ['member.joinedAt', 'Joined at'], ['member.roleIds', 'Role IDs'], ['member.permissions', 'Permissions'], ['member.boostingSince', 'Boosting since (ISO, blank if not boosting)']];
+const GUILD = [['guild.id', 'Server ID'], ['guild.name', 'Server name'], ['guild.memberCount', 'Member count'], ['guild.boostCount', 'Server boosts'], ['guild.boostTier', 'Server boost level (0-3)']];
 const CHANNEL = [['channel.id', 'Channel ID'], ['channel.name', 'Channel name'], ['channel.mention', 'Channel mention'], ['channel.type', 'Channel type'], ['channel.parentId', 'Category ID']];
 const MESSAGE = [['message.id', 'Message ID'], ['message.content', 'Message text'], ['message.url', 'Message link'], ['message.authorId', 'Author ID']];
 const ROLE = [['role.id', 'Role ID'], ['role.name', 'Role name'], ['role.mention', 'Role mention'], ['role.color', 'Role color']];
@@ -180,6 +180,19 @@ memberTrigger('trigger.member.timeout', 'Member Timed Out', '⏳', 'Runs when so
 for (const [type, label, icon] of [['trigger.member.roleAdded', 'Role Given to Member', '🎖️'], ['trigger.member.roleRemoved', 'Role Removed from Member', '📤']]) {
   memberTrigger(type, label, icon, `Runs when a member ${type.endsWith('Added') ? 'gains' : 'loses'} a role.`, {
     requires: 'members', provides: ROLE, fields: [idField('roleId', 'Only for role (optional)', 'role'), includeSelf],
+  });
+}
+
+// Boosts: "started" = the member had no boost and now has one; "stopped" = all of their boosts ended. Extra boosts by
+// someone who already boosts change nothing (Discord keeps the first boost date), so they do not count. Bots cannot boost.
+for (const [type, label, icon, description] of [
+  ['trigger.user.boostserver', 'Member Boosted Server', '🚀', 'Runs when a member starts boosting the server. Extra boosts from someone who already boosts do not count.'],
+  ['trigger.user.unboostserver', 'Member Stopped Boosting', '💔', 'Runs when a member stops boosting the server altogether (all of their boosts ended).'],
+]) {
+  trigger(type, {
+    label, icon, description, requires: 'members', fields: [],
+    provides: () => [...USER, ...MEMBER, ...GUILD, ['boost.since', 'When they started boosting (ISO)'], ['boost.days', 'Days they boosted (when they stop)']],
+    summary: () => '',
   });
 }
 
@@ -458,6 +471,33 @@ def('action.channel.update', {
     overwriteList(),
   ],
   outputs: ACTION_OUTS, summary: (d) => d.channelId || 'current channel',
+});
+def('action.channel.transcript', {
+  category: 'channel', label: 'Save Transcript', icon: '📄',
+  description: 'Record everything said in a channel (for example a ticket that is being closed) as an .html file, post it in a log channel and optionally send it to someone by direct message. If it cannot be saved, follow On error and keep the channel.',
+  fields: [
+    idField('channelId', 'Channel to record', 'channel', { placeholder: 'blank = current channel' }),
+    idField('sendChannelId', 'Post the transcript in', 'channel', {
+      required: true, help: 'For example your staff log. The bot needs Send Messages and Attach Files there. Do not use the channel being recorded.',
+    }),
+    area('channelMessage', 'Message with the file (log channel)', { default: '📄 Transcript of #{{channel.name}}', rows: 2 }),
+    idField('sendUserId', 'Also send it to (direct message)', 'user', {
+      placeholder: '{{original.user.id}} = whoever opened the ticket',
+      help: 'Optional. If their DMs are closed, or they can no longer see the channel, the DM is skipped and the flow carries on.',
+    }),
+    area('dmMessage', 'Message with the file (direct message)', {
+      showIf: whenNot('sendUserId', ''), rows: 2,
+      default: 'Here is a copy of your conversation in {{guild.name}}. Download the file and open it in your browser.',
+    }),
+  ],
+  outputs: ACTION_OUTS,
+  provides: () => [
+    ['transcript.messages', 'Messages in the transcript'], ['transcript.name', 'Transcript file name'], ['transcript.bytes', 'File size (bytes)'],
+    ['transcript.truncated', 'true if the transcript was cut short'], ['transcript.dm', 'Direct message: sent, failed or skipped'],
+  ],
+  wants: 'messageContent',
+  wantsNote: 'without the Message Content intent Discord hides other people\'s message text, so the transcript can only show who wrote when (plus the bot\'s own messages). Ask the bot operator to enable it.',
+  summary: (d) => (d.sendChannelId ? `→ ${d.sendChannelId}${d.sendUserId ? ' + DM' : ''}` : 'choose a log channel'),
 });
 
 // ---- roles --------------------------------------------------------------------------------------

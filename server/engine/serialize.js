@@ -22,10 +22,11 @@ export function memberData(m) {
     joinedAt: m.joinedAt?.toISOString?.() ?? '',
     roleIds: m.roles?.cache ? [...m.roles.cache.keys()].filter((id) => id !== m.guild?.id) : [],
     permissions: m.permissions?.toArray?.() ?? [],
+    boostingSince: m.premiumSinceTimestamp ? new Date(m.premiumSinceTimestamp).toISOString() : '',
   };
 }
 
-export const guildData = (g) => ({ id: g.id, name: g.name ?? '', memberCount: g.memberCount ?? 0 });
+export const guildData = (g) => ({ id: g.id, name: g.name ?? '', memberCount: g.memberCount ?? 0, boostCount: g.premiumSubscriptionCount ?? 0, boostTier: Number(g.premiumTier) || 0 });
 
 export function channelData(c) {
   if (!c) return undefined;

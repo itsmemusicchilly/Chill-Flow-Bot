@@ -44,6 +44,7 @@ for (const [key, cat] of Object.entries(CATEGORIES)) {
   for (const n of nodes) {
     out.push(`### ${n.icon} ${n.label}`, '', `\`${n.type}\` — ${n.description}`, '');
     if (n.requires) out.push(`> Needs the **${n.requires === 'members' ? 'Server Members' : 'Message Content'}** privileged intent (the bot operator must enable it).`, '');
+    if (n.wants) out.push(`> Works best with the **${n.wants === 'members' ? 'Server Members' : 'Message Content'}** privileged intent${n.wantsNote ? ` — ${n.wantsNote}` : ''}`, '');
     const rows = fieldRows(n.fields);
     if (rows.length) out.push('| Field | Type | Notes |', '| --- | --- | --- |', ...rows, '');
     const outputs = getOutputs(n.type, defaultsFor(n.type));
