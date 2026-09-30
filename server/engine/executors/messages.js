@@ -61,8 +61,19 @@ function identity(c) {
 }
 const matchesTarget = (c, target) => target !== '' && (buttonIdOf(c) === target || String(c.data.label ?? '').trim().toLowerCase() === target.toLowerCase());
 
+/** "This message" is the one that started the flow, "a previous message" is found by its ID. An empty ID is an error — never a guess at "this one". */
+async function chosenMessage(ctx, d) {
+  const byId = d.messageFrom ? d.messageFrom === 'id' : Boolean(cleanId(d.messageId));
+  if (byId) {
+    if (!cleanId(d.messageId)) throw new FlowError('The message ID is empty — if you used a variable, it had no value yet (was the message’s ID saved before this ran?).');
+    return fetchMessage(ctx, d.channelId, d.messageId);
+  }
+  if (!ctx.data.message?.id) throw new FlowError('There is no “this message” here: the flow did not start from a message or a button. Choose “A previous message” and give its ID.');
+  return fetchMessage(ctx, '', '');
+}
+
 async function changeButtons({ ctx, d, node }) {
-  const message = await fetchMessage(ctx, d.channelId, d.messageId);
+  const message = await chosenMessage(ctx, d);
   // Deleting follows Delete Message: any message the bot is allowed to delete, not only its own.
   if (d.mode === 'delete') { await message.delete(); return; }
   if (message.author.id !== ctx.guild.client.user.id) throw new FlowError('The bot can only change the buttons of its own messages.');

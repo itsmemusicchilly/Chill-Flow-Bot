@@ -450,12 +450,13 @@ tell nodes apart; it is never sent to Discord.
 
 ### 🔘 Change Buttons
 
-`action.message.buttons` — Add, remove, disable or enable the buttons of a message the bot already sent, without touching its text — or delete the message. Leave the message ID blank to use the message that triggered the flow. Buttons can only be changed on the bot's own messages, and neither works on “only visible to you” replies.
+`action.message.buttons` — Add, remove, disable or enable the buttons of a message the bot already sent, without touching its text — or delete the message. Choose “This message” (the one that started the flow, such as the message a pressed button is on) or “A previous message” and give its ID. Buttons can only be changed on the bot's own messages, and neither works on “only visible to you” replies.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| Channel | channel |  |
-| Message ID | message |  |
+| Which message | select | options: This message (the one that started the flow), A previous message (by its ID) |
+| Channel | channel | shown when `messageFrom` is `id` |
+| Message ID | message | required; shown when `messageFrom` is `id`; The ID of a message sent earlier. Use a variable that holds it — for example the one you gave “Save message ID as variable” in Send Message, or one stored with Set Variable. |
 | What to do | select | options: Add or update buttons, Remove specific buttons, Remove all buttons, Disable buttons, Enable buttons, Delete the message |
 | Buttons | list | shown when `mode` is `add`; up to 25 items |
 | ↳ Label | text | required |

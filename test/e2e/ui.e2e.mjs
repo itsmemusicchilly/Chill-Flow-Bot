@@ -654,6 +654,15 @@ try {
   await mode.waitFor();
   ok((await mode.inputValue()) === 'add' && (await cb.getByRole('button', { name: '+ Add' }).isVisible()), 'a new Change Buttons node starts on “Add or update buttons”, with a list to add to');
   ok((await cbNode.locator('.out.button').count()) === 0, 'it has no button outputs until a button is added');
+  const which = cb.getByLabel('Which message', { exact: true });
+  ok((await which.inputValue()) === 'this' && (await cb.getByPlaceholder('{{var.msg}} or {{channel.vars.panel}}').count()) === 0, 'it starts on “This message”, without asking for an ID');
+  await which.selectOption('id');
+  await cb.getByPlaceholder('{{var.msg}} or {{channel.vars.panel}}').waitFor();
+  ok((await cbNode.getByText(/message \(ID needed\)/).count()) === 1 && (await cbNode.locator('.badge.bad').count()) === 1, '“A previous message” asks for the ID, and the node is flagged until it has one');
+  await cb.getByPlaceholder('{{var.msg}} or {{channel.vars.panel}}').fill('{{channel.vars.panel}}');
+  await which.selectOption('this');
+  await page.waitForTimeout(250);
+  ok((await cb.getByPlaceholder('{{var.msg}} or {{channel.vars.panel}}').count()) === 0, 'choosing “This message” again hides the ID');
   await cb.getByRole('button', { name: '+ Add' }).click();
   await cb.getByRole('button', { name: '+ Add' }).click();
   ok((await cbNode.locator('.out.button').count()) === 2, 'each button added gets its own output on the node');
@@ -677,7 +686,12 @@ try {
   ok((await cb.getByRole('button', { name: '+ Add' }).isVisible()) && (await cbNode.locator('.badge.bad').count()) === 0, '“Disable” accepts an empty list (it then means every button)');
   await mode.selectOption('delete');
   await page.waitForTimeout(250);
-  ok((await cb.getByRole('button', { name: '+ Add' }).count()) === 0 && (await cbNode.locator('.badge.bad').count()) === 0 && (await cbNode.getByText('delete the message').count()) === 1, '“Delete the message” needs no list, and the node says what it will do');
+  ok((await cb.getByRole('button', { name: '+ Add' }).count()) === 0 && (await cbNode.locator('.badge.bad').count()) === 0 && (await cbNode.getByText('delete this message').count()) === 1, '“Delete the message” needs no list, and the node says what it will do');
+  await which.selectOption('id');
+  await cb.getByPlaceholder('{{var.msg}} or {{channel.vars.panel}}').fill('{{var.msg}}');
+  await page.waitForTimeout(250);
+  ok((await cbNode.getByText('delete message {{var.msg}}').count()) === 1 && (await cbNode.locator('.badge.bad').count()) === 0, 'deleting “a previous message” by ID shows which one, and is accepted');
+  await shot('41-delete-by-id');
 
   await page.getByRole('tab', { name: 'Nodes' }).click();
   await page.getByRole('button', { name: /Set Variable/ }).click();

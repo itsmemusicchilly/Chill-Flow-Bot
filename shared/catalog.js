@@ -473,13 +473,18 @@ def('action.message.edit', {
   ],
   outputs: ACTION_OUTS, summary: (d) => d.messageId || '',
 });
+const MESSAGE_FROM = [['this', 'This message (the one that started the flow)'], ['id', 'A previous message (by its ID)']];
 const BUTTON_MODES = [['add', 'Add or update buttons'], ['remove', 'Remove specific buttons'], ['clear', 'Remove all buttons'], ['disable', 'Disable buttons'], ['enable', 'Enable buttons'], ['delete', 'Delete the message']];
 def('action.message.buttons', {
   category: 'message', label: 'Change Buttons', icon: '🔘',
-  description: 'Add, remove, disable or enable the buttons of a message the bot already sent, without touching its text — or delete the message. Leave the message ID blank to use the message that triggered the flow. Buttons can only be changed on the bot\'s own messages, and neither works on “only visible to you” replies.',
+  description: 'Add, remove, disable or enable the buttons of a message the bot already sent, without touching its text — or delete the message. Choose “This message” (the one that started the flow, such as the message a pressed button is on) or “A previous message” and give its ID. Buttons can only be changed on the bot\'s own messages, and neither works on “only visible to you” replies.',
   fields: [
-    idField('channelId', 'Channel', 'channel', { placeholder: 'blank = current channel' }),
-    idField('messageId', 'Message ID', 'message', { placeholder: 'blank = the triggering message, or {{channel.vars.panel}}' }),
+    select('messageFrom', 'Which message', MESSAGE_FROM),
+    idField('channelId', 'Channel', 'channel', { showIf: when('messageFrom', 'id'), placeholder: 'blank = current channel' }),
+    idField('messageId', 'Message ID', 'message', {
+      showIf: when('messageFrom', 'id'), required: true, placeholder: '{{var.msg}} or {{channel.vars.panel}}',
+      help: 'The ID of a message sent earlier. Use a variable that holds it — for example the one you gave “Save message ID as variable” in Send Message, or one stored with Set Variable.',
+    }),
     select('mode', 'What to do', BUTTON_MODES),
     buttonList({ showIf: when('mode', 'add') }),
     list('targets', 'Which buttons', {
@@ -496,8 +501,11 @@ def('action.message.buttons', {
   ],
   summary: (d) => {
     const n = ((d.mode === 'add' ? d.buttons : d.targets) || []).length;
-    const what = { add: `add ${n} button${n === 1 ? '' : 's'}`, remove: `remove ${n} button${n === 1 ? '' : 's'}`, clear: 'remove all buttons', disable: n ? `disable ${n}` : 'disable all', enable: n ? `enable ${n}` : 'enable all', delete: 'delete the message' }[d.mode] || '';
-    return `${what}${d.messageId ? ` on ${d.messageId}` : ''}`;
+    const what = {
+      add: `add ${n} button${n === 1 ? '' : 's'} to`, remove: `remove ${n} button${n === 1 ? '' : 's'} from`, clear: 'remove all buttons from',
+      disable: n ? `disable ${n} on` : 'disable all buttons on', enable: n ? `enable ${n} on` : 'enable all buttons on', delete: 'delete',
+    }[d.mode] || '';
+    return `${what} ${d.messageFrom === 'id' ? `message ${d.messageId || '(ID needed)'}` : 'this message'}`.trim();
   },
   check(d) {
     const e = [];

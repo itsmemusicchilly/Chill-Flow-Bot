@@ -34,8 +34,8 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (701 unit/integration tests plus a
-> 155-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (707 unit/integration tests plus a
+> 159-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it. The alert triggers (feeds, YouTube, Twitch, webhooks) were tested against a pretend network and fake accounts,
 > not the real platforms; the same checklist covers them.
 
@@ -173,11 +173,15 @@ Pick what to do:
 | **Remove specific buttons** | Removes the buttons you name. A name matches a button's **Button ID**, or else its **label** (capital letters do not matter). |
 | **Remove all buttons** | Takes every button off. |
 | **Disable / Enable buttons** | Greys the named buttons out (or switches them back on). An empty list means **every** button — handy for “the vote is over”. |
-| **Delete the message** | Deletes the message, like the **Delete Message** node. Unlike the button modes it also works on a message somebody else posted, as long as the bot has *Manage Messages* there. |
+| **Delete the message** | Deletes the message — this one, or a previous one by its ID — like the **Delete Message** node. Unlike the button modes it also works on a message somebody else posted, as long as the bot has *Manage Messages* there. |
 
-* **Which message?** Leave the message ID blank to change the message that started the flow (for example the one a pressed button is on).
-  To reach a message later, save its ID when you send it (*Send Message* → **Save message ID as variable**), store it with
-  **Set Variable** (scope *Channel*), and read `{{channel.vars.panel}}` in the **Message ID** field of another flow.
+* **Which message?** Every mode starts with this choice:
+  * **This message** — the one that started the flow: the message a pressed button is on, or the message someone just posted. It needs a flow that
+    started from a message or a button; otherwise the node follows its **On error** output and says so.
+  * **A previous message (by its ID)** — fill in the **Message ID** (and its **Channel**, if it is not the current one). To reach an earlier message, save its ID when you
+    send it (*Send Message* → **Save message ID as variable**), keep it with **Set Variable** (scope *Channel*), and use `{{channel.vars.panel}}` as the Message ID in
+    another flow.
+  * An **empty ID is an error** — it never quietly turns into “this message”, so a delete can not hit the wrong message when a variable was not saved yet.
 * **Clicks on added buttons** work both ways, like in *Send Message*: fill **Button ID** and answer it with a **Button Clicked** trigger, or leave the ID empty and
   connect the button's own output on this node. A button wired to an output stops working if that output goes away (you edit or delete the node); a Button ID does not.
 * **Limits.** The button modes work only on the bot's **own** messages, and nothing here works on “only visible to you” replies. Discord allows **5 rows of 5 buttons**, and a select menu takes a whole row;
@@ -590,7 +594,7 @@ Not yet automated — please run through this once on a test server:
 - [ ] Two accounts press the same panel button at the same time: each only sees their own variables.
 - [ ] Change Buttons on a real message: post a panel with *Send Message* (save its ID), then run a flow with *Change Buttons* — *Add* a button with a Button ID and press it (a
       *Button Clicked* flow answers), *Add* one without an ID wired to an output and press it, *Disable* one (it greys out and cannot be pressed), *Enable* it again, *Remove* it by label,
-      *Remove all buttons* (text stays), *Delete the message* (also on a message someone else posted, with *Manage Messages*). Check a message with a select menu keeps its menu, and that the message a pressed button is on can change itself with a blank message ID.
+      *Remove all buttons* (text stays), *Delete the message* (also on a message someone else posted, with *Manage Messages*). Check a message with a select menu keeps its menu, and that with **This message** a pressed button can change or delete its own message, while **A previous message** with a stored ID reaches an earlier one (and an empty ID is refused).
 - [ ] Channel variables: with *Set Variable* (scope *Channel*) count something in two channels — each counts on its own; delete one channel and its variables disappear from the
       *Remembered variables* dialog.
 - [ ] Counters: switch on the *Member counter* template, pick a channel, then have several people join/leave within a few minutes —
