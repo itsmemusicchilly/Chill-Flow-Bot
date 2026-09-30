@@ -53,6 +53,33 @@ function buildEmbed(ctx, d) {
 }
 
 /**
+ * One button from its settings: a link, a reusable button (with a Button ID → `fcb:`), or one wired to an output of `node`
+ * (`fc:<flow>:<node>:btn_<id>`). `seenKeys` collects the Button IDs already used on the message so a repeat is refused.
+ */
+export function buildButton(ctx, node, b, { invokerId = '', seenKeys = new Set() } = {}) {
+  const style = STYLES[b.style] ?? ButtonStyle.Primary;
+  const btn = new ButtonBuilder().setStyle(style).setDisabled(Boolean(b.disabled));
+  if (b.label) btn.setLabel(cut(b.label, 80));
+  const emoji = parseEmoji(b.emoji);
+  if (emoji) btn.setEmoji(emoji);
+  if (!b.label && !emoji) btn.setLabel('Button');
+  if (style === ButtonStyle.Link) {
+    if (!HTTP.test(b.url || '')) throw new FlowError(`Link button “${b.label}” needs an http(s) URL.`);
+    btn.setURL(b.url);
+  } else if (buttonKey(b)) {
+    // Templates are already rendered here, so a member-controlled value could have become the id: check it again.
+    const key = buttonKey(b);
+    if (!BUTTON_ID_RE.test(key)) throw new FlowError(`Button ID “${cut(key, 40)}” can only use letters, numbers, - _ and . (max 64).`);
+    if (seenKeys.has(key)) throw new FlowError(`Button ID “${key}” is used twice in this message.`);
+    seenKeys.add(key);
+    btn.setCustomId(buildButtonId({ id: key, invokerId }));
+  } else {
+    btn.setCustomId(buildCustomId({ flowId: ctx.flow.id, nodeId: node.id, handle: `btn_${b.id}`, invokerId }));
+  }
+  return btn;
+}
+
+/**
  * Build the discord.js message payload for a Send/Edit Message node.
  * `replace` makes omitted parts explicit (empty) so editing really replaces the message.
  */
@@ -67,28 +94,7 @@ export function buildPayload(ctx, d, node, { components = true, replace = false 
     const invokerId = d.restrictToInvoker ? (ctx.user?.id ?? '') : '';
     const mk = (handle) => buildCustomId({ flowId: ctx.flow.id, nodeId: node.id, handle, invokerId });
     const seenKeys = new Set();
-    const buttons = (d.buttons || []).slice(0, 25).map((b) => {
-      const style = STYLES[b.style] ?? ButtonStyle.Primary;
-      const btn = new ButtonBuilder().setStyle(style).setDisabled(Boolean(b.disabled));
-      if (b.label) btn.setLabel(cut(b.label, 80));
-      const emoji = parseEmoji(b.emoji);
-      if (emoji) btn.setEmoji(emoji);
-      if (!b.label && !emoji) btn.setLabel('Button');
-      if (style === ButtonStyle.Link) {
-        if (!HTTP.test(b.url || '')) throw new FlowError(`Link button “${b.label}” needs an http(s) URL.`);
-        btn.setURL(b.url);
-      } else if (buttonKey(b)) {
-        // Templates are already rendered here, so a member-controlled value could have become the id: check it again.
-        const key = buttonKey(b);
-        if (!BUTTON_ID_RE.test(key)) throw new FlowError(`Button ID “${cut(key, 40)}” can only use letters, numbers, - _ and . (max 64).`);
-        if (seenKeys.has(key)) throw new FlowError(`Button ID “${key}” is used twice in this message.`);
-        seenKeys.add(key);
-        btn.setCustomId(buildButtonId({ id: key, invokerId }));
-      } else {
-        btn.setCustomId(mk(`btn_${b.id}`));
-      }
-      return btn;
-    });
+    const buttons = (d.buttons || []).slice(0, 25).map((b) => buildButton(ctx, node, b, { invokerId, seenKeys }));
     const menuRows = d.menuEnabled && (d.menuOptions || []).length ? 1 : 0;
     const maxButtons = (5 - menuRows) * 5;
     if (buttons.length > maxButtons) throw new FlowError(`Too many buttons: Discord allows ${maxButtons} here.`);

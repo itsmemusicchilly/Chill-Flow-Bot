@@ -393,6 +393,37 @@ const TARGETS = [
   ['channel', 'Post in a specific channel'],
   ['dm', 'Direct message a member'],
 ];
+/** The list of buttons a message can carry — the same for Send Message and Change Buttons, so they can not drift apart. */
+const buttonList = (o = {}) => list('buttons', 'Buttons', {
+  create: () => ({ id: uid(6), label: 'Button', style: 'Primary', emoji: '', url: '', disabled: false, customId: '' }),
+  label: (b) => b.label,
+  fields: [
+    text('label', 'Label', { required: true }),
+    select('style', 'Style', BUTTON_STYLES),
+    text('url', 'URL', { showIf: when('style', 'Link'), required: true }),
+    text('emoji', 'Emoji (optional)'),
+    bool('disabled', 'Disabled'),
+    text('customId', 'Button ID (optional)', {
+      showIf: whenNot('style', 'Link'), placeholder: 'open_ticket',
+      help: 'Makes this a reusable button: it is handled by a “Button Clicked” trigger with the same ID instead of its own output here, and keeps working on every copy of the message. Adding an ID removes this button\'s output connection.',
+    }),
+  ],
+}, { max: 25, ...o });
+
+/** Problems with the Button IDs in a list of buttons: characters Discord would not accept, and IDs used twice. */
+function buttonIdErrors(buttons) {
+  const e = [];
+  const seen = new Set();
+  for (const b of buttons || []) {
+    const key = buttonKey(b);
+    if (!key) continue;
+    if (!/\{\{/.test(key) && !BUTTON_ID_RE.test(key)) e.push(`Button ID “${key}” can only use letters, numbers, - _ and . (max 64).`);
+    if (seen.has(key)) e.push(`Button ID “${key}” is used twice in this message — Discord needs them to be unique.`);
+    seen.add(key);
+  }
+  return e;
+}
+
 def('action.message.send', {
   category: 'message', label: 'Send Message', icon: '💬',
   description: 'Send text, an embed, buttons and a select menu. Every button becomes its own output.',
@@ -403,21 +434,7 @@ def('action.message.send', {
     bool('ephemeral', 'Only visible to the user (ephemeral)', { showIf: when('target', 'reply'), help: 'Works when replying to a command or button.' }),
     area('content', 'Message text', { placeholder: 'Hello {{user.mention}}!' }),
     ...embedFields(),
-    list('buttons', 'Buttons', {
-      create: () => ({ id: uid(6), label: 'Button', style: 'Primary', emoji: '', url: '', disabled: false, customId: '' }),
-      label: (b) => b.label,
-      fields: [
-        text('label', 'Label', { required: true }),
-        select('style', 'Style', BUTTON_STYLES),
-        text('url', 'URL', { showIf: when('style', 'Link'), required: true }),
-        text('emoji', 'Emoji (optional)'),
-        bool('disabled', 'Disabled'),
-        text('customId', 'Button ID (optional)', {
-          showIf: whenNot('style', 'Link'), placeholder: 'open_ticket',
-          help: 'Makes this a reusable button: it is handled by a “Button Clicked” trigger with the same ID instead of its own output here, and keeps working on every copy of the message. Adding an ID removes this button\'s output connection.',
-        }),
-      ],
-    }, { max: 25 }),
+    buttonList(),
     bool('menuEnabled', 'Add a select menu'),
     text('menuPlaceholder', 'Menu placeholder', { showIf: when('menuEnabled', true), default: 'Choose…' }),
     list('menuOptions', 'Menu options', {
@@ -441,15 +458,8 @@ def('action.message.send', {
     if (!d.content && !d.useEmbed && !(d.buttons || []).length) e.push('Add message text, an embed or buttons — Discord will not send an empty message.');
     if ((d.buttons || []).length + (d.menuEnabled ? 1 : 0) > 25) e.push('Too many components.');
     if (d.menuEnabled && !(d.menuOptions || []).length) e.push('The select menu needs at least one option.');
-    const seen = new Set();
-    for (const b of d.buttons || []) {
-      const key = buttonKey(b);
-      if (!key) continue;
-      if (!/\{\{/.test(key) && !BUTTON_ID_RE.test(key)) e.push(`Button ID “${key}” can only use letters, numbers, - _ and . (max 64).`);
-      if (seen.has(key)) e.push(`Button ID “${key}” is used twice in this message — Discord needs them to be unique.`);
-      seen.add(key);
-    }
-    if (seen.size && d.target === 'dm') e.push('Buttons with a Button ID only work inside a server, not in direct messages.');
+    e.push(...buttonIdErrors(d.buttons));
+    if ((d.buttons || []).some((b) => buttonKey(b)) && d.target === 'dm') e.push('Buttons with a Button ID only work inside a server, not in direct messages.');
     return e;
   },
 });
