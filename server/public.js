@@ -79,6 +79,30 @@ export function createPublic({ config, db, runtime, bot, logger, auth }) {
     return out;
   }
 
+  /**
+   * Who may open this page? Resolves to { ok: true, member } to carry on (member is undefined for a public page), or answers the
+   * request itself — a login prompt or a refusal — and resolves to { ok: false }. It fails closed: an unknown setting, an empty
+   * role list, a deleted role or a failed lookup all refuse; nothing unexpected ever opens the door. The answers carry no title,
+   * content or link-preview tags, so a link crawler learns nothing about a gated page.
+   */
+  async function guard(req, res, page) {
+    if (page.access === 'public') return { ok: true, member: undefined };
+    const guild = bot.guildSummary(page.guildId);
+    const here = pathOf(page);
+    const refuse = (status, title, message, href = here, hrefLabel = 'Try again') => {
+      html(res, status, renderNotice({ page: { theme: page.theme }, guild, title, message, href, hrefLabel, visitor: req.visitor, pagePath: here }));
+      return { ok: false };
+    };
+    const kind = page.access === 'members' ? `members of ${guild.name}` : `members of ${guild.name} with a certain role`;
+    if (!req.visitor) return refuse(401, 'Log in to continue', `This page is only for ${kind}. Log in with Discord to see if you can open it — we only read your username and ID.`, `/auth/visitor/login?next=${encodeURIComponent(here)}`, 'Log in with Discord');
+    let member = null;
+    try { member = await bot.getMember(page.guildId, req.visitor.id); } catch { member = null; }
+    if (!member) return refuse(403, 'Members only', `Only members of ${guild.name} can open this page. Join the server, then refresh this page (it can take a minute).`);
+    const open = page.access === 'members' || (page.access === 'roles' && page.roleIds.some((id) => member.roles?.cache?.has(id)));
+    if (!open) return refuse(403, 'No access', `This page is only for ${kind}, and your account does not have access. If you were just given a role, wait a minute and refresh.`);
+    return { ok: true, member };
+  }
+
   async function sendPage(req, res, page, { status = 200, overrides = {}, member } = {}) {
     const guild = bot.guildSummary(page.guildId);
     const needMember = page.blocks.some((b) => b.type === 'form' && b.data.requireMember);
@@ -94,7 +118,9 @@ export function createPublic({ config, db, runtime, bot, logger, auth }) {
     try {
       const page = lookup(req);
       if (!page) return notFound(res);
-      return await sendPage(req, res, page);
+      const gate = await guard(req, res, page);
+      if (!gate.ok) return undefined;
+      return await sendPage(req, res, page, { member: gate.member });
     } catch (err) { return next(err); }
   });
 
@@ -103,6 +129,8 @@ export function createPublic({ config, db, runtime, bot, logger, auth }) {
       const page = lookup(req);
       const block = page && findForm(page, req.params.blockId);
       if (!page || !block) return notFound(res);
+      const gate = await guard(req, res, page); // a form on a gated page can only be sent by someone who may open the page
+      if (!gate.ok) return undefined;
       const guild = bot.guildSummary(page.guildId);
       const notice = (status, title, message) => html(res, status, renderNotice({ page, guild, title, message, href: pathOf(page), hrefLabel: 'Back to the page' }));
 
@@ -111,7 +139,7 @@ export function createPublic({ config, db, runtime, bot, logger, auth }) {
       if (!auth.csrfValid(req.body?._csrf, req.visitor.sessionId, page.id, block.id)) return notice(403, 'This form has expired', 'Reload the page and try again.');
 
       const d = block.data;
-      const member = await bot.getMember(page.guildId, req.visitor.id); // the only await: everything below runs without interruption
+      const member = gate.member !== undefined ? gate.member : await bot.getMember(page.guildId, req.visitor.id); // the last await: everything below runs without interruption
       if (d.requireMember && !member) return await sendPage(req, res, page, { status: 403, overrides: { [block.id]: { blocked: 'member' } }, member });
       const blocked = dbGate(page, block, req.visitor.id);
       if (blocked) return await sendPage(req, res, page, { status: 409, overrides: { [block.id]: blocked }, member });
@@ -137,17 +165,21 @@ export function createPublic({ config, db, runtime, bot, logger, auth }) {
     } catch (err) { return next(err); }
   });
 
-  router.get('/:gid/:slug/thanks', (req, res) => {
-    const page = lookup(req);
-    const block = page && findForm(page, String(req.query.f ?? ''));
-    if (!page || !block) return notFound(res);
-    const d = block.data;
-    const guild = bot.guildSummary(page.guildId);
-    const target = d.onSuccess === 'redirect' ? safeUrl(d.redirectUrl) : null;
-    if (target) {
-      return html(res, 200, renderNotice({ page, guild, title: d.title, message: 'Thanks! Taking you to the next page…', href: target, hrefLabel: 'Continue', refreshTo: target }));
-    }
-    return html(res, 200, renderNotice({ page, guild, title: d.title, message: d.successMessage || 'Thanks! Your response was sent.', href: pathOf(page), hrefLabel: 'Back to the page' }));
+  router.get('/:gid/:slug/thanks', async (req, res, next) => {
+    try {
+      const page = lookup(req);
+      const block = page && findForm(page, String(req.query.f ?? ''));
+      if (!page || !block) return notFound(res);
+      const gate = await guard(req, res, page);
+      if (!gate.ok) return undefined;
+      const d = block.data;
+      const guild = bot.guildSummary(page.guildId);
+      const target = d.onSuccess === 'redirect' ? safeUrl(d.redirectUrl) : null;
+      if (target) {
+        return html(res, 200, renderNotice({ page, guild, title: d.title, message: 'Thanks! Taking you to the next page…', href: target, hrefLabel: 'Continue', refreshTo: target }));
+      }
+      return html(res, 200, renderNotice({ page, guild, title: d.title, message: d.successMessage || 'Thanks! Your response was sent.', href: pathOf(page), hrefLabel: 'Back to the page' }));
+    } catch (err) { return next(err); }
   });
 
   return { router };

@@ -198,17 +198,20 @@ function shell({ title, theme = THEME_DEFAULTS, guild, body, robots, refreshTo, 
 export function renderPage({ page, guild, mode = 'public', visitor = null, csrf = () => '', formState = {}, assetBase = '', baseUrl = '' }) {
   const pagePath = `/s/${guild.id}/${page.slug}`;
   const ctx = { mode, guild, visitor, csrf, formState, assetBase, pagePath, loginHref: `/auth/visitor/login?next=${encodeURIComponent(pagePath)}` };
-  const body = page.blocks.map((b) => (b.type === 'form' ? renderForm(b, ctx) : BLOCK_TYPES[b.type] ? RENDERERS[b.type]?.(b.data, ctx) ?? '' : '')).join('\n');
+  const blocks = page.blocks.map((b) => (b.type === 'form' ? renderForm(b, ctx) : BLOCK_TYPES[b.type] ? RENDERERS[b.type]?.(b.data, ctx) ?? '' : '')).join('\n');
+  // A page only some people may open needs a way to switch account even when it has no form (forms show this line themselves).
+  const gated = page.access && page.access !== 'public';
+  const body = visitor && gated && mode === 'public' && !page.blocks.some((b) => b.type === 'form') ? `${blocks}\n${signedIn(ctx)}` : blocks;
   const meta = mode === 'public' && baseUrl ? pageMeta(page, { guild, baseUrl }) : null; // notices, 404s, previews and gate pages never carry one
   return shell({ title: page.title || 'Untitled page', theme: page.theme, guild, body, robots: mode === 'preview' ? 'noindex' : undefined, meta });
 }
 
 /** A small page for thank-you / blocked / error messages, in the page's own theme. */
-export function renderNotice({ page, guild, title, message, href, hrefLabel, refreshTo }) {
+export function renderNotice({ page, guild, title, message, href, hrefLabel, refreshTo, visitor = null, pagePath = '' }) {
   const safeHref = href && (href.startsWith('/') && !href.startsWith('//') ? href : safeUrl(href));
   const link = safeHref ? `<p class="btn-row"><a class="btn outline" href="${esc(safeHref)}">${esc(hrefLabel || 'Back')}</a></p>` : '';
   const refresh = refreshTo ? safeUrl(refreshTo) : null; // only ever a validated http(s) address
-  return shell({ title, theme: page?.theme, guild, body: `<div class="form"><h2>${esc(title)}</h2>${renderMarkdown(message)}${link}</div>`, robots: 'noindex', refreshTo: refresh });
+  return shell({ title, theme: page?.theme, guild, body: `<div class="form"><h2>${esc(title)}</h2>${renderMarkdown(message)}${link}${visitor && pagePath ? signedIn({ visitor, pagePath }) : ''}</div>`, robots: 'noindex', refreshTo: refresh });
 }
 
 /** Deliberately says nothing about which servers or pages exist. */
