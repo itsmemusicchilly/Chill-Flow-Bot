@@ -11,6 +11,7 @@
 import dns from 'node:dns';
 import net from 'node:net';
 import { Agent, fetch as undiciFetch } from 'undici';
+import { FeedSettingError, parsePublicHttpsUrl } from '../../shared/feeds.js';
 
 /** A problem with an address or an answer, worded so it can be shown as it is. */
 export class SafeFetchError extends Error {
@@ -112,22 +113,12 @@ let sharedAgent = null;
 const defaultAgent = () => (sharedAgent ??= createSafeAgent());
 
 // ---- the address itself -------------------------------------------------------------------------------------------------------
-const LOCAL_NAME = /(^|\.)(localhost|local|localdomain|internal|intranet|lan|home|corp|private|home\.arpa)$/i;
-
-/** Checks an address a person typed and returns it as a URL, or throws a SafeFetchError that says what is wrong. */
+/** Checks an address a person typed and returns it as a URL, or throws a SafeFetchError that says what is wrong. (The rules are shared with the editor.) */
 export function parseSafeUrl(input) {
-  const text = String(input ?? '').trim();
-  if (!text) throw new SafeFetchError('Enter an address (it starts with https://).', 'EBADURL');
-  if (text.length > 2000) throw new SafeFetchError('That address is too long.', 'EBADURL');
-  let url;
-  try { url = new URL(text); } catch { throw new SafeFetchError(`“${text.slice(0, 80)}” is not a valid address. It should look like https://example.com/feed.xml`, 'EBADURL'); }
-  if (url.protocol !== 'https:') throw new SafeFetchError('Only https:// addresses are allowed.', 'EBADURL');
-  if (url.username || url.password) throw new SafeFetchError('The address must not contain a user name or password.', 'EBADURL');
-  if (url.port) throw new SafeFetchError('Only the standard https port is allowed (leave the :port out).', 'EBADURL');
-  const host = url.hostname.replace(/^\[|\]$/g, '');
-  if (net.isIP(host)) throw new SafeFetchError('Use the website’s name (like example.com), not a raw IP address.', 'EBADURL');
-  if (!host.includes('.') || LOCAL_NAME.test(host)) throw new SafeFetchError('That is not a public website name.', 'EBADURL');
-  return url;
+  try { return parsePublicHttpsUrl(input); } catch (err) {
+    if (err instanceof FeedSettingError) throw new SafeFetchError(err.message, 'EBADURL');
+    throw err;
+  }
 }
 
 // ---- the request ---------------------------------------------------------------------------------------------------------------

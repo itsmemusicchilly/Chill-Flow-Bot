@@ -1,7 +1,7 @@
 // Reading feeds: what real sites send (YouTube, Reddit, Bluesky, Mastodon, GitHub, blogs) and what a hostile one might.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { FeedError, MAX_ITEMS, decodeEntities, feedUrlFor, htmlToText, parseFeed, parseXml } from '../server/feeds/parse.js';
+import { FeedError, MAX_ITEMS, decodeEntities, htmlToText, parseFeed, parseXml } from '../server/feeds/parse.js';
 
 const YOUTUBE = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
@@ -283,31 +283,5 @@ describe('small helpers', () => {
     const root = parseXml('<a x="1" y=\'2\'><b>hi</b><c/></a>');
     const a = root.children[0];
     assert.deepEqual([a.name, a.attrs, a.children.map((c) => c.name), a.children[0].text], ['a', { x: '1', y: '2' }, ['b', 'c'], 'hi']);
-  });
-});
-
-describe('feed addresses for the ready-made sources', () => {
-  const UC = 'UC1234567890abcdefghijkl';
-  it('YouTube: a channel ID, or a channel link that contains one', () => {
-    const want = `https://www.youtube.com/feeds/videos.xml?channel_id=${UC}`;
-    assert.equal(feedUrlFor({ source: 'youtube', value: UC }), want);
-    assert.equal(feedUrlFor({ source: 'youtube', value: `https://www.youtube.com/channel/${UC}` }), want);
-    assert.equal(feedUrlFor({ source: 'youtube', value: `https://www.youtube.com/feeds/videos.xml?channel_id=${UC}` }), want);
-    assert.throws(() => feedUrlFor({ source: 'youtube', value: '@somehandle' }), /starts with UC/);
-    assert.throws(() => feedUrlFor({ source: 'youtube', value: '' }), /starts with UC/);
-  });
-  it('Reddit: a subreddit name, r/name or a link', () => {
-    for (const v of ['gaming', 'r/gaming', '/r/gaming/', 'https://www.reddit.com/r/gaming', 'https://reddit.com/r/gaming/']) assert.equal(feedUrlFor({ source: 'reddit', value: v }), 'https://www.reddit.com/r/gaming/new/.rss', v);
-    assert.throws(() => feedUrlFor({ source: 'reddit', value: 'not a sub!' }), /subreddit name/);
-    assert.throws(() => feedUrlFor({ source: 'reddit', value: 'a/../b' }), /subreddit name/);
-  });
-  it('Bluesky: a handle, @handle or a profile link', () => {
-    for (const v of ['alice.bsky.social', '@alice.bsky.social', 'https://bsky.app/profile/alice.bsky.social', 'https://bsky.app/profile/alice.bsky.social/']) assert.equal(feedUrlFor({ source: 'bluesky', value: v }), 'https://bsky.app/profile/alice.bsky.social/rss', v);
-    assert.throws(() => feedUrlFor({ source: 'bluesky', value: 'alice' }), /Bluesky handle/);
-    assert.throws(() => feedUrlFor({ source: 'bluesky', value: 'a.b/../../x' }), /Bluesky handle/);
-  });
-  it('any other address is used as typed (and checked later, by the fetcher)', () => {
-    assert.equal(feedUrlFor({ source: 'url', value: ' https://blog.example/feed.xml ' }), 'https://blog.example/feed.xml');
-    assert.equal(feedUrlFor({}), '');
   });
 });

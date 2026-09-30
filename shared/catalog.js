@@ -1,6 +1,7 @@
 // Single source of truth for every node type. The editor renders its palette, cards and inspector from
 // this file; the server uses it to validate graphs, compute handles and activate triggers.
 import { CronError, nextRuns, scheduleOf, timeZoneNames, WEEKDAYS } from './cron.js';
+import { DEFAULT_FEED_MINUTES, FEED_SOURCES, FeedSettingError, MIN_FEED_MINUTES, feedUrlOf, parsePublicHttpsUrl } from './feeds.js';
 import { area, bool, color, idField, image, isVisible, list, multi, num, select, text, VAR_NAME_RE, when, whenNot } from './fields.js';
 import { uid } from './util.js';
 
@@ -282,6 +283,39 @@ trigger('trigger.schedule', {
       if (e instanceof CronError) return [e.message];
       throw e;
     }
+  },
+});
+// ---- things that happen on other platforms ------------------------------------------------------------------------------------
+const feedLabel = (d) => {
+  if (d.source === 'youtube') return d.channel ? `YouTube ${String(d.channel).slice(-24)}` : '';
+  if (d.source === 'reddit') return d.subreddit ? `r/${String(d.subreddit).replace(/^\/?r\//, '')}` : '';
+  if (d.source === 'bluesky') return d.handle ? `Bluesky ${d.handle}` : '';
+  try { const u = new URL(String(d.url ?? '').trim()); return `${u.hostname}${u.pathname === '/' ? '' : u.pathname}`.slice(0, 50); } catch { return ''; }
+};
+trigger('trigger.feed.item', {
+  label: 'New Feed Item', icon: '📰',
+  description: 'Runs when a feed gets a new post: a YouTube channel’s new video, a subreddit, a Bluesky or Mastodon account, a blog, GitHub releases. The bot looks every few minutes; posts that are already there when you switch the flow on are not announced.',
+  fields: [
+    select('source', 'Where', FEED_SOURCES, { default: 'youtube' }),
+    text('url', 'Feed address', {
+      showIf: when('source', 'url'), placeholder: 'https://blog.example.com/feed.xml',
+      help: 'A public https address of an RSS, Atom or JSON feed. Mastodon: https://server/@name.rss · GitHub releases: https://github.com/owner/repo/releases.atom · most blogs: /feed or /rss.xml',
+    }),
+    text('channel', 'YouTube channel ID', { showIf: when('source', 'youtube'), placeholder: 'UC…', help: 'It starts with UC and has 24 characters. In YouTube: your channel → About → Share → Copy channel ID. (A link with /channel/UC… in it works too.)' }),
+    text('subreddit', 'Subreddit', { showIf: when('source', 'reddit'), placeholder: 'gaming', help: 'The name, without r/.' }),
+    text('handle', 'Bluesky handle', { showIf: when('source', 'bluesky'), placeholder: 'name.bsky.social' }),
+    num('minutes', 'Check every (minutes)', { default: DEFAULT_FEED_MINUTES, min: MIN_FEED_MINUTES, required: true, help: `At least ${MIN_FEED_MINUTES}. The bot operator may set a longer minimum.` }),
+    idField('channelId', 'Channel for context (optional)', 'channel'),
+  ],
+  preview: 'feed', previewAfter: 'minutes',
+  provides: () => [
+    ...GUILD, ...CHANNEL,
+    ['feed.title', 'Post title'], ['feed.link', 'Link to the post'], ['feed.author', 'Author'], ['feed.summary', 'Text of the post (plain, shortened)'], ['feed.published', 'When it was published (ISO date)'],
+    ['feed.image', 'Picture address (https; may be blank)'], ['feed.id', 'The post’s unique id'], ['feed.name', 'Name of the feed or channel'],
+  ],
+  summary: (d) => feedLabel(d) || 'choose a feed',
+  check: (d) => {
+    try { parsePublicHttpsUrl(feedUrlOf(d)); return []; } catch (e) { if (e instanceof FeedSettingError) return [e.message]; throw e; }
   },
 });
 trigger('trigger.manual', {

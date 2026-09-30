@@ -47,6 +47,10 @@ CREATE TABLE IF NOT EXISTS uploads (
   UNIQUE (guild_id, sha256)
 );
 CREATE INDEX IF NOT EXISTS uploads_guild ON uploads(guild_id, created_at);
+CREATE TABLE IF NOT EXISTS watch_state (
+  guild_id TEXT NOT NULL, flow_id TEXT NOT NULL, node_id TEXT NOT NULL, data TEXT NOT NULL, updated_at INTEGER NOT NULL,
+  PRIMARY KEY (guild_id, flow_id, node_id)
+);
 `;
 
 const VAR_NAME = /^[A-Za-z_][\w-]{0,31}$/;
@@ -137,6 +141,23 @@ export class Database {
 
   deleteFlow(guildId, id) {
     return this.#stmt('DELETE FROM flows WHERE id = ? AND guild_id = ?').run(id, guildId).changes > 0;
+  }
+
+  // ---- what the feed/platform watchers have already seen (so a restart never announces things twice) ---------
+  getWatch(guildId, flowId, nodeId) {
+    const r = this.#stmt('SELECT data FROM watch_state WHERE guild_id=? AND flow_id=? AND node_id=?').get(guildId, flowId, nodeId);
+    return r ? JSON.parse(r.data) : null;
+  }
+
+  setWatch(guildId, flowId, nodeId, data) {
+    this.#stmt('INSERT INTO watch_state (guild_id, flow_id, node_id, data, updated_at) VALUES (?,?,?,?,?) ON CONFLICT(guild_id, flow_id, node_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at')
+      .run(guildId, flowId, nodeId, JSON.stringify(data), Date.now());
+  }
+
+  /** Forget the state of every node of this server that is not in `keep` (a set of "flowId|nodeId"): deleted flows and nodes leave nothing behind. */
+  pruneWatch(guildId, keep) {
+    const rows = this.#stmt('SELECT flow_id, node_id FROM watch_state WHERE guild_id = ?').all(guildId);
+    for (const r of rows) if (!keep.has(`${r.flow_id}|${r.node_id}`)) this.#stmt('DELETE FROM watch_state WHERE guild_id=? AND flow_id=? AND node_id=?').run(guildId, r.flow_id, r.node_id);
   }
 
   // ---- variables (scopes: guild, user — never global) -----------------------------------------

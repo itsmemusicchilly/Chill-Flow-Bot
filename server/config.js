@@ -25,6 +25,7 @@ export const LIMIT_ENV = {
   uploadsPerGuild: 'LIMIT_UPLOADS_PER_GUILD',
   storageBytesPerGuild: 'LIMIT_STORAGE_BYTES_PER_GUILD',
   transcriptMessages: 'LIMIT_TRANSCRIPT_MESSAGES',
+  feedsPerGuild: 'LIMIT_FEEDS_PER_GUILD',
 };
 const DEFAULT_REQUEST_BYTES = 50 * 1024 * 1024;
 const MAX_REQUEST_BYTES = 1024 ** 3;
@@ -58,6 +59,8 @@ export function loadConfig(env = process.env) {
   const minPermission = env.DASHBOARD_MIN_PERMISSION || 'Administrator';
   if (!['Administrator', 'ManageGuild'].includes(minPermission)) throw new ConfigError('DASHBOARD_MIN_PERMISSION must be Administrator or ManageGuild.');
   const { limits, requestBytes } = readLimits(env);
+  const feedMinMinutes = env.FEED_MIN_INTERVAL_MINUTES === undefined || env.FEED_MIN_INTERVAL_MINUTES === '' ? 5 : Number(env.FEED_MIN_INTERVAL_MINUTES);
+  if (!Number.isInteger(feedMinMinutes) || feedMinMinutes < 1) throw new ConfigError('FEED_MIN_INTERVAL_MINUTES must be a whole number of minutes, 1 or more (default 5).');
   return {
     token: env.DISCORD_TOKEN,
     clientId: env.DISCORD_CLIENT_ID,
@@ -71,6 +74,7 @@ export function loadConfig(env = process.env) {
     minPermission,
     limits,
     requestBytes,
+    feedMinMinutes,
     sessionTtlMs: 7 * 24 * 3600 * 1000,
   };
 }

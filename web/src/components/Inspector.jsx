@@ -2,7 +2,11 @@ import { useMemo, useRef } from 'react';
 import { availableVariables, CATEGORIES, NODE_TYPES, TITLE_KEY, TITLE_MAX } from '@shared/catalog.js';
 import { useEditor } from '../context.js';
 import { FieldList } from './FieldEditor.jsx';
+import FeedPreview from './FeedPreview.jsx';
 import SchedulePreview from './SchedulePreview.jsx';
+
+/** Live previews under some nodes' settings (`preview` in the catalog). */
+const PREVIEWS = { schedule: SchedulePreview, feed: FeedPreview };
 
 function insertAtCaret(target, text) {
   const { el, apply } = target;
@@ -55,7 +59,7 @@ export default function Inspector({ node, nodes, edges, issues, onChange, onDupl
           <div className="help">Shown on the node so you can tell nodes apart. Only people who edit this flow see it — it is never sent to Discord.</div>
         </div>
         <FieldList fields={fieldsBefore} data={node.data} onChange={(k, v) => onChange(node.id, { [k]: v })} focusRef={focusRef} />
-        {def.preview === 'schedule' && <SchedulePreview data={node.data} />}
+        {PREVIEWS[def.preview] && (() => { const Preview = PREVIEWS[def.preview]; return <Preview data={node.data} />; })()}
         {fieldsAfter.length > 0 && <FieldList fields={fieldsAfter} data={node.data} onChange={(k, v) => onChange(node.id, { [k]: v })} focusRef={focusRef} />}
       </div>
 

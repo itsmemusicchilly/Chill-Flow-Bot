@@ -5,6 +5,8 @@ import { getOutputs, isTriggerType, NODE_TYPES } from '../../shared/catalog.js';
 import { cronMatches, scheduleOf, zonedParts } from '../../shared/cron.js';
 import { LIMITS } from '../../shared/limits.js';
 import { normalizeGraph, validateFlow } from '../../shared/validate.js';
+import { feedAdapter } from '../feeds/adapter.js';
+import { safeFetch } from '../net/safe-fetch.js';
 import { uid } from '../../shared/util.js';
 import { ChannelEdits } from './channel-edits.js';
 import { ComponentState } from './component-state.js';
@@ -12,6 +14,7 @@ import { parseButtonId, parseCustomId } from './custom-id.js';
 import { runFlow } from './engine.js';
 import { FlowAbort, friendlyError } from './errors.js';
 import { RateLimiter, SelfActions } from './rate-limit.js';
+import { Watchers } from './watchers.js';
 import { autoDefer, finalize, newAck } from './responder.js';
 import { channelData, guildData, memberData, messageData, roleData, userData } from './serialize.js';
 import { matches } from './triggers.js';
@@ -26,10 +29,11 @@ const EPHEMERAL = MessageFlags.Ephemeral;
 export class Runtime {
   /**
    * @param {{db: import('../db.js').Database, logger: import('../logger.js').Logger, intents?: {members: boolean, messageContent: boolean}, uploads?: {publicUrl: (guildId: string, ref: string) => string},
-   *          clock?: {now?: () => number, setTimer?: (fn: () => void, ms: number) => any, clearTimer?: (timer: any) => void}}} deps
-   *   `clock` is for tests: schedules read the time and set their timer through it.
+   *          clock?: {now?: () => number, setTimer?: (fn: () => void, ms: number) => any, clearTimer?: (timer: any) => void},
+   *          fetcher?: Function, feedMinMinutes?: number}} deps
+   *   `clock` is for tests: schedules read the time and set their timer through it. `fetcher` is the guarded fetcher the feed watchers use (a pretend one in tests).
    */
-  constructor({ db, logger, intents = { members: false, messageContent: false }, uploads = null, clock = {} }) {
+  constructor({ db, logger, intents = { members: false, messageContent: false }, uploads = null, clock = {}, fetcher = safeFetch, feedMinMinutes = 5 }) {
     this.db = db;
     this.logger = logger;
     this.intents = intents;
@@ -50,6 +54,7 @@ export class Runtime {
     this.schedules = new Map(); // "guild|flow|node" -> what one Schedule trigger needs to know between ticks
     this.ticker = null; // the one timer that wakes up at the start of each minute while any schedule exists
     this.lastMinute = null; // the last minute whose schedules were looked at
+    this.watchers = new Watchers({ runtime: this, db, logger, adapters: [feedAdapter], fetch: fetcher, minMinutes: feedMinMinutes });
     this.deferAfterMs = DEFER_AFTER_MS;
   }
 
@@ -96,7 +101,8 @@ export class Runtime {
     }
     this.index.set(guildId, entry);
     this.#stopRemovedRuns(guildId, entry);
-    this.syncSchedules(guildId);
+    this.watchers.sync(guildId);
+    this.syncSchedules(guildId); // also decides whether the one-minute ticker is needed (schedules AND watchers use it)
     return entry;
   }
 
@@ -122,6 +128,7 @@ export class Runtime {
     for (const id of this.index.get(guildId)?.flows.keys() ?? []) this.flowsById.delete(id);
     this.index.delete(guildId);
     this.#stopRemovedRuns(guildId, { flows: new Map() });
+    this.watchers.clear(guildId);
     this.clearSchedules(guildId);
     this.services.channelEdits.cancel(guildId);
   }
@@ -343,7 +350,7 @@ export class Runtime {
   // through saves that do not touch it.
   clearSchedules(guildId) {
     for (const key of this.schedules.keys()) if (key.startsWith(`${guildId}|`)) this.schedules.delete(key);
-    if (!this.schedules.size) this.#disarmTicker();
+    this.#syncTicker();
   }
 
   syncSchedules(guildId) {
@@ -360,8 +367,10 @@ export class Runtime {
       this.schedules.set(key, { key, guildId, flow, node, schedule, signature, due: schedule.mode === 'every' ? now + schedule.ms : 0, lastKey: '' });
     }
     for (const key of [...this.schedules.keys()]) if (key.startsWith(`${guildId}|`) && !keep.has(key)) this.schedules.delete(key);
-    if (this.schedules.size) this.#armTicker(); else this.#disarmTicker();
+    this.#syncTicker();
   }
+
+  #syncTicker() { if (this.schedules.size || this.watchers.size) this.#armTicker(); else this.#disarmTicker(); }
 
   #armTicker() {
     if (this.ticker) return;
@@ -379,7 +388,7 @@ export class Runtime {
     const now = this.clock.now();
     this.ticker = this.clock.setTimer(async () => {
       this.ticker = null;
-      try { await this.runScheduleTick(this.clock.now()); } finally { if (this.schedules.size) this.#scheduleTick(); }
+      try { await this.runScheduleTick(this.clock.now()); } finally { if (this.schedules.size || this.watchers.size) this.#scheduleTick(); }
     }, MINUTE - (now % MINUTE) + TICK_SLACK_MS);
     this.ticker.unref?.();
   }
@@ -396,6 +405,7 @@ export class Runtime {
     const started = [];
     for (; minute <= current; minute += MINUTE) started.push(...this.#dueAt(minute));
     this.lastMinute = current;
+    this.watchers.tick(now); // feed watchers look at what is due in the background: a slow website never delays a schedule
     await Promise.allSettled(started.map((state) => this.#fireSchedule(state)));
   }
 
@@ -426,6 +436,15 @@ export class Runtime {
     return due;
   }
 
+  /** A watcher found something new (a feed post …): start the flow that is watching, with the item as `{{feed.*}}` etc. */
+  async fireWatched({ guildId, flow, node }, { data, label }) {
+    const guild = this.client?.guilds.cache.get(guildId);
+    if (!guild) return null;
+    const cid = String(node.data.channelId || '').replace(/\D/g, '');
+    const channel = cid ? await guild.channels.fetch(cid).catch(() => null) : null;
+    return this.start(flow, node, { guild, channel: channel?.guildId === guildId ? channel : null, data }, { label });
+  }
+
   async #fireSchedule({ guildId, flow, node }) {
     const guild = this.client?.guilds.cache.get(guildId);
     if (!guild) return;
@@ -436,6 +455,7 @@ export class Runtime {
 
   async stop() {
     for (const ctx of this.live) this.abortRun(ctx);
+    this.watchers.stop();
     this.schedules.clear();
     this.#disarmTicker();
     this.services.channelEdits.cancel();

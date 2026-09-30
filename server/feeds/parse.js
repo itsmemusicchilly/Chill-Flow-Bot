@@ -238,30 +238,3 @@ export function parseFeed(body) {
   if (/^<!doctype html|^<html[\s>]/i.test(head)) throw new FeedError('That address is a web page, not a feed. Look for the feed (RSS/Atom) link of the site.');
   throw new FeedError('That is not an RSS, Atom or JSON feed.');
 }
-
-// ---- addresses for the ready-made sources ------------------------------------------------------------------------------------------------------
-/**
- * The feed address for what a person picked in the editor.
- * @throws {FeedError} with a fixable message when the value is not usable
- */
-export function feedUrlFor({ source = 'url', value = '' } = {}) {
-  const v = String(value ?? '').trim();
-  switch (source) {
-    case 'youtube': {
-      const id = /(?:channel\/|channel_id=)?(UC[\w-]{22})\b/.exec(v)?.[1];
-      if (!id) throw new FeedError('A YouTube channel ID starts with UC and has 24 characters (in YouTube: your channel → About → Share → Copy channel ID).');
-      return `https://www.youtube.com/feeds/videos.xml?channel_id=${id}`;
-    }
-    case 'reddit': {
-      const sub = /^(?:https?:\/\/(?:www\.)?reddit\.com)?\/?(?:r\/)?([A-Za-z0-9_]{2,21})\/?$/.exec(v)?.[1];
-      if (!sub) throw new FeedError('Enter a subreddit name such as gaming (or r/gaming).');
-      return `https://www.reddit.com/r/${sub}/new/.rss`;
-    }
-    case 'bluesky': {
-      const handle = v.replace(/^@/, '').replace(/^https?:\/\/bsky\.app\/profile\//i, '').replace(/\/+$/, '');
-      if (!/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(handle)) throw new FeedError('Enter a Bluesky handle such as name.bsky.social.');
-      return `https://bsky.app/profile/${handle}/rss`;
-    }
-    default: return v;
-  }
-}
