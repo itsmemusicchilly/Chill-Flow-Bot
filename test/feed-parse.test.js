@@ -157,7 +157,36 @@ describe('real feeds', () => {
   });
 
   it('a leading byte-order mark and leading whitespace do not matter', () => {
-    assert.equal(parseFeed(`﻿\n  ${BLUESKY}`).items.length, 1);
+    assert.equal(parseFeed(`\ufeff\n  ${BLUESKY}`).items.length, 1);
+  });
+});
+
+describe('what real feeds do (copied from live ones)', () => {
+  it('Mastodon: no title, the text is the summary, and a video marked medium="image" is not offered as the picture', () => {
+    const feed = parseFeed(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>Eugen Rochko</title><item>
+      <guid isPermaLink="true">https://mastodon.social/@Gargron/117353911072205197</guid><link>https://mastodon.social/@Gargron/117353911072205197</link><pubDate>Tue, 29 Sep 2026 10:42:54 +0000</pubDate>
+      <description>&lt;p&gt;Sleepy baby!!&lt;/p&gt;&lt;p&gt;&lt;a href="https://mastodon.social/tags/Caturday" class="mention hashtag" rel="tag"&gt;#&lt;span&gt;Caturday&lt;/span&gt;&lt;/a&gt;&lt;/p&gt;</description>
+      <media:content url="https://files.mastodon.social/x/original/clip.mp4" type="video/mp4" fileSize="4140908" medium="image"><media:rating scheme="urn:simple">nonadult</media:rating></media:content>
+      <media:content url="https://files.mastodon.social/x/original/photo.jpeg" type="image/jpeg" fileSize="346734" medium="image"><media:rating scheme="urn:simple">nonadult</media:rating></media:content>
+      </item></channel></rss>`);
+    assert.deepEqual(feed.items[0], {
+      id: 'https://mastodon.social/@Gargron/117353911072205197', title: '', link: 'https://mastodon.social/@Gargron/117353911072205197', author: '',
+      published: '2026-09-29T10:42:54.000Z', summary: 'Sleepy baby!!\n#Caturday', image: 'https://files.mastodon.social/x/original/photo.jpeg',
+    });
+    const onlyVideo = parseFeed('<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>x</title><item><guid>1</guid><media:content url="https://f.example/clip.mp4" type="video/mp4" medium="image"/></item></channel></rss>');
+    assert.equal(onlyVideo.items[0].image, '', 'a video is not a picture');
+    const byMedium = parseFeed('<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>x</title><item><guid>1</guid><media:content url="https://f.example/p.png" medium="image"/></item></channel></rss>');
+    assert.equal(byMedium.items[0].image, 'https://f.example/p.png', 'and with no type, the medium is believed');
+  });
+
+  it('Bluesky: no title and no author, the post text (with its line breaks) is the summary, and the id is not a web address', () => {
+    const feed = parseFeed(`<?xml version="1.0"?><rss version="2.0"><channel><title>@bsky.app - Bluesky</title><item><link>https://bsky.app/profile/bsky.app/post/3mwolmfws5k2r</link>
+      <description>Happy opening day of hockey season, NHL fans! &amp;#xA;&amp;#xA;Keep up with all 1,344 regular season games.&amp;#xA;&amp;#xA;[contains quote post or other embedded content]</description>
+      <pubDate>29 Sep 2026 19:43 +0000</pubDate><guid isPermaLink="false">at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.post/3mwolmfws5k2r</guid></item></channel></rss>`);
+    assert.deepEqual(feed.items[0], {
+      id: 'at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.post/3mwolmfws5k2r', title: '', link: 'https://bsky.app/profile/bsky.app/post/3mwolmfws5k2r', author: '',
+      published: '2026-09-29T19:43:00.000Z', summary: 'Happy opening day of hockey season, NHL fans!\n\nKeep up with all 1,344 regular season games.\n\n[contains quote post or other embedded content]', image: '',
+    });
   });
 });
 

@@ -31,7 +31,10 @@ export const feedAdapter = {
     if (target.meta.lastModified) headers['if-modified-since'] = target.meta.lastModified;
     const res = await fetch(target.key, { headers });
     if (res.status === 304) return { unchanged: true };
-    if (res.status === 404 || res.status === 410) throw new Error('The feed was not found at that address (404). Check the address.');
+    if (res.status === 404 || res.status === 410) {
+      const youtube = /^https:\/\/www\.youtube\.com\//.test(target.key) ? ' If the channel ID is right, note that YouTube sometimes refuses feed requests from some hosts; the bot keeps trying.' : '';
+      throw new Error(`The feed was not found at that address (${res.status}). Check the address.${youtube}`);
+    }
     if (res.status === 429) throw new Error('The site says we are asking too often (429).');
     if (res.status >= 400) throw new Error(`The site answered with an error (${res.status}).`);
     const feed = parseFeed(res.text); // a FeedError says what was wrong with it

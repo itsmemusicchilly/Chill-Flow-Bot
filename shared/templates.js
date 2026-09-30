@@ -179,7 +179,7 @@ export const TEMPLATES = [
       nodes: [
         n('t1', 'trigger.feed.item', 0, 60, { source: 'reddit', minutes: 15 }),
         n('m1', 'action.message.send', 340, 40, {
-          target: 'channel', useEmbed: true, embedTitle: '{{feed.title}}', embedColor: '#5865f2', embedImage: '{{feed.image}}',
+          target: 'channel', useEmbed: true, embedTitle: '{{feed.title | default:New post}}', embedColor: '#5865f2', embedImage: '{{feed.image}}',
           embedDescription: '{{feed.summary}}\n\n[Open the post]({{feed.link}})', embedFooter: '{{feed.name}}', embedTimestamp: true,
         }),
       ],

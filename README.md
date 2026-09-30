@@ -268,6 +268,11 @@ Three ways in, from “nothing to set up” to “needs a key from the bot opera
 | **X, TikTok, Instagram** | a new post | *Webhook Received*, called by a tool that can watch them | the tool (Zapier, IFTTT, Make…) — **not the bot** |
 | **Twitch followers** and any other “someone followed / subscribed” | the event | *Webhook Received*, called by StreamElements, Streamlabs or Zapier | the tool |
 
+**Seen against the real internet** (a check from the machine this was built on, not a promise): Bluesky, Mastodon, GitHub releases, blog and Hacker News feeds were read and parsed correctly,
+but YouTube's feed address answered *404* for channels that certainly exist, and Reddit's was blocked by that machine's network policy. YouTube is known to refuse feed requests from some hosting
+providers now and then; if your log says a YouTube feed “was not found” for a channel ID you are sure of, that is the likely reason — the bot keeps trying with a growing pause, and the Webhook
+trigger (fed by Zapier or similar) is the fallback. Mastodon and Bluesky posts have **no title** — use `{{feed.summary}}` (the starter flow does).
+
 What is **not** possible, and why, so you are not surprised: X, TikTok and Instagram publish no free public feed, and Twitch only tells an app
 about a channel's followers with a token the *streamer* grants — so the bot cannot watch those by itself. What such a tool can offer changes over time; the
 bot only promises the address it gives you. YouTube **rounds** public subscriber counts to three significant figures once a channel has more than 1,000
@@ -318,7 +323,7 @@ Five starter flows are in **New flow → from template**: *YouTube upload announ
 | `user.vars.<name>`, `guild.vars.<name>` | remembered per-user / per-server variables |
 | `loop.index .item`, `error.message`, `cooldown.remaining`, `now.iso .date .time .timestamp` | misc |
 | `executor.*`, `reason`, `timeout.*` | moderator details for kick/ban/timeout triggers |
-| `feed.title .link .author .summary .published .image .id .name` | *New Feed Item*: the new post |
+| `feed.title .link .author .summary .published .image .id .name` | *New Feed Item*: the new post (`title` is blank for Mastodon and Bluesky posts) |
 | `webhook.text .body.<field> .query.<name> .method .contentType` | *Webhook Received*: what was sent |
 | `youtube.subscribers .milestone .previous .channelTitle .channelId .url` | *YouTube Subscribers* |
 | `twitch.user .login .title .game .viewers .url .thumbnail .started .id` | *Twitch Channel Live* |

@@ -210,6 +210,13 @@ describe('New Feed Item', () => {
       install();
       await run(MIN);
       assert.ok(logs().some((l) => /not found at that address \(404\)/.test(l)));
+      assert.ok(!logs().some((l) => /YouTube/.test(l)), 'the hint about YouTube is for YouTube only');
+      db = null; boot();
+      const YT = 'https://www.youtube.com/feeds/videos.xml?channel_id=UC' + 'a'.repeat(22);
+      web[YT] = { status: 404 };
+      install({ source: 'youtube', channel: 'UC' + 'a'.repeat(22) });
+      await run(MIN);
+      assert.ok(logs().some((l) => /not found at that address \(404\)\. Check the address\. If the channel ID is right, note that YouTube sometimes refuses feed requests/.test(l)), logs().join('\n'));
       db = null; boot();
       web[FEED] = { status: 503 };
       install();

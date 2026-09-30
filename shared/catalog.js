@@ -311,7 +311,7 @@ trigger('trigger.feed.item', {
   preview: 'feed', previewAfter: 'minutes',
   provides: () => [
     ...GUILD, ...CHANNEL,
-    ['feed.title', 'Post title'], ['feed.link', 'Link to the post'], ['feed.author', 'Author'], ['feed.summary', 'Text of the post (plain, shortened)'], ['feed.published', 'When it was published (ISO date)'],
+    ['feed.title', 'Post title (blank for Mastodon and Bluesky posts: use the text)'], ['feed.link', 'Link to the post'], ['feed.author', 'Author'], ['feed.summary', 'Text of the post (plain, shortened)'], ['feed.published', 'When it was published (ISO date)'],
     ['feed.image', 'Picture address (https; may be blank)'], ['feed.id', 'The post’s unique id'], ['feed.name', 'Name of the feed or channel'],
   ],
   summary: (d) => feedLabel(d) || 'choose a feed',

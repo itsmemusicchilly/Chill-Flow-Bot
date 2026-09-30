@@ -160,7 +160,7 @@ function finishItem({ id, title, link, author, published, summary, image }) {
 function rssItem(it) {
   const description = text(it, 'content:encoded') || text(it, 'description') || text(it, 'summary');
   const thumb = first(it, 'media:thumbnail') ?? deep(it, 'media:thumbnail');
-  const media = kids(it, 'media:content').find((m) => /^image/i.test(m.attrs.medium ?? m.attrs.type ?? '')) ?? null;
+  const media = kids(it, 'media:content').find((m) => /^image/i.test(m.attrs.type || m.attrs.medium || '')) ?? null; // the type wins: Mastodon calls a video medium="image"
   const enclosure = kids(it, 'enclosure').find((e) => /^image\//i.test(e.attrs.type ?? '')) ?? null;
   const atomLink = kids(it, 'atom:link').find((l) => (l.attrs.rel ?? 'alternate') === 'alternate');
   return finishItem({
@@ -211,7 +211,7 @@ function jsonFeed(doc) {
  * @throws {FeedError} when it is not a feed we can read
  */
 export function parseFeed(body) {
-  const src = String(body ?? '').replace(/^﻿/, '');
+  const src = String(body ?? '').replace(/^\ufeff/, '');
   const head = src.trimStart();
   if (!head) throw new FeedError('The address answered with nothing.');
   if (head[0] === '{') {
