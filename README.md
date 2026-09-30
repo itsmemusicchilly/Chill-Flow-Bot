@@ -1,4 +1,4 @@
-# Flowbot — build a Discord bot with flowcharts
+# Chill Flow Bot — build a Discord bot with flowcharts
 
 One shared Discord bot whose behaviour **server admins design in a web flowchart editor**. Pick a trigger
 (a slash command, someone joining, a reaction…), connect actions (send a message with buttons, give a role, create a
