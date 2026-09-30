@@ -10,6 +10,7 @@ export const LIMIT_KEYS = [
   'runsPer10s', 'concurrentRuns', 'actionsPer10s', 'stepsPerRun', 'loopIterations', 'waitSeconds', 'componentStateDays',
   'pagesPerGuild', 'blocksPerPage', 'responsesPerGuild',
   'uploadBytes', 'uploadsPerGuild', 'storageBytesPerGuild', 'transcriptMessages', 'feedsPerGuild',
+  'webhookBytes', 'webhooksPerMinute',
 ];
 
 /** The live limits object. Mutated in place by applyLimits(), so every importer always sees current values. */

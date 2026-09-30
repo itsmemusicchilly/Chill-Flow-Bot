@@ -318,6 +318,18 @@ trigger('trigger.feed.item', {
     try { parsePublicHttpsUrl(feedUrlOf(d)); return []; } catch (e) { if (e instanceof FeedSettingError) return [e.message]; throw e; }
   },
 });
+trigger('trigger.webhook', {
+  label: 'Webhook Received', icon: '🔔',
+  description: 'Runs when something calls this trigger’s secret web address. Tools like Zapier, IFTTT, Make, StreamElements or GitHub can call it — that is how to react to a new X, TikTok or Instagram post, or a Twitch follower. Save the flow to get the address.',
+  fields: [idField('channelId', 'Channel for context (optional)', 'channel')],
+  preview: 'webhook', previewAfter: 'channelId',
+  provides: () => [
+    ...GUILD, ...CHANNEL,
+    ['webhook.text', 'Everything that was sent, as text'], ['webhook.body.name', 'One field of the JSON or form that was sent (replace “name” with the field’s name)'],
+    ['webhook.query.name', 'One ?name=value from the address (replace “name”)'], ['webhook.method', 'The request method (always POST)'], ['webhook.contentType', 'The kind of data that was sent'],
+  ],
+  summary: () => 'secret web address',
+});
 trigger('trigger.manual', {
   label: 'Manual (Run button)', icon: '▶️',
   description: 'Runs when you press ▶ Run in the editor. Great for posting a button panel once.',

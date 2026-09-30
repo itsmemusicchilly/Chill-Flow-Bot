@@ -26,6 +26,8 @@ export const LIMIT_ENV = {
   storageBytesPerGuild: 'LIMIT_STORAGE_BYTES_PER_GUILD',
   transcriptMessages: 'LIMIT_TRANSCRIPT_MESSAGES',
   feedsPerGuild: 'LIMIT_FEEDS_PER_GUILD',
+  webhookBytes: 'LIMIT_WEBHOOK_BYTES',
+  webhooksPerMinute: 'LIMIT_WEBHOOKS_PER_MINUTE',
 };
 const DEFAULT_REQUEST_BYTES = 50 * 1024 * 1024;
 const MAX_REQUEST_BYTES = 1024 ** 3;

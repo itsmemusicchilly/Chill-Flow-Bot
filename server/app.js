@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { createApi, HttpError } from './api.js';
+import { createHooks } from './hooks.js';
 import { createAuth } from './auth.js';
 import { createPublic } from './public.js';
 import { createUploads } from './uploads.js';
@@ -24,6 +25,7 @@ export function createApp({ config, db, runtime, bot, sync, logger, fetchImpl, u
     });
     next();
   });
+  app.use('/hooks', createHooks({ db, runtime }).router); // public webhook addresses: before the dashboard's parser, with a body limit of their own
   app.use(express.json({ limit: config.requestBytes ?? 50 * 1024 * 1024 }));
 
   const auth = createAuth({ config, db, fetchImpl, log: (m) => logger.log(null, 'warn', m) });
@@ -37,7 +39,7 @@ export function createApp({ config, db, runtime, bot, sync, logger, fetchImpl, u
   if (fs.existsSync(indexHtml)) {
     app.use(express.static(distDir, { index: false, maxAge: '1h' }));
     app.use((req, res, next) => {
-      if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/s/') || req.path.startsWith('/i/')) return next();
+      if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/s/') || req.path.startsWith('/i/') || req.path.startsWith('/hooks/')) return next();
       res.set('Cache-Control', 'no-cache');
       return res.sendFile(indexHtml);
     });

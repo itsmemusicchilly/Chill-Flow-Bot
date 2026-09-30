@@ -210,7 +210,7 @@ export default function FlowWorkspace({ gid, flow, meta, guildData, flash, apiRe
     return { ...e, type: 'smoothstep', style: { stroke: color, strokeWidth: 2 }, markerEnd: { type: MarkerType.ArrowClosed, color } };
   }), [graph.edges]);
 
-  const ctx = useMemo(() => ({ guildData, issuesByNode, flash, canRun: flow.enabled && !dirty, runNode }), [guildData, issuesByNode, flash, flow.enabled, dirty, runNode]);
+  const ctx = useMemo(() => ({ gid, flowId: flow.id, dirty, guildData, issuesByNode, flash, canRun: flow.enabled && !dirty, runNode }), [gid, flow.id, guildData, issuesByNode, flash, flow.enabled, dirty, runNode]);
   const listed = issues.filter((i) => i.level === 'error' || i.kind === 'graph');
 
   return (

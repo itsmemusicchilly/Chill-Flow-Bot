@@ -2,6 +2,9 @@ import { createContext, useContext } from 'react';
 
 /** Guild-level data + helpers shared by the inspector, fields and nodes. */
 export const EditorContext = createContext({
+  gid: null,
+  flowId: null,
+  dirty: false,
   guildData: { channels: [], roles: [] },
   issuesByNode: {},
   flash: {},

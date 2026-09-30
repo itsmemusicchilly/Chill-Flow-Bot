@@ -47,6 +47,10 @@ CREATE TABLE IF NOT EXISTS uploads (
   UNIQUE (guild_id, sha256)
 );
 CREATE INDEX IF NOT EXISTS uploads_guild ON uploads(guild_id, created_at);
+CREATE TABLE IF NOT EXISTS webhooks (
+  token TEXT PRIMARY KEY, guild_id TEXT NOT NULL, flow_id TEXT NOT NULL, node_id TEXT NOT NULL, created_at INTEGER NOT NULL, last_at INTEGER,
+  UNIQUE (guild_id, flow_id, node_id)
+);
 CREATE TABLE IF NOT EXISTS watch_state (
   guild_id TEXT NOT NULL, flow_id TEXT NOT NULL, node_id TEXT NOT NULL, data TEXT NOT NULL, updated_at INTEGER NOT NULL,
   PRIMARY KEY (guild_id, flow_id, node_id)
@@ -142,6 +146,38 @@ export class Database {
   deleteFlow(guildId, id) {
     return this.#stmt('DELETE FROM flows WHERE id = ? AND guild_id = ?').run(id, guildId).changes > 0;
   }
+
+  // ---- webhook addresses: one secret token per "Webhook Received" trigger, scoped to its server and flow ---------------------
+  webhookFor(guildId, flowId, nodeId) {
+    const r = this.#stmt('SELECT token, created_at, last_at FROM webhooks WHERE guild_id=? AND flow_id=? AND node_id=?').get(guildId, flowId, nodeId);
+    return r ? { token: r.token, createdAt: r.created_at, lastAt: r.last_at } : null;
+  }
+
+  /** The trigger's address token; made on first use. `renew` replaces it, so the old address stops working at once. */
+  ensureWebhook(guildId, flowId, nodeId, { renew = false } = {}) {
+    const cur = this.webhookFor(guildId, flowId, nodeId);
+    if (cur && !renew) return { ...cur, created: false };
+    if (cur) this.#stmt('DELETE FROM webhooks WHERE token = ?').run(cur.token);
+    const token = crypto.randomBytes(32).toString('base64url');
+    this.#stmt('INSERT INTO webhooks (token, guild_id, flow_id, node_id, created_at) VALUES (?,?,?,?,?)').run(token, guildId, flowId, nodeId, Date.now());
+    return { token, createdAt: Date.now(), lastAt: null, created: true };
+  }
+
+  webhookByToken(token) {
+    const r = this.#stmt('SELECT guild_id, flow_id, node_id FROM webhooks WHERE token = ?').get(String(token));
+    return r ? { guildId: r.guild_id, flowId: r.flow_id, nodeId: r.node_id } : null;
+  }
+
+  touchWebhook(token, at = Date.now()) { this.#stmt('UPDATE webhooks SET last_at = ? WHERE token = ?').run(at, String(token)); }
+
+  /** After a flow is saved: addresses of triggers that are gone (deleted, or no longer a webhook trigger) stop working. */
+  pruneWebhooks(guildId, flowId, keepNodeIds) {
+    for (const r of this.#stmt('SELECT node_id FROM webhooks WHERE guild_id=? AND flow_id=?').all(guildId, flowId)) {
+      if (!keepNodeIds.has(r.node_id)) this.#stmt('DELETE FROM webhooks WHERE guild_id=? AND flow_id=? AND node_id=?').run(guildId, flowId, r.node_id);
+    }
+  }
+
+  deleteWebhooksForFlow(guildId, flowId) { this.#stmt('DELETE FROM webhooks WHERE guild_id=? AND flow_id=?').run(guildId, flowId); }
 
   // ---- what the feed/platform watchers have already seen (so a restart never announces things twice) ---------
   getWatch(guildId, flowId, nodeId) {

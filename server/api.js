@@ -117,12 +117,14 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
     if ('enabled' in req.body) patch.enabled = Boolean(req.body.enabled);
     if ('graph' in req.body) patch.graph = checkedGraph(req.body.graph);
     const flow = db.updateFlow(req.params.gid, cur.id, patch, actor(req));
+    if (patch.graph) db.pruneWebhooks(req.params.gid, cur.id, new Set(flow.graph.nodes.filter((n) => n.type === 'trigger.webhook').map((n) => n.id))); // a removed trigger's address stops working
     res.json({ flow: full(flow), sync: await apply(req.params.gid) });
   });
 
   guildRouter.delete('/flows/:fid', async (req, res) => {
     const cur = getFlow(req);
     db.deleteFlow(req.params.gid, cur.id);
+    db.deleteWebhooksForFlow(req.params.gid, cur.id);
     res.json({ ok: true, sync: await apply(req.params.gid) });
   });
 
@@ -140,6 +142,16 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
     const result = await runtime.runManual(req.params.gid, cur.id, nodeId);
     if (!result.ok) throw new HttpError(400, result.error);
     res.json({ ok: true });
+  });
+
+  // The address behind a "Webhook Received" trigger (made on first use; `renew` replaces it and the old one stops working at once).
+  guildRouter.post('/flows/:fid/webhook', (req, res) => {
+    const cur = getFlow(req);
+    const nodeId = String(req.body?.nodeId ?? '');
+    const node = cur.graph.nodes.find((n) => n.id === nodeId && n.type === 'trigger.webhook');
+    if (!node) throw new HttpError(400, 'Save the flow first: this trigger has not been saved yet.');
+    const hook = db.ensureWebhook(req.params.gid, cur.id, nodeId, { renew: req.body?.renew === true });
+    res.json({ url: `${config.baseUrl}/hooks/${hook.token}`, lastAt: hook.lastAt, created: hook.created });
   });
 
   // ---- pages (website builder) --------------------------------------------------------------

@@ -445,6 +445,18 @@ export class Runtime {
     return this.start(flow, node, { guild, channel: channel?.guildId === guildId ? channel : null, data }, { label });
   }
 
+  /** Someone called a trigger's webhook address. `payload` is already shaped (see server/hooks.js). @returns {{ok: true} | {ok: false, reason: 'off'|'offline'|'busy'}} */
+  async fireWebhook(guildId, flowId, nodeId, payload) {
+    const found = this.index.get(guildId)?.triggers.get('trigger.webhook')?.find((t) => t.flow.id === flowId && t.node.id === nodeId);
+    if (!found) return { ok: false, reason: 'off' };
+    const guild = this.client?.guilds.cache.get(guildId);
+    if (!guild) return { ok: false, reason: 'offline' };
+    const cid = String(found.node.data.channelId || '').replace(/\D/g, '');
+    const channel = cid ? await guild.channels.fetch(cid).catch(() => null) : null;
+    const started = this.start(found.flow, found.node, { guild, channel: channel?.guildId === guildId ? channel : null, data: { webhook: payload } }, { label: 'Webhook' });
+    return started ? { ok: true } : { ok: false, reason: 'busy' };
+  }
+
   async #fireSchedule({ guildId, flow, node }) {
     const guild = this.client?.guilds.cache.get(guildId);
     if (!guild) return;
