@@ -54,7 +54,11 @@ for (const [key, cat] of Object.entries(CATEGORIES)) {
     const rows = fieldRows(n.fields);
     if (rows.length) out.push('| Field | Type | Notes |', '| --- | --- | --- |', ...rows, '');
     const outputs = getOutputs(n.type, defaultsFor(n.type));
-    if (!n.isTrigger || outputs.length > 1) out.push(`**Outputs:** ${outputs.map((o) => o.label).join(', ')}${n.type === 'action.message.send' ? ' — plus one per button and menu option (a button with a Button ID has no output: a “Button Clicked” trigger handles it instead)' : ''}`, '');
+    const extraOutputs = {
+      'action.message.send': ' — plus one per button and menu option (a button with a Button ID has no output: a “Button Clicked” trigger handles it instead)',
+      'action.message.buttons': ' — plus one per added button when adding (a button with a Button ID has no output: a “Button Clicked” trigger handles it instead)',
+    }[n.type] ?? '';
+    if (!n.isTrigger || outputs.length > 1) out.push(`**Outputs:** ${outputs.map((o) => o.label).join(', ')}${extraOutputs}`, '');
     const provides = n.provides?.(defaultsFor(n.type)) ?? [];
     if (provides.length) out.push(`**Adds variables:** ${provides.map(([p]) => `\`{{${p}}}\``).join(', ')}`, '');
   }

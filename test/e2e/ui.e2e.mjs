@@ -642,6 +642,51 @@ try {
   await page.locator('.fnode', { hasText: 'YouTube Subscribers' }).waitFor();
   ok((await feed.getByText(/needs a YouTube API key/).count()) === 0 && (await feed.getByLabel(/^Announce every/).inputValue()) === '1000', 'a YouTube Subscribers node has no such warning, and starts at every 1,000');
 
+  // =================================================================================================
+  // Change Buttons (a message that was already sent), and the Channel scope of remembered variables
+  // =================================================================================================
+  await page.getByRole('tab', { name: 'Nodes' }).click();
+  await page.getByRole('button', { name: /Change Buttons/ }).click();
+  const cbNode = page.locator('[data-testid="node-action.message.buttons"]');
+  await cbNode.waitFor();
+  const cb = page.getByRole('complementary', { name: 'Node settings' });
+  const mode = cb.getByLabel('What to do', { exact: true });
+  await mode.waitFor();
+  ok((await mode.inputValue()) === 'add' && (await cb.getByRole('button', { name: '+ Add' }).isVisible()), 'a new Change Buttons node starts on “Add or update buttons”, with a list to add to');
+  ok((await cbNode.locator('.out.button').count()) === 0, 'it has no button outputs until a button is added');
+  await cb.getByRole('button', { name: '+ Add' }).click();
+  await cb.getByRole('button', { name: '+ Add' }).click();
+  ok((await cbNode.locator('.out.button').count()) === 2, 'each button added gets its own output on the node');
+  await cb.locator('input[placeholder="open_ticket"]').first().fill('close_ticket');
+  ok((await cbNode.locator('.out.button').count()) === 1, 'giving a button a Button ID takes its output away (a Button Clicked trigger answers it instead)');
+  await shot('39-change-buttons');
+
+  await mode.selectOption('remove');
+  await page.waitForTimeout(250);
+  ok((await cbNode.locator('.out.button').count()) === 0, 'in “Remove” mode the button outputs are gone');
+  ok((await cbNode.locator('.badge.bad').count()) === 1, 'removing needs at least one button named — the node is flagged until one is');
+  await cb.getByRole('button', { name: '+ Add' }).click();
+  await cb.getByPlaceholder('open_ticket or Close').fill('Close');
+  await page.waitForTimeout(250);
+  ok((await cbNode.locator('.badge.bad').count()) === 0, 'naming a button clears the flag');
+  await mode.selectOption('clear');
+  await page.waitForTimeout(250);
+  ok((await cb.getByRole('button', { name: '+ Add' }).count()) === 0, '“Remove all buttons” has no lists to fill in');
+  await mode.selectOption('disable');
+  await page.waitForTimeout(250);
+  ok((await cb.getByRole('button', { name: '+ Add' }).isVisible()) && (await cbNode.locator('.badge.bad').count()) === 0, '“Disable” accepts an empty list (it then means every button)');
+
+  await page.getByRole('tab', { name: 'Nodes' }).click();
+  await page.getByRole('button', { name: /Set Variable/ }).click();
+  const setVar = page.getByRole('complementary', { name: 'Node settings' });
+  const scope = setVar.getByLabel('Where to store it');
+  await scope.waitFor();
+  ok((await scope.locator('option', { hasText: 'Channel (remembered)' }).count()) === 1, 'Set Variable offers the Channel scope');
+  ok((await setVar.getByPlaceholder('blank = the channel where this happened').count()) === 0, 'and asks which channel only once that scope is chosen');
+  await scope.selectOption('channel');
+  ok(await setVar.getByPlaceholder('blank = the channel where this happened').isVisible(), 'choosing it shows an optional Channel field (blank = where the flow runs)');
+  await shot('40-channel-variable');
+
   await page.setViewportSize({ width: 820, height: 700 });
   await page.waitForTimeout(300);
   await shot('11-narrow');

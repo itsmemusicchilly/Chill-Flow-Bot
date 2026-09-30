@@ -21,19 +21,21 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **Reusable panels.** Give a button a *Button ID* and handle it with a **Button Clicked** trigger instead: it works on any
   copy of the message, from any flow, survives restarts, and **Toggle Role** turns a button into a one-press role switch.
   Ready-made *Ticket panel* and *Button role panel* templates show how.
+* **Change a message later.** *Change Buttons* adds, removes, disables or enables the buttons of a message the bot already sent — for example switch a
+  vote off when it ends — and a variable remembered **per channel** can hold that message's ID until you need it.
 * **Alerts from other platforms.** Run a flow when a YouTube channel uploads, a subreddit / Bluesky / Mastodon account / blog posts, a Twitch
   channel goes live, a channel passes a subscriber milestone — or when *any* tool (Zapier, IFTTT, StreamElements…) calls a secret address, which is
   how X, TikTok, Instagram and Facebook posts or Twitch followers reach the bot (see [Alerts from other platforms](#alerts-from-other-platforms)).
-* **60 nodes**: 31 triggers (commands, buttons, messages, joins/leaves/kicks/bans/timeouts, server boosts, role and channel events,
-  reactions, voice, schedule, new feed item, webhook, YouTube subscribers, Twitch live, manual, form submitted) and 29 actions/logic nodes (messages with buttons/menus/forms, member moderation,
+* **61 nodes**: 31 triggers (commands, buttons, messages, joins/leaves/kicks/bans/timeouts, server boosts, role and channel events,
+  reactions, voice, schedule, new feed item, webhook, YouTube subscribers, Twitch live, manual, form submitted) and 30 actions/logic nodes (messages with buttons/menus/forms, changing the buttons of a sent message, member moderation,
   channels and ticket transcripts, roles, variables and maths, conditions, loops, cooldowns, waits). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
-* **Remembers things**: run, per-server and per-user variables, usable everywhere as `{{templates}}` — with maths built in
-  (see [Doing maths](#doing-maths)).
+* **Remembers things**: run, per-server, per-channel and per-user variables, usable everywhere as `{{templates}}` — with maths built in
+  (see [Remembered variables](#remembered-variables) and [Doing maths](#doing-maths)).
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (657 unit/integration tests plus a
-> 142-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (696 unit/integration tests plus a
+> 154-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it. The alert triggers (feeds, YouTube, Twitch, webhooks) were tested against a pretend network and fake accounts,
 > not the real platforms; the same checklist covers them.
 
@@ -137,7 +139,7 @@ Development with hot reload: `npm run dev` (server + Vite). Set `BASE_URL=http:/
 * **Buttons & menus** are routed by their custom id, so they keep working after restarts. What the run that posted a message
   knew — its run variables (`{{var.x}}`) and `{{original.user.name}}` etc. (whoever/whatever created the message) — is stored
   in the database, so it survives restarts too. **Every press gets its own private copy**: one person's press can never
-  change what the next person sees. If you want something to carry over between presses, use a server or user variable.
+  change what the next person sees. If you want something to carry over between presses, use a server, channel or user variable.
 * **Forms (modals)** must be the first thing a command/button does; answers are `{{input.<id>}}`.
 * **No feedback loops**: changes the bot makes itself (a role it gave, a channel it created) do not trigger flows unless you
   tick *Also run for changes made by this bot*.
@@ -159,6 +161,27 @@ in the node and fill **Button ID** (for example `open_ticket`), then add a **But
   says which).
 * Panels are posted by a **Manual** trigger (press ▶ Run once). Start from the **Ticket panel** or **Button role panel**
   template. In the ticket template a cooldown stops double-clicks from opening two tickets.
+
+### Changing the buttons of a message that was already sent
+
+The **Change Buttons** node (*Messages*) edits **only the buttons** of a message the bot posted earlier — its text and embeds are never touched.
+Pick what to do:
+
+| Mode | What it does |
+| --- | --- |
+| **Add or update buttons** | Adds the buttons you list (same settings as in *Send Message*). A button that is already on the message — same Button ID, or same link address — is **updated where it stands**, so running the flow twice never doubles it. |
+| **Remove specific buttons** | Removes the buttons you name. A name matches a button's **Button ID**, or else its **label** (capital letters do not matter). |
+| **Remove all buttons** | Takes every button off. |
+| **Disable / Enable buttons** | Greys the named buttons out (or switches them back on). An empty list means **every** button — handy for “the vote is over”. |
+
+* **Which message?** Leave the message ID blank to change the message that started the flow (for example the one a pressed button is on).
+  To reach a message later, save its ID when you send it (*Send Message* → **Save message ID as variable**), store it with
+  **Set Variable** (scope *Channel*), and read `{{channel.vars.panel}}` in the **Message ID** field of another flow.
+* **Clicks on added buttons** work both ways, like in *Send Message*: fill **Button ID** and answer it with a **Button Clicked** trigger, or leave the ID empty and
+  connect the button's own output on this node. A button wired to an output stops working if that output goes away (you edit or delete the node); a Button ID does not.
+* **Limits.** Only the bot's **own** messages, and not “only visible to you” replies. Discord allows **5 rows of 5 buttons**, and a select menu takes a whole row;
+  if there is no room the node follows its **On error** output. It will not remove the last button of a message that has no text or embed (Discord refuses an empty message).
+  Naming a button that is not there is not an error — the log says nothing matched.
 
 ### Ticket transcripts
 
@@ -320,7 +343,7 @@ Five starter flows are in **New flow → from template**: *YouTube upload announ
 | `boost.since`, `boost.days` | *Member Boosted / Stopped Boosting*: when they started, and for how many days they boosted |
 | `transcript.messages .name .textName .bytes .truncated .dm` | after *Save Transcript* (`name` is the `.html` file, `textName` the `.txt`, blank if left out) |
 | `var.<name>` | run variable (or something saved by *Save … as variable*) |
-| `user.vars.<name>`, `guild.vars.<name>` | remembered per-user / per-server variables |
+| `user.vars.<name>`, `channel.vars.<name>`, `guild.vars.<name>` | remembered per-user / per-channel / per-server variables (`channel` is where the run happened) |
 | `loop.index .item`, `error.message`, `cooldown.remaining`, `now.iso .date .time .timestamp` | misc |
 | `executor.*`, `reason`, `timeout.*` | moderator details for kick/ban/timeout triggers |
 | `feed.title .link .author .summary .published .image .id .name` | *New Feed Item*: the new post (`title` is blank for Mastodon and Bluesky posts) |
@@ -330,6 +353,22 @@ Five starter flows are in **New flow → from template**: *YouTube upload announ
 
 Filters: `default:x`, `upper`, `lower`, `trim`, `length`, `json`, plus the maths filters below. Filters chain left to right.
 Substituted text is never evaluated again, so member-supplied text cannot inject templates.
+
+### Remembered variables
+
+**Set Variable**, **Get Variable** and the **Math** block's *Also remember it* can keep a value between runs in three places:
+
+| Scope | One value for… | Read it as | Typical use |
+| --- | --- | --- | --- |
+| **Server** | the whole server | `{{guild.vars.<name>}}` | a global counter, a setting |
+| **Channel** | each channel | `{{channel.vars.<name>}}` | a counter per ticket channel, the ID of the panel message that lives in that channel |
+| **Per user** | each member | `{{user.vars.<name>}}` | coins, points, a streak |
+
+* The **Channel** field of the node is optional: blank means **the channel where the run happened**. A run that has no channel (a schedule, webhook or feed alert
+  without a channel picked, a member joining…) needs the field filled in, otherwise the node follows its **On error** output.
+* **Get Variable** can read another channel's or member's value by filling the same field.
+* A channel's variables are **forgotten when the channel is deleted**. The **Remembered variables** dialog in the editor lists, edits and deletes all of them; the
+  variable limits (`LIMIT_VARS_PER_GUILD`, `LIMIT_VAR_VALUE_BYTES`) count every scope together.
 
 ### Doing maths
 
@@ -358,7 +397,7 @@ Price with tax: {{var.price | mul:1.2 | fixed:2}}
 **The Math block** has two modes. *Two values*: a first value, an operation (`+ − × ÷`, remainder, power, smaller, larger) and a
 second value. *Formula*: one line such as `({{var.score}} + 10) * 2` (`+ - * / % ^`, brackets, `round floor ceil abs sqrt min max`).
 Either way the answer is available to the next nodes as `{{var.<name>}}` (the name you give under **Save result as**), can be
-rounded, and — with **Also remember it** — is saved as a server or per-user variable under the same name. A blank value counts as
+rounded, and — with **Also remember it** — is saved as a server, channel or per-user variable under the same name. A blank value counts as
 `0`; a real problem (text, ÷ 0, a broken formula) follows the block's **On error** output.
 
 **Recipes** (both are in the *New flow* templates — pick the channel, switch on):
@@ -465,7 +504,7 @@ This is a multi-tenant service: many servers share one bot process, so isolation
   and load images only from this site or over `https`).
 * **Execution isolation**: executors only resolve channels, roles and members through the flow's own server and re-check
   ownership, so pasting a foreign id does nothing. DMs go only to members of that server. Variables are per server
-  (there is deliberately no global scope). Logs are per server and never persisted.
+  (server, channel or user *within* a server; there is deliberately no global scope). Logs are per server and never persisted.
 * **Public pages** (the only unauthenticated surface): rendered from structured data with everything escaped and URLs validated
   (`javascript:`/`data:`/credential-carrying links refused), served with a no-script CSP, `X-Frame-Options: DENY` and
   `Referrer-Policy: same-origin`; unpublished, unknown and other-server pages are indistinguishable 404s; “check, then insert” for
@@ -548,6 +587,11 @@ Not yet automated — please run through this once on a test server:
 - [ ] YouTube Subscribers with a real key: the log says the current count; a wrong key says the operator's key was refused (and never prints it). Twitch Channel Live with a real
       application: go live on a test channel → one announcement; stay live → none; end and start again → one more. With no key set the nodes show “not set up”.
 - [ ] Two accounts press the same panel button at the same time: each only sees their own variables.
+- [ ] Change Buttons on a real message: post a panel with *Send Message* (save its ID), then run a flow with *Change Buttons* — *Add* a button with a Button ID and press it (a
+      *Button Clicked* flow answers), *Add* one without an ID wired to an output and press it, *Disable* one (it greys out and cannot be pressed), *Enable* it again, *Remove* it by label,
+      *Remove all buttons* (text stays). Check a message with a select menu keeps its menu, and that the message a pressed button is on can change itself with a blank message ID.
+- [ ] Channel variables: with *Set Variable* (scope *Channel*) count something in two channels — each counts on its own; delete one channel and its variables disappear from the
+      *Remembered variables* dialog.
 - [ ] Counters: switch on the *Member counter* template, pick a channel, then have several people join/leave within a few minutes —
       the first two renames appear at once, the log says the next is held back, and about ten minutes later the name settles on the
       correct member count. Repeat with the *Join counter* (server variable `joins`); check `{{guild.memberCount}}` is right at the

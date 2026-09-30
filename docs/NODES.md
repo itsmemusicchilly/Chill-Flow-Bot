@@ -448,6 +448,28 @@ tell nodes apart; it is never sent to Discord.
 
 **Outputs:** Next, On error
 
+### 🔘 Change Buttons
+
+`action.message.buttons` — Add, remove, disable or enable the buttons of a message the bot already sent, without touching its text. Leave the message ID blank to change the message that triggered the flow. Only the bot's own messages can be changed, not “only visible to you” replies.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Channel | channel |  |
+| Message ID | message |  |
+| What to do | select | options: Add or update buttons, Remove specific buttons, Remove all buttons, Disable buttons, Enable buttons |
+| Buttons | list | shown when `mode` is `add`; up to 25 items |
+| ↳ Label | text | required |
+| ↳ Style | select | options: Blurple, Grey, Green, Red, Link (opens a URL) |
+| ↳ URL | text | required; shown when `style` is `Link` |
+| ↳ Emoji (optional) | text |  |
+| ↳ Disabled | boolean |  |
+| ↳ Button ID (optional) | text | shown when `style` is not `Link`; Makes this a reusable button: it is handled by a “Button Clicked” trigger with the same ID instead of its own output here, and keeps working on every copy of the message. Adding an ID removes this button's output connection. |
+| Which buttons | list | shown when `mode` is `remove` / `disable` / `enable`; A button matches by its Button ID, or by its label (capital letters do not matter). To disable or enable every button, leave this empty. |
+| ↳ Button ID or label | text | required |
+| Only the person who triggered this can use the added buttons | boolean | shown when `mode` is `add` |
+
+**Outputs:** Next, On error — plus one per added button when adding (a button with a Button ID has no output: a “Button Clicked” trigger handles it instead)
+
 ### 🗑️ Delete Message
 
 `action.message.delete` — Delete a message. Leave the ID blank to delete the message that triggered the flow.
@@ -707,12 +729,13 @@ tell nodes apart; it is never sent to Discord.
 
 ### 📦 Set Variable
 
-`data.variable.set` — Store or change a value. Server and user variables are remembered between runs.
+`data.variable.set` — Store or change a value. Server, channel and user variables are remembered between runs.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| Where to store it | select | options: This run only (temporary), Server (remembered), Per user (remembered) |
+| Where to store it | select | options: This run only (temporary), Server (remembered), Channel (remembered), Per user (remembered) |
 | User | user | shown when `scope` is `user` |
+| Channel | channel | shown when `scope` is `channel` |
 | Variable name | text | required |
 | Operation | select | options: Set to, Add, Subtract, Multiply by, Divide by, Append to list, Calculate expression, Random whole number, Delete |
 | Value | text | shown when `operation` is not `random` / `delete` |
@@ -728,8 +751,9 @@ tell nodes apart; it is never sent to Discord.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| Read from | select | options: Server, Per user |
+| Read from | select | options: Server, Channel, Per user |
 | User | user | shown when `scope` is `user` |
+| Channel | channel | shown when `scope` is `channel` |
 | Variable name | text | required |
 | Save as | text | required |
 | If missing use | text |  |
@@ -738,7 +762,7 @@ tell nodes apart; it is never sent to Discord.
 
 ### 🧮 Math
 
-`data.math` — Calculate a number from any values — variables, the member count, an option… — and use it in the next nodes as {{var.<name>}}. Tick “Also remember it” to keep it as a server or per-user variable. To just change a remembered number, Set Variable is quicker.
+`data.math` — Calculate a number from any values — variables, the member count, an option… — and use it in the next nodes as {{var.<name>}}. Tick “Also remember it” to keep it as a server, channel or per-user variable. To just change a remembered number, Set Variable is quicker.
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -749,8 +773,9 @@ tell nodes apart; it is never sent to Discord.
 | Formula | text | required; shown when `mode` is `formula`; Use + - * / % ^, brackets and round(), floor(), ceil(), abs(), sqrt(), min(), max(). An empty variable breaks a formula: write {{var.x \| default:0}}. |
 | Round the result | select | options: Do not round, To a whole number, To 1 decimal, To 2 decimals |
 | Save result as | text | required; Use it in the next nodes as {{var.total}}. |
-| Also remember it | select | options: No — only for this run, Yes, as a server variable, Yes, as a per-user variable; Remembered under the same name. |
+| Also remember it | select | options: No — only for this run, Yes, as a server variable, Yes, as a channel variable, Yes, as a per-user variable; Remembered under the same name. |
 | User | user | shown when `remember` is `user` |
+| Channel | channel | shown when `remember` is `channel` |
 
 **Outputs:** Next, On error
 
