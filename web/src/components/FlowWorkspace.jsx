@@ -1,8 +1,9 @@
 import {
-  addEdge, applyEdgeChanges, applyNodeChanges, Background, Controls, MarkerType, MiniMap, ReactFlow, useNodesInitialized, useReactFlow,
+  applyEdgeChanges, applyNodeChanges, Background, Controls, MarkerType, MiniMap, ReactFlow, useNodesInitialized, useReactFlow,
 } from '@xyflow/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { defaultsFor, getOutputs, isTriggerType, NODE_TYPES } from '@shared/catalog.js';
+import { toggleConnection } from '@shared/connections.js';
 import { LIMITS } from '@shared/limits.js';
 import { uid } from '@shared/util.js';
 import { normalizeGraph, validateFlow } from '@shared/validate.js';
@@ -86,10 +87,13 @@ export default function FlowWorkspace({ gid, flow, meta, guildData, flash, apiRe
     setGraph((g) => ({ ...g, edges: applyEdgeChanges(changes, g.edges) }));
     if (changes.some((c) => ['remove', 'add', 'replace'].includes(c.type))) markDirty();
   }, [markDirty]);
+  // Dragging a connection between two things that are already connected removes it: connecting twice undoes the first.
   const onConnect = useCallback((c) => {
-    setGraph((g) => ({ ...g, edges: addEdge({ ...c, targetHandle: 'in', id: `${c.source}:${c.sourceHandle}>${c.target}` }, g.edges) }));
+    const { edges, removed } = toggleConnection(graphRef.current.edges, c);
+    setGraph((g) => ({ ...g, edges }));
     markDirty();
-  }, [markDirty]);
+    if (removed) toast('Connection removed.', 'info');
+  }, [markDirty, toast]);
   const isValidConnection = useCallback((c) => {
     const target = graphRef.current.nodes.find((n) => n.id === c.target);
     return c.source !== c.target && Boolean(target) && !isTriggerType(target.type);

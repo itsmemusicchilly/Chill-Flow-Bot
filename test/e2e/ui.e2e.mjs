@@ -104,6 +104,29 @@ try {
   ok((await page.locator('.fnode', { hasText: 'Wait' }).count()) >= 2, 'dragging from the palette drops a node');
   await shot('07-palette');
 
+  // connecting twice disconnects: dragging from an output to a node connects them, doing it again removes the connection
+  await page.locator('.react-flow__controls-fitview').click();
+  await page.waitForTimeout(500);
+  const edgeCount = () => page.locator('.react-flow__edge').count();
+  const edgesBefore = await edgeCount();
+  const dragConnection = async () => {
+    const from = await page.locator('.fnode', { hasText: 'Slash Command' }).locator('.h-out').first().boundingBox();
+    const to = await page.locator('.fnode', { hasText: 'Give Role' }).locator('.h-in').boundingBox();
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 15 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+  };
+  await dragConnection();
+  ok((await edgeCount()) === edgesBefore + 1, 'dragging from an output to a node connects them');
+  await dragConnection();
+  ok((await edgeCount()) === edgesBefore, 'dragging the same connection again disconnects them');
+  await page.getByText('Connection removed.').waitFor();
+  await dragConnection();
+  ok((await edgeCount()) === edgesBefore + 1, 'and a third drag connects them again');
+  await dragConnection(); // leave the flow as it was
+
   // no artificial list caps: an If node takes more than the old limit of 10 checks
   await page.getByRole('button', { name: /Condition \(If\)/ }).click();
   const checks = page.locator('.field', { has: page.locator('label', { hasText: /^Checks$/ }) });
