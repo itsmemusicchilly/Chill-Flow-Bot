@@ -461,7 +461,7 @@ def('action.channel.delete', {
   outputs: ACTION_OUTS, summary: (d) => d.channelId || 'current channel',
 });
 def('action.channel.update', {
-  category: 'channel', label: 'Update Channel', icon: '🛠️', description: 'Rename or reconfigure a channel. Blank fields stay unchanged.',
+  category: 'channel', label: 'Update Channel', icon: '🛠️', description: 'Rename or reconfigure a channel. Blank fields stay unchanged. Discord allows only two name/topic changes per channel every 10 minutes: extra ones are held and only the newest is applied when Discord allows.',
   fields: [
     idField('channelId', 'Channel', 'channel', { placeholder: 'blank = current channel' }),
     text('name', 'New name'), text('topic', 'New topic'),

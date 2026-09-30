@@ -561,7 +561,7 @@ triggered this flow”.
 
 ### 🛠️ Update Channel
 
-`action.channel.update` — Rename or reconfigure a channel. Blank fields stay unchanged.
+`action.channel.update` — Rename or reconfigure a channel. Blank fields stay unchanged. Discord allows only two name/topic changes per channel every 10 minutes: extra ones are held and only the newest is applied when Discord allows.
 
 | Field | Type | Notes |
 | --- | --- | --- |

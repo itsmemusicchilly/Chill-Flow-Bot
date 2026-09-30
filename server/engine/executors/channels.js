@@ -73,9 +73,25 @@ export const channelExecutors = {
     if (int(d.slowmode) !== undefined) edit.rateLimitPerUser = Math.min(21600, Math.max(0, int(d.slowmode)));
     if (d.nsfw) edit.nsfw = d.nsfw === 'yes';
     const reason = reasonFor(ctx, d);
-    if (Object.keys(edit).length) {
-      await withSelf(ctx, [`channelUpdate:${channel.id}`], () => channel.edit({ ...edit, reason }));
+    // The self-action mark is made when a change is really sent, so a held change never expires its mark while it waits.
+    const apply = (patch) => withSelf(ctx, [`channelUpdate:${channel.id}`], () => channel.edit({ ...patch, reason }));
+    // Discord only allows ~2 name/topic changes per channel every 10 minutes: past that the newest one is held (see channel-edits.js)
+    // instead of making this run wait. Other settings (category, slowmode, age restriction) are not limited and go at once.
+    const limited = {};
+    for (const key of ['name', 'topic']) if (key in edit) { limited[key] = edit[key]; delete edit[key]; }
+    if (Object.keys(limited).length) {
+      const label = channel.name ? `#${channel.name}` : 'the channel';
+      const held = ctx.services.channelEdits.request(ctx.guild.id, channel.id, limited, apply, (err) => {
+        if (err) ctx.services.logger.log(ctx.guild.id, 'warn', `The held change to ${label} could not be made: ${err.message}`, ctx.logMeta);
+        else ctx.services.logger.log(ctx.guild.id, 'info', `The held change to ${label} was made.`, ctx.logMeta);
+      });
+      if (!held) Object.assign(edit, limited);
+      else {
+        const minutes = Math.max(1, Math.round(held.wait / 60_000));
+        ctx.services.logger.log(ctx.guild.id, 'info', `Discord allows only two name/topic changes per channel every 10 minutes, so this change to ${label} is held back; the newest one is applied in about ${minutes} minute${minutes === 1 ? '' : 's'}.`, ctx.logMeta);
+      }
     }
+    if (Object.keys(edit).length) await apply(edit);
     for (const o of d.overwrites || []) {
       const target = o.targetType === 'member' ? await resolveMember(ctx, o.targetId) : await resolveRole(ctx, o.targetId);
       const perms = {};

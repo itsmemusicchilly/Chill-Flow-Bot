@@ -5,6 +5,7 @@ import { getOutputs, isTriggerType, NODE_TYPES } from '../../shared/catalog.js';
 import { LIMITS } from '../../shared/limits.js';
 import { normalizeGraph, validateFlow } from '../../shared/validate.js';
 import { uid } from '../../shared/util.js';
+import { ChannelEdits } from './channel-edits.js';
 import { ComponentState } from './component-state.js';
 import { parseButtonId, parseCustomId } from './custom-id.js';
 import { runFlow } from './engine.js';
@@ -27,6 +28,7 @@ export class Runtime {
     this.services = {
       db, logger, uploads, intents,
       selfActions: new SelfActions(),
+      channelEdits: new ChannelEdits(),
       cooldowns: new Map(),
       components: new ComponentState({ db }),
       guard: { runs: new RateLimiter(() => LIMITS.runsPer10s, 10000), actions: new RateLimiter(() => LIMITS.actionsPer10s, 10000) },
@@ -109,6 +111,7 @@ export class Runtime {
     this.index.delete(guildId);
     this.#stopRemovedRuns(guildId, { flows: new Map() });
     this.clearTimers(guildId);
+    this.services.channelEdits.cancel(guildId);
   }
 
   hasTrigger(guildId, type) { return Boolean(this.index.get(guildId)?.triggers.get(type)?.length); }
@@ -347,5 +350,6 @@ export class Runtime {
     for (const ctx of this.live) this.abortRun(ctx);
     for (const key of this.timers.keys()) clearInterval(this.timers.get(key));
     this.timers.clear();
+    this.services.channelEdits.cancel();
   }
 }
