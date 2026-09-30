@@ -384,7 +384,7 @@ tell nodes apart; it is never sent to Discord.
 
 ### 💬 Send Message
 
-`action.message.send` — Send text, an embed, buttons and a select menu. Every button becomes its own output.
+`action.message.send` — Send text, embeds (up to 10, with author, links and icons), buttons and a select menu. Every button becomes its own output.
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -393,18 +393,23 @@ tell nodes apart; it is never sent to Discord.
 | Member | user | shown when `target` is `dm` |
 | Only visible to the user (ephemeral) | boolean | shown when `target` is `reply`; Works when replying to a command or button. |
 | Message text | textarea |  |
-| Add an embed | boolean |  |
-| Embed title | text | shown when `useEmbed` is `true` |
-| Embed description | textarea | shown when `useEmbed` is `true` |
-| Embed color | color | shown when `useEmbed` is `true` |
-| Thumbnail | image | shown when `useEmbed` is `true`; An https link, {{a variable}}, or a picture you uploaded. |
-| Image | image | shown when `useEmbed` is `true`; An https link, {{a variable}}, or a picture you uploaded. |
-| Footer | text | shown when `useEmbed` is `true` |
-| Show timestamp | boolean | shown when `useEmbed` is `true` |
-| Embed fields | list | shown when `useEmbed` is `true`; up to 25 items |
-| ↳ Name | text |  |
-| ↳ Value | text |  |
-| ↳ Inline | boolean |  |
+| Embeds | list | up to 10 items; Up to 10 embeds per message, and 6000 characters in all. |
+| ↳ Title | text |  |
+| ↳ Title link | text | Makes the title a link. Needs a title. |
+| ↳ Description | textarea |  |
+| ↳ Color | color |  |
+| ↳ Author name | text | A small line above the title. Needed for the author icon and link to show. |
+| ↳ Author icon | image | An https link, {{a variable}}, or a picture you uploaded. |
+| ↳ Author link | text |  |
+| ↳ Thumbnail | image | An https link, {{a variable}}, or a picture you uploaded. |
+| ↳ Image | image | An https link, {{a variable}}, or a picture you uploaded. |
+| ↳ Footer text | text |  |
+| ↳ Footer icon | image | An https link, {{a variable}}, or a picture you uploaded. Needs footer text. |
+| ↳ Show timestamp | boolean |  |
+| ↳ Fields | list | up to 25 items |
+| ↳ ↳ Name | text |  |
+| ↳ ↳ Value | text |  |
+| ↳ ↳ Inline | boolean |  |
 | Buttons | list | up to 25 items |
 | ↳ Label | text | required |
 | ↳ Style | select | options: Blurple, Grey, Green, Red, Link (opens a URL) |
@@ -426,25 +431,44 @@ tell nodes apart; it is never sent to Discord.
 
 ### 📝 Edit Message
 
-`action.message.edit` — Change the text or embed of a message the bot sent.
+`action.message.edit` — Change a message the bot already sent. For the text and for the embeds you can keep them, replace them or remove them — and for the embeds you can also change just some parts of one embed and leave the rest as it is. Choose “This message” (the one that started the flow, such as the message a pressed button is on) or “A previous message” and give its ID. Only the bot's own messages can be edited, not “only visible to you” replies.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| Channel | channel |  |
-| Message ID | message | required |
-| New text | textarea |  |
-| Add an embed | boolean |  |
-| Embed title | text | shown when `useEmbed` is `true` |
-| Embed description | textarea | shown when `useEmbed` is `true` |
-| Embed color | color | shown when `useEmbed` is `true` |
-| Thumbnail | image | shown when `useEmbed` is `true`; An https link, {{a variable}}, or a picture you uploaded. |
-| Image | image | shown when `useEmbed` is `true`; An https link, {{a variable}}, or a picture you uploaded. |
-| Footer | text | shown when `useEmbed` is `true` |
-| Show timestamp | boolean | shown when `useEmbed` is `true` |
-| Embed fields | list | shown when `useEmbed` is `true`; up to 25 items |
-| ↳ Name | text |  |
-| ↳ Value | text |  |
-| ↳ Inline | boolean |  |
+| Which message | select | options: This message (the one that started the flow), A previous message (by its ID) |
+| Channel | channel | shown when `messageFrom` is `id` |
+| Message ID | message | required; shown when `messageFrom` is `id`; The ID of a message sent earlier. Use a variable that holds it — for example the one you gave “Save message ID as variable” in Send Message, or one stored with Set Variable. |
+| Message text | select | options: Keep as it is, Replace with…, Remove the text |
+| New text | textarea | shown when `contentMode` is `replace` |
+| Embeds | select | options: Keep as they are, Change some parts of one embed, Replace all embeds, Remove all embeds |
+| Which embed (1 = the first) | number | shown when `embedsMode` is `patch`; range 1–10; One past the last embed adds a new one. |
+| Set these parts | list | shown when `embedsMode` is `patch`; Only the parts you list here change. “Timestamp” sets the time to now. |
+| ↳ Part | select | options: Title, Title link, Description, Color, Author name, Author icon, Author link, Thumbnail, Image, Footer text, Footer icon, Timestamp, Fields |
+| ↳ New value | textarea | shown when `part` is `title` / `url` / `description` / `authorName` / `authorUrl` / `footer` |
+| ↳ New color | color | shown when `part` is `color` |
+| ↳ New picture | image | shown when `part` is `authorIcon` / `thumbnail` / `image` / `footerIcon`; An https link, {{a variable}}, or a picture you uploaded. |
+| ↳ Fields | list | shown when `part` is `fields`; up to 25 items; These replace all the fields the embed has now. |
+| ↳ ↳ Name | text |  |
+| ↳ ↳ Value | text |  |
+| ↳ ↳ Inline | boolean |  |
+| Remove these parts | multiselect | shown when `embedsMode` is `patch`; options: Title, Title link, Description, Color, Author name, Author icon, Author link, Thumbnail, Image, Footer text, Footer icon, Timestamp, Fields; Taken off first, then the parts above are set. “Author name” removes the whole author and “Footer text” the whole footer. |
+| Embeds | list | shown when `embedsMode` is `replace`; up to 10 items; Up to 10 embeds per message, and 6000 characters in all. |
+| ↳ Title | text |  |
+| ↳ Title link | text | Makes the title a link. Needs a title. |
+| ↳ Description | textarea |  |
+| ↳ Color | color |  |
+| ↳ Author name | text | A small line above the title. Needed for the author icon and link to show. |
+| ↳ Author icon | image | An https link, {{a variable}}, or a picture you uploaded. |
+| ↳ Author link | text |  |
+| ↳ Thumbnail | image | An https link, {{a variable}}, or a picture you uploaded. |
+| ↳ Image | image | An https link, {{a variable}}, or a picture you uploaded. |
+| ↳ Footer text | text |  |
+| ↳ Footer icon | image | An https link, {{a variable}}, or a picture you uploaded. Needs footer text. |
+| ↳ Show timestamp | boolean |  |
+| ↳ Fields | list | up to 25 items |
+| ↳ ↳ Name | text |  |
+| ↳ ↳ Value | text |  |
+| ↳ ↳ Inline | boolean |  |
 
 **Outputs:** Next, On error
 

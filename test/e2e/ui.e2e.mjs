@@ -481,14 +481,72 @@ try {
   await page.getByRole('tab', { name: 'Nodes' }).click();
   await page.getByRole('button', { name: /Send Message/ }).click();
   await page.locator('.fnode', { hasText: 'Send Message' }).click();
-  await page.getByLabel('Add an embed').check();
-  const embedImage = page.locator('.field', { has: page.locator('label', { hasText: /^Image$/ }) });
+  const embedsField = page.locator('.field', { has: page.locator('label', { hasText: /^Embeds$/ }) });
+  ok((await embedsField.locator('.list-title').count()) === 0, 'a new Send Message has no embed until one is added');
+  await embedsField.getByRole('button', { name: '+ Add' }).last().click();
+  const embedImage = page.locator('.list-body .field', { has: page.locator('label', { hasText: /^Image$/ }) });
   await embedImage.getByRole('button', { name: 'Choose…' }).click();
   const chooser = page.getByRole('dialog', { name: 'Choose a picture' });
   await chooser.getByLabel('Upload pictures').setInputFiles({ name: 'embed.png', mimeType: 'image/png', buffer: bannerPng });
   await embedImage.getByText('Uploaded picture').waitFor();
   ok(await loaded(embedImage.locator('img.img-thumb')), 'uploading from an image field uses the picture straight away (message embeds too)');
   await shot('21-embed-picture');
+
+  // the embed editor: every part (author, title link, icons), and several embeds
+  for (const label of ['Title link', 'Author name', 'Author icon', 'Author link', 'Thumbnail', 'Footer text', 'Footer icon', 'Show timestamp']) {
+    ok((await page.getByLabel(label, { exact: true }).count()) === 1, `an embed has “${label}”`);
+  }
+  await embedsField.getByRole('button', { name: '+ Add' }).last().click();
+  ok((await embedsField.locator('.list-title', { hasText: 'Embed' }).count()) === 2, 'a second embed can be added to the same message');
+  await embedsField.locator('.list-body').nth(1).locator('input').first().fill('Second embed');
+  await embedsField.locator('.list-title', { hasText: 'Second embed' }).waitFor();
+  ok(true, 'an embed is named by its title in the list');
+  await embedsField.locator('.list-body').nth(1).getByRole('button', { name: '+ Add' }).click();
+  ok((await embedsField.locator('.list-title', { hasText: 'Field' }).count()) === 1, 'each embed has its own list of fields');
+  await shot('43-embeds-editor');
+
+  // Edit Message in full edit mode: keep / replace / remove for the text and the embeds, and changing some parts of one embed
+  await page.getByRole('tab', { name: 'Nodes' }).click();
+  await page.getByRole('button', { name: /Edit Message/ }).click();
+  const editNode = page.locator('[data-testid="node-action.message.edit"]');
+  await editNode.waitFor();
+  const editor = page.getByRole('complementary', { name: 'Node settings' });
+  await editor.locator('#f-embedsMode').waitFor();
+  ok((await editor.locator('#f-messageFrom').inputValue()) === 'this' && (await editor.locator('#f-contentMode').inputValue()) === 'keep' && (await editor.locator('#f-embedsMode').inputValue()) === 'keep',
+    'a new Edit Message starts on “This message”, keeping the text and the embeds');
+  await page.waitForTimeout(250);
+  ok((await editNode.locator('.badge.bad').count()) === 1, 'and is flagged, because there is nothing to change yet');
+  await editor.locator('#f-contentMode').selectOption('replace');
+  await editor.locator('#f-content').waitFor();
+  ok(true, 'choosing to replace the text shows the new-text box');
+  await editor.locator('#f-embedsMode').selectOption('patch');
+  await editor.locator('#f-patchEmbed').waitFor();
+  ok((await editor.locator('#f-patchEmbed').inputValue()) === '1', 'changing some parts of an embed asks which embed (1 = the first)');
+  const footerChip = editor.getByRole('button', { name: 'Footer text', exact: true });
+  await footerChip.click();
+  ok((await footerChip.getAttribute('aria-pressed')) === 'true', 'the parts to remove are chips you switch on');
+  await editor.getByRole('button', { name: '+ Add' }).click();
+  ok(await editor.locator('.list-body textarea').first().isVisible(), 'a part to set starts as the description, with a box for its new value');
+  await editor.locator('.list-body select').first().selectOption('thumbnail');
+  ok(await editor.getByRole('button', { name: 'Choose…' }).isVisible(), 'a picture part offers the picture chooser');
+  await editor.locator('.list-body select').first().selectOption('fields');
+  ok((await editor.locator('.list-body').getByRole('button', { name: '+ Add' }).count()) === 1, 'the fields part offers a list of fields');
+  await page.waitForTimeout(250);
+  await editNode.getByText(/replace text, change an embed — this message/).waitFor();
+  ok((await editNode.locator('.badge.bad').count()) === 0, 'the node says what it will do, and is no longer flagged');
+  await shot('44-edit-message-patch');
+  await editor.locator('#f-embedsMode').selectOption('replace');
+  await page.waitForTimeout(250);
+  ok((await editor.locator('#f-patchEmbed').count()) === 0 && (await editor.getByRole('button', { name: '+ Add' }).count()) === 1, 'replacing all embeds swaps those controls for the full embed editor');
+
+  // a flow made from an older template shows its embed in the new editor
+  await page.getByRole('tab', { name: 'Flows' }).click();
+  await page.getByRole('button', { name: '+ New flow' }).click();
+  await page.getByRole('button', { name: /Welcome new members/ }).click();
+  await page.locator('.fnode', { hasText: 'Send Message' }).waitFor();
+  await page.locator('.fnode', { hasText: 'Send Message' }).click();
+  await page.locator('.field', { has: page.locator('label', { hasText: /^Embeds$/ }) }).locator('.list-title', { hasText: 'Welcome!' }).waitFor();
+  ok(true, 'a flow made from a starter template shows its embed (“Welcome!”) in the embed list');
 
   // unpublish: the public page disappears
   await page.getByRole('tab', { name: 'Pages' }).click();
