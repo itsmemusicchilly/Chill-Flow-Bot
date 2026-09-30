@@ -478,6 +478,27 @@ try {
   ok(true, 'unpublishing hides the public page');
   await visitorCtx.close();
 
+  // =================================================================================================
+  // Maths: the counter templates and the Math block
+  // =================================================================================================
+  await page.getByRole('tab', { name: 'Flows' }).click();
+  await page.getByRole('button', { name: '+ New flow' }).click();
+  await page.getByRole('button', { name: /Member counter channel/ }).waitFor();
+  await page.getByRole('button', { name: /Join counter/ }).click();
+  await page.locator('.fnode', { hasText: 'Math' }).waitFor();
+  await page.waitForTimeout(600);
+  ok((await page.locator('.fnode').count()) === 3 && (await page.locator('.react-flow__edge').count()) === 2, 'the Join counter template is Member Joined → Math → Update Channel');
+  await page.locator('.fnode', { hasText: 'Math' }).click();
+  const math = page.getByRole('complementary', { name: 'Node settings' });
+  await math.getByLabel('First value').waitFor();
+  ok((await math.getByLabel('Save result as').inputValue()) === 'joins' && (await math.getByLabel('Also remember it').inputValue()) === 'guild', 'the Math block shows what the template set up (result saved as “joins”, remembered on the server)');
+  await shot('26-math-block');
+  await math.getByLabel('How', { exact: true }).selectOption('formula');
+  await math.getByLabel(/^Formula\b/).waitFor(); // (required fields carry a star in their label)
+  ok((await math.getByLabel('First value').count()) === 0, 'choosing Formula swaps the two-value fields for one formula field');
+  await page.getByRole('tab', { name: 'Nodes' }).click();
+  ok(await page.getByRole('button', { name: 'Math', exact: true }).isVisible(), 'the Math block is in the palette');
+
   await page.setViewportSize({ width: 820, height: 700 });
   await page.waitForTimeout(300);
   await shot('11-narrow');

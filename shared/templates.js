@@ -134,6 +134,32 @@ export const TEMPLATES = [
     }),
   },
   {
+    id: 'member-counter',
+    name: 'Member counter channel',
+    description: 'Keeps a channel named “👥 Members: 1,234” up to date as people join and leave. Pick the channel in the last node. Needs the Server Members intent.',
+    build: () => ({
+      nodes: [
+        n('t1', 'trigger.member.join', 0, 0, { ignoreBots: false }), // the member count includes bots, so a bot joining changes it too
+        n('t2', 'trigger.member.leave', 0, 140, { ignoreBots: false }),
+        n('u1', 'action.channel.update', 340, 60, { name: '👥 Members: {{guild.memberCount | commas}}', reason: 'Member counter' }),
+      ],
+      edges: [e('t1', 'u1'), e('t2', 'u1')],
+    }),
+  },
+  {
+    id: 'join-counter',
+    name: 'Join counter (with maths)',
+    description: 'Counts joins in a server variable with the Math block and shows the total in a channel name. Pick the channel in the last node. Needs the Server Members intent.',
+    build: () => ({
+      nodes: [
+        n('t1', 'trigger.member.join', 0, 60),
+        n('c1', 'data.math', 340, 40, { mode: 'two', a: '{{guild.vars.joins}}', op: 'add', b: '1', saveAs: 'joins', remember: 'guild' }),
+        n('u1', 'action.channel.update', 700, 40, { name: 'Joined so far: {{var.joins | commas}}', reason: 'Join counter' }),
+      ],
+      edges: [e('t1', 'c1'), e('c1', 'u1')],
+    }),
+  },
+  {
     id: 'mod-log',
     name: 'Ban log',
     description: 'Posts an embed in a log channel whenever someone is banned.',
