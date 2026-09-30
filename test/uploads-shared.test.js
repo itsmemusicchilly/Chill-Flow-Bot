@@ -58,10 +58,12 @@ describe('the image field type', () => {
   it('is what hero, image blocks and message embeds use', () => {
     assert.equal(defaultBlockData('hero').imageUrl, '');
     for (const type of ['action.message.send', 'action.message.edit']) {
-      const types = Object.fromEntries(NODE_TYPES[type].fields.map((f) => [f.key, f.type]));
-      assert.equal(types.embedImage, 'image', type);
-      assert.equal(types.embedThumbnail, 'image', type);
+      const embeds = NODE_TYPES[type].fields.find((f) => f.key === 'embeds');
+      const types = Object.fromEntries(embeds.item.fields.map((f) => [f.key, f.type]));
+      for (const part of ['image', 'thumbnail', 'authorIcon', 'footerIcon']) assert.equal(types[part], 'image', `${type}: ${part}`);
     }
+    const patch = NODE_TYPES['action.message.edit'].fields.find((f) => f.key === 'patchSet');
+    assert.equal(patch.item.fields.find((f) => f.key === 'image').type, 'image', 'a picture set on an existing embed can be uploaded too');
   });
 });
 

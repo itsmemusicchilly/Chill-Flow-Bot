@@ -108,8 +108,8 @@ loop iterations, steps per run and as long a wait as you like. On a private bot 
 
 `.env.example` contains a commented **public-host preset** with sensible caps.
 
-**What cannot be unlimited** — these are physical or Discord's own rules, not ours: 25 buttons / menu options / embed fields
-per message, 25 options per slash command, 5 form inputs, 2000 characters per message, 8 MB per ticket transcript (its `.html` and `.txt` together; Discord's upload limit), 100 slash commands per server,
+**What cannot be unlimited** — these are physical or Discord's own rules, not ours: 25 buttons / menu options / embed fields,
+10 embeds and 6000 embed characters per message, 25 options per slash command, 5 form inputs, 2000 characters per message, 8 MB per ticket transcript (its `.html` and `.txt` together; Discord's upload limit), 100 slash commands per server,
 memory and CPU, `setTimeout`'s maximum (~24.8 days), the form wait (10 min: Discord's interaction tokens expire), and the
 login/API/public-site rate limits that protect the site itself (10 form submissions per minute per visitor, 60 per IP, 600 page views
 per IP; a form answer is at most 10 000 characters and a public request 256 KB; an uploaded picture is at most 32 MB and 64 megapixels
@@ -161,6 +161,29 @@ in the node and fill **Button ID** (for example `open_ticket`), then add a **But
   says which).
 * Panels are posted by a **Manual** trigger (press ▶ Run once). Start from the **Ticket panel** or **Button role panel**
   template. In the ticket template a cooldown stops double-clicks from opening two tickets.
+
+### Embeds, and editing a message that was already sent
+
+**Send Message** and **Edit Message** share one embed editor. A message can carry up to **10 embeds** (6000 characters in all — the flow says so if you go over), and each embed has:
+a **title** and a **title link**, a **description**, a **colour**, an **author** (name, icon, link), a **thumbnail** and an **image**, a **footer** (text, icon), a **timestamp**, and up to 25 **fields**.
+Pictures are an https link, a `{{variable}}`, or a picture you uploaded. An author icon or link needs an author name, a footer icon needs footer text, and a title link needs a title.
+Flows saved with the older single embed are converted to the new list when you open or save them; they keep working either way.
+
+**Edit Message** is a full edit mode for a message the bot already sent. For the **text** and for the **embeds** you choose what happens — **Keep as it is**, **Replace**, or **Remove** —
+so a flow can change one thing and leave the rest exactly as it was. Choose the message with **Which message**: **This message** (the one that started the flow, for example the message a pressed button is on)
+or **A previous message** by its ID (see the recipe below). The buttons are never touched — use **Change Buttons** for those.
+
+| Embeds | What it does |
+| --- | --- |
+| **Keep as they are** | Nothing changes. |
+| **Change some parts of one embed** | Pick **which embed** (1 = the first). **Remove these parts** are taken off first, then **Set these parts** are changed; every part you do not name stays exactly as it was, and so do the message's other embeds. Naming an embed one past the last adds a new one. |
+| **Replace all embeds** | The embeds you build here replace the ones on the message. |
+| **Remove all embeds** | Takes them all off. |
+
+* **Removing** “Author name” removes the whole author; “Footer text” the whole footer; “Title” its link too. An embed with nothing left in it disappears.
+* **Setting** a part to an empty value (for example a variable that was never filled in) is an error, never a silent removal. “Fields” replaces all the fields the embed has.
+* Link previews Discord adds under a link in the text are not embeds you can edit; they are left out of the numbering and come back by themselves if the text still has the link.
+* Only the bot's **own** messages can be edited, and not “only visible to you” replies. An edit that would leave the message with no text, no embed and no buttons is refused.
 
 ### Changing the buttons of a message that was already sent
 
@@ -602,6 +625,9 @@ Not yet automated — please run through this once on a test server:
       *Remove all buttons* (text stays), *Delete the message* (also on a message someone else posted, with *Manage Messages*). Check a message with a select menu keeps its menu, and that with **This message** a pressed button can change or delete its own message, while **A previous message** with a stored ID reaches an earlier one (and an empty ID is refused).
 - [ ] *Panel that comes back if it is deleted* template: pick a channel in the Manual trigger, switch on, ▶ Run → the panel appears; delete it → it reappears within a second or two;
       restart the bot, delete it again → it still reappears; delete some other message → nothing happens.
+- [ ] Embeds: *Send Message* with two embeds — one with an author (name, icon, link), a title link and a footer icon — and check Discord shows both, with the icons and links working.
+      Then *Edit Message* on that message (“A previous message”): change **only** the description of embed 1 (everything else, embed 2 and the text stay), remove the footer, add a third embed,
+      replace the text only, remove all embeds; and “This message” from a button press. Try an edit that would leave the message empty — it must be refused, not sent.
 - [ ] Channel variables: with *Set Variable* (scope *Channel*) count something in two channels — each counts on its own; delete one channel and its variables disappear from the
       *Remembered variables* dialog.
 - [ ] Counters: switch on the *Member counter* template, pick a channel, then have several people join/leave within a few minutes —

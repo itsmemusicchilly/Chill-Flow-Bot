@@ -1,12 +1,15 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder } from 'discord.js';
 import { BUTTON_ID_RE, buttonKey } from '../../shared/catalog.js';
+import { embedChars, embedsOf, MAX_EMBED_CHARS, MAX_EMBEDS } from '../../shared/embeds.js';
 import { looksLikeUpload } from '../../shared/urls.js';
 import { FlowError } from './errors.js';
 import { buildButtonId, buildCustomId } from './custom-id.js';
 
 const STYLES = { Primary: ButtonStyle.Primary, Secondary: ButtonStyle.Secondary, Success: ButtonStyle.Success, Danger: ButtonStyle.Danger, Link: ButtonStyle.Link };
 const HTTP = /^https?:\/\/\S+$/i;
-const cut = (s, n) => String(s ?? '').slice(0, n);
+export const cut = (s, n) => String(s ?? '').slice(0, n);
+/** Discord refuses an embed with nothing to show; a zero-width space is invisible but counts. */
+export const EMPTY_EMBED_TEXT = '​';
 
 export function parseColor(v) {
   const m = String(v ?? '').trim().match(/^#?([0-9a-f]{6})$/i);
@@ -25,7 +28,7 @@ export function parseEmoji(v) {
  * The address of an embed picture: an http(s) link, or `upload:<id>` — a picture uploaded to *this* server, turned into an
  * absolute address Discord can download. (Templates have already been filled in, so `upload:{{var.pic}}` works too.)
  */
-function embedPicture(ctx, value, label) {
+export function embedPicture(ctx, value, label) {
   const v = String(value).trim();
   if (looksLikeUpload(v)) {
     if (!ctx.services.uploads) throw new FlowError('Uploaded images are not available here.');
@@ -35,21 +38,57 @@ function embedPicture(ctx, value, label) {
   return v;
 }
 
-function buildEmbed(ctx, d) {
+/** A link in an embed (the title or the author): http(s) only. */
+export function embedUrl(value, label) {
+  const v = String(value).trim();
+  if (!HTTP.test(v)) throw new FlowError(`${label} must start with http:// or https://.`);
+  return v;
+}
+
+/** The embed fields that have both a name and a value, cut to Discord's sizes. */
+export const embedFieldsOf = (list) => (list || []).filter((f) => f && f.name && f.value).slice(0, 25).map((f) => ({ name: cut(f.name, 256), value: cut(f.value, 1024), inline: Boolean(f.inline) }));
+
+/** One embed, from the settings of one item of a node's `embeds` list. */
+export function buildEmbed(ctx, m) {
   const e = new EmbedBuilder();
-  if (d.embedTitle) e.setTitle(cut(d.embedTitle, 256));
-  if (d.embedDescription) e.setDescription(cut(d.embedDescription, 4096));
-  const color = parseColor(d.embedColor);
+  if (m.title) e.setTitle(cut(m.title, 256));
+  if (m.title && m.url) e.setURL(embedUrl(m.url, 'The title link'));
+  if (m.description) e.setDescription(cut(m.description, 4096));
+  const color = parseColor(m.color);
   if (color !== null) e.setColor(color);
-  for (const [key, setter, label] of [['embedThumbnail', 'setThumbnail', 'Thumbnail'], ['embedImage', 'setImage', 'Image']]) {
-    if (d[key]) e[setter](embedPicture(ctx, d[key], label));
+  if (m.authorName) {
+    const author = { name: cut(m.authorName, 256) };
+    if (m.authorIcon) author.iconURL = embedPicture(ctx, m.authorIcon, 'The author icon');
+    if (m.authorUrl) author.url = embedUrl(m.authorUrl, 'The author link');
+    e.setAuthor(author);
   }
-  if (d.embedFooter) e.setFooter({ text: cut(d.embedFooter, 2048) });
-  if (d.embedTimestamp) e.setTimestamp();
-  const fields = (d.embedFields || []).filter((f) => f.name && f.value).slice(0, 25);
-  if (fields.length) e.addFields(fields.map((f) => ({ name: cut(f.name, 256), value: cut(f.value, 1024), inline: Boolean(f.inline) })));
-  if (!d.embedTitle && !d.embedDescription && !fields.length && !d.embedImage) e.setDescription('​');
+  for (const [key, setter, label] of [['thumbnail', 'setThumbnail', 'Thumbnail'], ['image', 'setImage', 'Image']]) {
+    if (m[key]) e[setter](embedPicture(ctx, m[key], label));
+  }
+  if (m.footer) {
+    const footer = { text: cut(m.footer, 2048) };
+    if (m.footerIcon) footer.iconURL = embedPicture(ctx, m.footerIcon, 'The footer icon');
+    e.setFooter(footer);
+  }
+  if (m.timestamp) e.setTimestamp();
+  const fields = embedFieldsOf(m.fields);
+  if (fields.length) e.addFields(fields);
+  if (!m.title && !m.description && !fields.length && !m.image && !m.authorName) e.setDescription(EMPTY_EMBED_TEXT);
   return e;
+}
+
+/** Discord allows 10 embeds and 6000 characters (title, description, fields, footer text, author name) across all of them. */
+export function checkEmbedLimits(embeds) {
+  if (embeds.length > MAX_EMBEDS) throw new FlowError(`A message can have at most ${MAX_EMBEDS} embeds (this one has ${embeds.length}).`);
+  const chars = embeds.reduce((n, e) => n + embedChars(e.toJSON()), 0);
+  if (chars > MAX_EMBED_CHARS) throw new FlowError(`The embeds add up to ${chars} characters, but Discord allows ${MAX_EMBED_CHARS} in one message.`);
+}
+
+/** All the embeds a Send/Edit node describes — in the current `embeds` list or the older flat keys. */
+export function buildEmbeds(ctx, d) {
+  const embeds = embedsOf(d).map((m) => buildEmbed(ctx, m));
+  checkEmbedLimits(embeds);
+  return embeds;
 }
 
 /**
@@ -87,7 +126,8 @@ export function buildPayload(ctx, d, node, { components = true, replace = false 
   const payload = { allowedMentions: { parse: d.allowEveryone ? ['users', 'roles', 'everyone'] : ['users'] } };
   const content = cut(d.content, 2000);
   if (content) payload.content = content; else if (replace) payload.content = '';
-  if (d.useEmbed) payload.embeds = [buildEmbed(ctx, d)]; else if (replace) payload.embeds = [];
+  const embeds = buildEmbeds(ctx, d);
+  if (embeds.length) payload.embeds = embeds; else if (replace) payload.embeds = [];
 
   if (components) {
     const rows = [];

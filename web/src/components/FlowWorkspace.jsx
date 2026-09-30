@@ -8,6 +8,7 @@ import { PHONE, useMediaQuery } from '../hooks/useMediaQuery.js';
 import { toggleConnection } from '@shared/connections.js';
 import { LIMITS } from '@shared/limits.js';
 import { uid } from '@shared/util.js';
+import { upgradeMessageData } from '@shared/embeds.js';
 import { normalizeGraph, validateFlow } from '@shared/validate.js';
 import { api } from '../api.js';
 import { EditorContext, useToast } from '../context.js';
@@ -50,7 +51,8 @@ export default function FlowWorkspace({ gid, flow, meta, guildData, flash, apiRe
   const rf = useReactFlow();
   const phone = useMediaQuery(PHONE);
   const wrapRef = useRef(null);
-  const [graph, setGraph] = useState(() => ({ nodes: flow.graph.nodes.map((n) => ({ ...n })), edges: flow.graph.edges.map((e) => ({ ...e })) }));
+  // Nodes saved in an older shape (one embed as flat keys, Edit Message without its choices) are shown — and saved next time — in the current one.
+  const [graph, setGraph] = useState(() => ({ nodes: flow.graph.nodes.map((n) => ({ ...n, data: upgradeMessageData(n.type, n.data) })), edges: flow.graph.edges.map((e) => ({ ...e })) }));
   const [name, setName] = useState(flow.name);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);

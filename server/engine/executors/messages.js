@@ -1,8 +1,9 @@
 import { ActionRowBuilder, ButtonBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 import { LIMITS } from '../../../shared/limits.js';
 import { parseButtonId } from '../custom-id.js';
+import { isRich, patchEmbeds } from '../embed-edit.js';
 import { FlowError } from '../errors.js';
-import { buildButton, buildPayload, parseEmoji } from '../payload.js';
+import { buildButton, buildEmbeds, buildPayload, cut, parseEmoji } from '../payload.js';
 import { newAck, respond } from '../responder.js';
 import { cleanId, resolveChannel, resolveMember, SNOWFLAKE } from '../resolve.js';
 
@@ -44,10 +45,36 @@ async function send({ ctx, d, node }) {
   }
 }
 
-async function edit({ ctx, d, node }) {
-  const message = await fetchMessage(ctx, d.channelId, d.messageId);
+/**
+ * Edit Message: the text and the embeds can each be kept, replaced or removed, and one embed can have just some parts changed.
+ * The buttons are never touched (Change Buttons does that). A node saved before these choices existed is rewritten to say what it always did
+ * when the flow is loaded (see `upgradeMessageData`), so a mode that is missing here can only mean "leave it".
+ */
+async function edit({ ctx, d }) {
+  const message = await chosenMessage(ctx, d);
   if (message.author.id !== ctx.guild.client.user.id) throw new FlowError('The bot can only edit its own messages.');
-  await message.edit(buildPayload(ctx, d, node, { components: false, replace: true }));
+  const contentMode = d.contentMode ?? 'keep';
+  const embedsMode = d.embedsMode ?? 'keep';
+  if (contentMode === 'keep' && embedsMode === 'keep') return; // nothing to change
+
+  const payload = { allowedMentions: { parse: ['users'] } };
+  if (contentMode === 'replace') payload.content = cut(d.content, 2000);
+  else if (contentMode === 'remove') payload.content = '';
+  else if (contentMode !== 'keep') throw new FlowError(`Unknown text mode “${contentMode}”.`);
+  switch (embedsMode) {
+    case 'keep': break;
+    case 'remove': payload.embeds = []; break;
+    case 'replace': payload.embeds = buildEmbeds(ctx, d); break;
+    case 'patch': payload.embeds = patchEmbeds(ctx, d, message); break;
+    default: throw new FlowError(`Unknown embeds mode “${embedsMode}”.`);
+  }
+
+  const text = 'content' in payload ? payload.content : message.content;
+  const embedCount = payload.embeds ? payload.embeds.length : (message.embeds || []).filter(isRich).length;
+  if (!text && !embedCount && !(message.components || []).length && !message.attachments?.size) {
+    throw new FlowError('This edit would leave the message empty, which Discord does not allow. Keep some text or an embed.');
+  }
+  await message.edit(payload);
 }
 
 const isButton = (c) => c instanceof ButtonBuilder;

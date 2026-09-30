@@ -114,10 +114,10 @@ describe('limit mechanics', () => {
     for (const d of NODE_LIST) for (const f of d.fields) if (f.type === 'list' && Number.isFinite(f.max)) capped[`${d.type}.${f.key}`] = f.max;
     assert.deepEqual(capped, {
       'trigger.command.options': 25,
-      'action.message.send.embedFields': 25,
+      'action.message.send.embeds': 10,
       'action.message.send.buttons': 25,
       'action.message.send.menuOptions': 25,
-      'action.message.edit.embedFields': 25,
+      'action.message.edit.embeds': 10,
       'action.message.buttons.buttons': 25,
       'action.modal.show.inputs': 5,
     });

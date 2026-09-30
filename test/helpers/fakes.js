@@ -108,6 +108,7 @@ export function fakeChannel(guild, o = {}) {
       msg.edit = async (p) => {
         ch.calls.push(['messageEdit', id, p]);
         if (p.components) msg.components = p.components.map((r) => r.toJSON?.() ?? r);
+        if (p.embeds) msg.embeds = p.embeds.map((e) => e.toJSON?.() ?? e.data ?? e);
         if (p.content !== undefined) msg.content = p.content;
         return msg;
       };

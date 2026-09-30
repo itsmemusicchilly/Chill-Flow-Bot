@@ -5,6 +5,7 @@ import { DEFAULT_FEED_MINUTES, FEED_SOURCES, FeedSettingError, MIN_FEED_MINUTES,
 import { DEFAULT_TWITCH_MINUTES, DEFAULT_YOUTUBE_MINUTES, MIN_TWITCH_MINUTES, MIN_YOUTUBE_MINUTES, twitchSettings, youtubeSettings } from './platforms.js';
 import { area, bool, color, idField, image, isVisible, list, multi, num, select, text, VAR_NAME_RE, when, whenNot } from './fields.js';
 import { uid } from './util.js';
+import { blankEmbed, EMBED_PARTS, embedsOf, MAX_EMBEDS } from './embeds.js';
 
 export { isVisible, VAR_NAME_RE };
 
@@ -76,21 +77,51 @@ const ignoreBots = bool('ignoreBots', 'Ignore bots', { default: true });
 // ---------------------------------------------------------------------------------------------------
 // message payload fields shared by Send / Edit message
 // ---------------------------------------------------------------------------------------------------
-const embedFields = () => [
-  bool('useEmbed', 'Add an embed'),
-  text('embedTitle', 'Embed title', { showIf: when('useEmbed', true) }),
-  area('embedDescription', 'Embed description', { showIf: when('useEmbed', true), rows: 4 }),
-  color('embedColor', 'Embed color', { showIf: when('useEmbed', true) }),
-  image('embedThumbnail', 'Thumbnail', { showIf: when('useEmbed', true), help: 'An https link, {{a variable}}, or a picture you uploaded.' }),
-  image('embedImage', 'Image', { showIf: when('useEmbed', true), help: 'An https link, {{a variable}}, or a picture you uploaded.' }),
-  text('embedFooter', 'Footer', { showIf: when('useEmbed', true) }),
-  bool('embedTimestamp', 'Show timestamp', { showIf: when('useEmbed', true) }),
-  list('embedFields', 'Embed fields', {
-    create: () => ({ name: 'Field', value: 'Value', inline: false }),
-    label: (i) => i.name,
-    fields: [text('name', 'Name'), text('value', 'Value'), bool('inline', 'Inline')],
-  }, { max: 25, showIf: when('useEmbed', true) }),
+const PICTURE_HELP = 'An https link, {{a variable}}, or a picture you uploaded.';
+const embedFieldList = (o = {}) => list('fields', 'Fields', {
+  create: () => ({ name: 'Field', value: 'Value', inline: false }),
+  label: (i) => i.name,
+  fields: [text('name', 'Name'), text('value', 'Value'), bool('inline', 'Inline')],
+}, { max: 25, ...o });
+/** Every part of one embed. */
+const embedItemFields = () => [
+  text('title', 'Title'),
+  text('url', 'Title link', { placeholder: 'https://…', help: 'Makes the title a link. Needs a title.' }),
+  area('description', 'Description', { rows: 4 }),
+  color('color', 'Color'),
+  text('authorName', 'Author name', { help: 'A small line above the title. Needed for the author icon and link to show.' }),
+  image('authorIcon', 'Author icon', { help: PICTURE_HELP }),
+  text('authorUrl', 'Author link', { placeholder: 'https://…' }),
+  image('thumbnail', 'Thumbnail', { help: PICTURE_HELP }),
+  image('image', 'Image', { help: PICTURE_HELP }),
+  text('footer', 'Footer text'),
+  image('footerIcon', 'Footer icon', { help: `${PICTURE_HELP} Needs footer text.` }),
+  bool('timestamp', 'Show timestamp'),
+  embedFieldList(),
 ];
+/** The embeds of a message: up to 10, each with every part. Shared by Send Message and Edit Message. */
+const embedsList = (o = {}) => list('embeds', 'Embeds', {
+  create: blankEmbed,
+  label: (m) => m.title || String(m.description || '').slice(0, 30) || 'Embed',
+  fields: embedItemFields(),
+}, { max: MAX_EMBEDS, help: `Up to ${MAX_EMBEDS} embeds per message, and 6000 characters in all.`, ...o });
+
+const HTTP_LINK = /^https?:\/\/\S+$/i;
+/** Problems with the embeds of a node (the ones that would only show up as a Discord error when the flow runs). */
+function embedErrors(embeds) {
+  const e = [];
+  if (embeds.length > MAX_EMBEDS) e.push(`A message can have at most ${MAX_EMBEDS} embeds.`);
+  embeds.forEach((m, i) => {
+    const at = embeds.length > 1 ? `Embed ${i + 1}: ` : '';
+    if ((m.authorIcon || m.authorUrl) && !m.authorName) e.push(`${at}the author needs a name for its icon or link to show.`);
+    if (m.footerIcon && !m.footer) e.push(`${at}the footer icon needs footer text.`);
+    for (const [key, what] of [['url', 'title link'], ['authorUrl', 'author link']]) {
+      if (m[key] && !/\{\{/.test(m[key]) && !HTTP_LINK.test(m[key])) e.push(`${at}the ${what} must start with http:// or https://.`);
+    }
+  });
+  return e;
+}
+const MESSAGE_FROM = [['this', 'This message (the one that started the flow)'], ['id', 'A previous message (by its ID)']];
 
 const BUTTON_STYLES = [['Primary', 'Blurple'], ['Secondary', 'Grey'], ['Success', 'Green'], ['Danger', 'Red'], ['Link', 'Link (opens a URL)']];
 
@@ -426,14 +457,14 @@ function buttonIdErrors(buttons) {
 
 def('action.message.send', {
   category: 'message', label: 'Send Message', icon: '💬',
-  description: 'Send text, an embed, buttons and a select menu. Every button becomes its own output.',
+  description: 'Send text, embeds (up to 10, with author, links and icons), buttons and a select menu. Every button becomes its own output.',
   fields: [
     select('target', 'Send to', TARGETS),
     idField('channelId', 'Channel', 'channel', { showIf: when('target', 'channel'), required: true }),
     idField('userId', 'Member', 'user', { showIf: when('target', 'dm'), placeholder: 'blank = the user who triggered this' }),
     bool('ephemeral', 'Only visible to the user (ephemeral)', { showIf: when('target', 'reply'), help: 'Works when replying to a command or button.' }),
     area('content', 'Message text', { placeholder: 'Hello {{user.mention}}!' }),
-    ...embedFields(),
+    embedsList(),
     buttonList(),
     bool('menuEnabled', 'Add a select menu'),
     text('menuPlaceholder', 'Menu placeholder', { showIf: when('menuEnabled', true), default: 'Choose…' }),
@@ -455,7 +486,8 @@ def('action.message.send', {
   summary: (d) => `${(TARGETS.find((t) => t[0] === d.target) || [])[1] || ''}${d.content ? ` — ${d.content.slice(0, 40)}` : ''}`,
   check(d) {
     const e = [];
-    if (!d.content && !d.useEmbed && !(d.buttons || []).length) e.push('Add message text, an embed or buttons — Discord will not send an empty message.');
+    if (!d.content && !embedsOf(d).length && !(d.buttons || []).length) e.push('Add message text, an embed or buttons — Discord will not send an empty message.');
+    e.push(...embedErrors(embedsOf(d)));
     if ((d.buttons || []).length + (d.menuEnabled ? 1 : 0) > 25) e.push('Too many components.');
     if (d.menuEnabled && !(d.menuOptions || []).length) e.push('The select menu needs at least one option.');
     e.push(...buttonIdErrors(d.buttons));
@@ -463,17 +495,56 @@ def('action.message.send', {
     return e;
   },
 });
+const TEXT_MODES = [['keep', 'Keep as it is'], ['replace', 'Replace with…'], ['remove', 'Remove the text']];
+const EMBED_MODES = [['keep', 'Keep as they are'], ['patch', 'Change some parts of one embed'], ['replace', 'Replace all embeds'], ['remove', 'Remove all embeds']];
+const TEXT_PARTS = ['title', 'url', 'description', 'authorName', 'authorUrl', 'footer'];
+const PICTURE_PARTS = ['authorIcon', 'thumbnail', 'image', 'footerIcon'];
+const partLabel = (key) => (EMBED_PARTS.find(([k]) => k === key) || [])[1] || 'Part';
 def('action.message.edit', {
-  category: 'message', label: 'Edit Message', icon: '📝', description: 'Change the text or embed of a message the bot sent.',
+  category: 'message', label: 'Edit Message', icon: '📝',
+  description: 'Change a message the bot already sent. For the text and for the embeds you can keep them, replace them or remove them — and for the embeds you can also change just some parts of one embed and leave the rest as it is. Choose “This message” (the one that started the flow, such as the message a pressed button is on) or “A previous message” and give its ID. Only the bot\'s own messages can be edited, not “only visible to you” replies.',
   fields: [
-    idField('channelId', 'Channel', 'channel', { placeholder: 'blank = current channel' }),
-    idField('messageId', 'Message ID', 'message', { required: true, placeholder: '{{var.msg}}' }),
-    area('content', 'New text'),
-    ...embedFields(),
+    select('messageFrom', 'Which message', MESSAGE_FROM),
+    idField('channelId', 'Channel', 'channel', { showIf: when('messageFrom', 'id'), placeholder: 'blank = current channel' }),
+    idField('messageId', 'Message ID', 'message', {
+      showIf: when('messageFrom', 'id'), required: true, placeholder: '{{var.msg}} or {{channel.vars.panel}}',
+      help: 'The ID of a message sent earlier. Use a variable that holds it — for example the one you gave “Save message ID as variable” in Send Message, or one stored with Set Variable.',
+    }),
+    select('contentMode', 'Message text', TEXT_MODES),
+    area('content', 'New text', { showIf: when('contentMode', 'replace') }),
+    select('embedsMode', 'Embeds', EMBED_MODES),
+    num('patchEmbed', 'Which embed (1 = the first)', { showIf: when('embedsMode', 'patch'), default: 1, min: 1, max: MAX_EMBEDS, help: 'One past the last embed adds a new one.' }),
+    list('patchSet', 'Set these parts', {
+      create: () => ({ id: uid(6), part: 'description', text: '', color: '#5865f2', image: '', fields: [] }),
+      label: (p) => `${partLabel(p.part)}${p.text ? `: ${String(p.text).slice(0, 24)}` : ''}`,
+      fields: [
+        select('part', 'Part', EMBED_PARTS),
+        area('text', 'New value', { rows: 3, showIf: when('part', ...TEXT_PARTS) }),
+        color('color', 'New color', { showIf: when('part', 'color') }),
+        image('image', 'New picture', { showIf: when('part', ...PICTURE_PARTS), help: PICTURE_HELP }),
+        embedFieldList({ showIf: when('part', 'fields'), help: 'These replace all the fields the embed has now.' }),
+      ],
+    }, { showIf: when('embedsMode', 'patch'), help: 'Only the parts you list here change. “Timestamp” sets the time to now.' }),
+    multi('patchRemove', 'Remove these parts', EMBED_PARTS, {
+      showIf: when('embedsMode', 'patch'),
+      help: 'Taken off first, then the parts above are set. “Author name” removes the whole author and “Footer text” the whole footer.',
+    }),
+    embedsList({ showIf: when('embedsMode', 'replace') }),
   ],
-  outputs: ACTION_OUTS, summary: (d) => d.messageId || '',
+  outputs: ACTION_OUTS,
+  summary: (d) => {
+    const text = { replace: 'replace text', remove: 'remove text' }[d.contentMode];
+    const embeds = { patch: 'change an embed', replace: 'replace embeds', remove: 'remove embeds' }[d.embedsMode];
+    return `${[text, embeds].filter(Boolean).join(', ') || 'nothing to change'} — ${d.messageFrom === 'id' ? (d.messageId || '(ID needed)') : 'this message'}`;
+  },
+  check(d) {
+    const e = [];
+    if (d.contentMode === 'keep' && d.embedsMode === 'keep') e.push('Nothing to change: choose to change the text or the embeds.');
+    if (d.embedsMode === 'patch' && !(d.patchSet || []).length && !(d.patchRemove || []).length) e.push('Choose the parts of the embed to set or remove.');
+    if (d.embedsMode === 'replace') e.push(...embedErrors(embedsOf(d)));
+    return e;
+  },
 });
-const MESSAGE_FROM = [['this', 'This message (the one that started the flow)'], ['id', 'A previous message (by its ID)']];
 const BUTTON_MODES = [['add', 'Add or update buttons'], ['remove', 'Remove specific buttons'], ['clear', 'Remove all buttons'], ['disable', 'Disable buttons'], ['enable', 'Enable buttons'], ['delete', 'Delete the message']];
 def('action.message.buttons', {
   category: 'message', label: 'Change Buttons', icon: '🔘',
