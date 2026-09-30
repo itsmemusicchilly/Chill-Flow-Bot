@@ -2,6 +2,7 @@
 // keeps one server from hurting the others (run rate, concurrency, action rate, step count).
 import { MessageFlags } from 'discord.js';
 import { getOutputs, isTriggerType, NODE_TYPES } from '../../shared/catalog.js';
+import { cronMatches, scheduleOf, zonedParts } from '../../shared/cron.js';
 import { LIMITS } from '../../shared/limits.js';
 import { normalizeGraph, validateFlow } from '../../shared/validate.js';
 import { uid } from '../../shared/util.js';
@@ -16,11 +17,19 @@ import { channelData, guildData, memberData, messageData, roleData, userData } f
 import { matches } from './triggers.js';
 
 export const DEFER_AFTER_MS = 2200;
+const MINUTE = 60_000;
+const TICK_SLACK_MS = 250; // schedules are checked just AFTER a minute begins, never just before it
+const MAX_CATCH_UP = 3; // minutes a stalled event loop may make up; a longer gap (the bot was off) is never replayed
+const minuteOf = (ms) => Math.floor(ms / MINUTE) * MINUTE;
 const EPHEMERAL = MessageFlags.Ephemeral;
 
 export class Runtime {
-  /** @param {{db: import('../db.js').Database, logger: import('../logger.js').Logger, intents?: {members: boolean, messageContent: boolean}, uploads?: {publicUrl: (guildId: string, ref: string) => string}}} deps */
-  constructor({ db, logger, intents = { members: false, messageContent: false }, uploads = null }) {
+  /**
+   * @param {{db: import('../db.js').Database, logger: import('../logger.js').Logger, intents?: {members: boolean, messageContent: boolean}, uploads?: {publicUrl: (guildId: string, ref: string) => string},
+   *          clock?: {now?: () => number, setTimer?: (fn: () => void, ms: number) => any, clearTimer?: (timer: any) => void}}} deps
+   *   `clock` is for tests: schedules read the time and set their timer through it.
+   */
+  constructor({ db, logger, intents = { members: false, messageContent: false }, uploads = null, clock = {} }) {
     this.db = db;
     this.logger = logger;
     this.intents = intents;
@@ -37,7 +46,10 @@ export class Runtime {
     this.flowsById = new Map();
     this.active = new Map();
     this.live = new Set();
-    this.timers = new Map();
+    this.clock = { now: () => Date.now(), setTimer: (fn, ms) => setTimeout(fn, ms), clearTimer: (t) => clearTimeout(t), ...clock };
+    this.schedules = new Map(); // "guild|flow|node" -> what one Schedule trigger needs to know between ticks
+    this.ticker = null; // the one timer that wakes up at the start of each minute while any schedule exists
+    this.lastMinute = null; // the last minute whose schedules were looked at
     this.deferAfterMs = DEFER_AFTER_MS;
   }
 
@@ -110,7 +122,7 @@ export class Runtime {
     for (const id of this.index.get(guildId)?.flows.keys() ?? []) this.flowsById.delete(id);
     this.index.delete(guildId);
     this.#stopRemovedRuns(guildId, { flows: new Map() });
-    this.clearTimers(guildId);
+    this.clearSchedules(guildId);
     this.services.channelEdits.cancel(guildId);
   }
 
@@ -324,32 +336,108 @@ export class Runtime {
     return started ? { ok: true } : { ok: false, error: 'Too many runs right now — try again in a moment.' };
   }
 
-  clearTimers(guildId) {
-    for (const [key, timer] of this.timers) if (key.startsWith(`${guildId}|`)) { clearInterval(timer); this.timers.delete(key); }
+  // ---- schedules ---------------------------------------------------------------------------------
+  // One timer serves every Schedule trigger of every server: it wakes at the start of each minute and asks each schedule whether that
+  // minute is one of its own. Times of day and cron expressions are read on the wall clock of the zone they name, so they do not depend
+  // on when the bot started or when a flow was last saved; "every N …" counts from when the schedule first appeared and keeps counting
+  // through saves that do not touch it.
+  clearSchedules(guildId) {
+    for (const key of this.schedules.keys()) if (key.startsWith(`${guildId}|`)) this.schedules.delete(key);
+    if (!this.schedules.size) this.#disarmTicker();
   }
 
   syncSchedules(guildId) {
-    this.clearTimers(guildId);
-    const list = this.index.get(guildId)?.triggers.get('trigger.schedule') ?? [];
-    for (const { flow, node } of list) {
-      const unit = { minutes: 60000, hours: 3600000, days: 86400000 }[node.data.unit] ?? 60000;
-      const ms = Math.max(60000, Math.min(2 ** 31 - 1, Number(node.data.every) * unit));
-      const timer = setInterval(async () => {
-        const guild = this.client?.guilds.cache.get(guildId);
-        if (!guild) return;
-        const cid = String(node.data.channelId || '').replace(/\D/g, '');
-        const channel = cid ? await guild.channels.fetch(cid).catch(() => null) : null;
-        this.start(flow, node, { guild, channel: channel?.guildId === guildId ? channel : null }, { label: 'Schedule' });
-      }, ms);
-      timer.unref?.();
-      this.timers.set(`${guildId}|${flow.id}|${node.id}`, timer);
+    const now = minuteOf(this.clock.now());
+    const keep = new Set();
+    for (const { flow, node } of this.index.get(guildId)?.triggers.get('trigger.schedule') ?? []) {
+      let schedule;
+      try { schedule = scheduleOf(node.data); } catch { continue; } // already reported as “not active” by loadGuild
+      const key = `${guildId}|${flow.id}|${node.id}`;
+      const signature = schedule.mode === 'every' ? `every|${schedule.ms}` : `${schedule.mode}|${schedule.source}|${schedule.tz}`;
+      keep.add(key);
+      const known = this.schedules.get(key);
+      if (known?.signature === signature) { Object.assign(known, { flow, node }); continue; } // unchanged: carry on where it was
+      this.schedules.set(key, { key, guildId, flow, node, schedule, signature, due: schedule.mode === 'every' ? now + schedule.ms : 0, lastKey: '' });
     }
+    for (const key of [...this.schedules.keys()]) if (key.startsWith(`${guildId}|`) && !keep.has(key)) this.schedules.delete(key);
+    if (this.schedules.size) this.#armTicker(); else this.#disarmTicker();
+  }
+
+  #armTicker() {
+    if (this.ticker) return;
+    this.lastMinute = minuteOf(this.clock.now()); // the minute in progress is not run, and nothing before it is replayed
+    this.#scheduleTick();
+  }
+
+  #disarmTicker() {
+    if (this.ticker) this.clock.clearTimer(this.ticker);
+    this.ticker = null;
+    this.lastMinute = null;
+  }
+
+  #scheduleTick() {
+    const now = this.clock.now();
+    this.ticker = this.clock.setTimer(async () => {
+      this.ticker = null;
+      try { await this.runScheduleTick(this.clock.now()); } finally { if (this.schedules.size) this.#scheduleTick(); }
+    }, MINUTE - (now % MINUTE) + TICK_SLACK_MS);
+    this.ticker.unref?.();
+  }
+
+  /**
+   * Run every schedule that is due in the minutes up to `now` (normally just the minute that has begun). A stalled event loop makes up at
+   * most MAX_CATCH_UP minutes, so it never skips a minute but a bot that was off is not answered with a burst of runs.
+   * Resolves when the runs have been started (not when they finish).
+   */
+  async runScheduleTick(now = this.clock.now()) {
+    const current = minuteOf(now);
+    let minute = this.lastMinute === null ? current : this.lastMinute + MINUTE;
+    minute = Math.max(minute, current - (MAX_CATCH_UP - 1) * MINUTE);
+    const started = [];
+    for (; minute <= current; minute += MINUTE) started.push(...this.#dueAt(minute));
+    this.lastMinute = current;
+    await Promise.allSettled(started.map((state) => this.#fireSchedule(state)));
+  }
+
+  /** The schedules that run in `minute` (a timestamp at the start of a minute). */
+  #dueAt(minute) {
+    const due = [];
+    const clocks = new Map(); // what the wall clock says in each zone, worked out once per minute
+    for (const state of this.schedules.values()) {
+      try {
+        const { schedule } = state;
+        if (schedule.mode === 'every') {
+          if (minute < state.due) continue;
+          state.due += schedule.ms;
+          if (state.due <= minute) state.due = minute + schedule.ms; // after a stall, skip the runs that were missed
+        } else {
+          if (!clocks.has(schedule.tz)) clocks.set(schedule.tz, zonedParts(minute, schedule.tz));
+          const parts = clocks.get(schedule.tz);
+          // a local minute that happens twice (clocks going back) runs once
+          if (parts.key === state.lastKey || !cronMatches(schedule.cron, parts)) continue;
+          state.lastKey = parts.key;
+        }
+        due.push(state);
+      } catch (err) {
+        this.schedules.delete(state.key);
+        this.logger.log(state.guildId, 'warn', `The schedule in “${state.flow.name}” was switched off: ${friendlyError(err)}`, { flowId: state.flow.id, flowName: state.flow.name, nodeId: state.node.id });
+      }
+    }
+    return due;
+  }
+
+  async #fireSchedule({ guildId, flow, node }) {
+    const guild = this.client?.guilds.cache.get(guildId);
+    if (!guild) return;
+    const cid = String(node.data.channelId || '').replace(/\D/g, '');
+    const channel = cid ? await guild.channels.fetch(cid).catch(() => null) : null;
+    this.start(flow, node, { guild, channel: channel?.guildId === guildId ? channel : null }, { label: 'Schedule' });
   }
 
   async stop() {
     for (const ctx of this.live) this.abortRun(ctx);
-    for (const key of this.timers.keys()) clearInterval(this.timers.get(key));
-    this.timers.clear();
+    this.schedules.clear();
+    this.#disarmTicker();
     this.services.channelEdits.cancel();
   }
 }

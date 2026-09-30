@@ -1,5 +1,6 @@
 // Single source of truth for every node type. The editor renders its palette, cards and inspector from
 // this file; the server uses it to validate graphs, compute handles and activate triggers.
+import { CronError, nextRuns, scheduleOf, timeZoneNames, WEEKDAYS } from './cron.js';
 import { area, bool, color, idField, image, isVisible, list, multi, num, select, text, VAR_NAME_RE, when, whenNot } from './fields.js';
 import { uid } from './util.js';
 
@@ -231,15 +232,44 @@ for (const verb of ['joined', 'left']) {
     provides: () => [...USER, ...MEMBER, ...GUILD, ...CHANNEL], summary: (d) => (d.channelId ? d.channelId : 'any voice channel'),
   });
 }
+const EVERY_ONLY = whenNot('mode', 'time', 'cron');
+const dayList = (d) => {
+  const chosen = WEEKDAYS.filter(([v]) => (d.days || []).includes(v)).map(([, label]) => label);
+  return chosen.length && chosen.length < 7 ? chosen.join(', ') : 'daily';
+};
 trigger('trigger.schedule', {
-  label: 'Schedule', icon: '⏰', description: 'Runs repeatedly on a timer (at least every minute).',
+  label: 'Schedule', icon: '⏰',
+  description: 'Runs on a timer: every so many minutes, hours or days; at a set time of day (optionally only on some weekdays); or on a cron schedule. Set times and cron use the time zone you pick.',
   fields: [
-    num('every', 'Every', { default: 60, min: 1, required: true }),
-    select('unit', 'Unit', [['minutes', 'minutes'], ['hours', 'hours'], ['days', 'days']], { default: 'minutes' }),
+    select('mode', 'Run', [['every', 'Every … minutes, hours or days'], ['time', 'At a set time of day'], ['cron', 'On a cron schedule']], { default: 'every' }),
+    num('every', 'Every', { default: 60, min: 1, required: true, showIf: EVERY_ONLY }),
+    select('unit', 'Unit', [['minutes', 'minutes'], ['hours', 'hours'], ['days', 'days']], { default: 'minutes', showIf: EVERY_ONLY }),
+    text('time', 'Time', { default: '09:00', placeholder: '09:00', showIf: when('mode', 'time'), help: 'On a 24-hour clock, for example 09:30 or 18:00.' }),
+    multi('days', 'Only on these days', WEEKDAYS, { showIf: when('mode', 'time'), help: 'Leave them all off to run every day.' }),
+    text('cron', 'Cron expression', {
+      default: '0 9 * * 1-5', placeholder: '0 9 * * 1-5', showIf: when('mode', 'cron'),
+      help: 'Five fields: minute, hour, day of month, month, day of week. For example 0 9 * * 1-5 is 09:00 on weekdays, */15 * * * * is every 15 minutes, 0 0 1 * * is midnight on the 1st. Also @hourly, @daily, @weekly, @monthly.',
+    }),
+    select('timezone', 'Time zone', timeZoneNames(), { default: 'UTC', open: true, showIf: when('mode', 'time', 'cron'), help: 'The clock the time above is read on. Runs missed while the bot was off are not made up.' }),
     idField('channelId', 'Channel for context (optional)', 'channel'),
   ],
-  provides: () => [...GUILD, ...CHANNEL], summary: (d) => `every ${d.every || '?'} ${d.unit}`,
-  check: (d) => (Number(d.every) >= 1 ? [] : ['Interval must be at least 1.']),
+  preview: 'schedule', previewAfter: 'timezone',
+  provides: () => [...GUILD, ...CHANNEL],
+  summary: (d) => {
+    if (d.mode === 'time') return `${dayList(d)} at ${d.time || '?'} (${d.timezone || 'UTC'})`;
+    if (d.mode === 'cron') return `cron ${d.cron || '?'} (${d.timezone || 'UTC'})`;
+    return `every ${d.every || '?'} ${d.unit}`;
+  },
+  check: (d) => {
+    try {
+      const s = scheduleOf(d);
+      if (s.cron && !nextRuns(s.cron, s.tz, Date.now(), 1).length) return ['This schedule never runs: it asks for a date that does not exist, such as 31 February.'];
+      return [];
+    } catch (e) {
+      if (e instanceof CronError) return [e.message];
+      throw e;
+    }
+  },
 });
 trigger('trigger.manual', {
   label: 'Manual (Run button)', icon: '▶️',

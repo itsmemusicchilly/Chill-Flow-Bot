@@ -503,6 +503,53 @@ try {
   await page.getByRole('tab', { name: 'Nodes' }).click();
   ok(await page.getByRole('button', { name: 'Math', exact: true }).isVisible(), 'the Math block is in the palette');
 
+  // =================================================================================================
+  // Schedules: every …, at a set time, cron — with a time zone and a preview of the next runs
+  // =================================================================================================
+  await page.getByRole('button', { name: /Schedule/ }).click();
+  await page.locator('.fnode', { hasText: 'every 60 minutes' }).waitFor();
+  const sched = page.getByRole('complementary', { name: 'Node settings' });
+  const nextRunsList = sched.locator('.schedule-preview');
+  ok((await sched.getByLabel('Run', { exact: true }).inputValue()) === 'every' && (await sched.getByLabel(/^Every\b/).count()) === 1, 'a new Schedule starts as “Every … minutes”, as before');
+  ok((await sched.getByLabel('Time', { exact: true }).count()) === 0 && (await sched.getByLabel('Cron expression').count()) === 0, 'the time and cron fields are hidden until chosen');
+
+  await sched.getByLabel('Run', { exact: true }).selectOption('time');
+  await sched.getByLabel('Time', { exact: true }).waitFor();
+  ok((await sched.getByLabel(/^Every\b/).count()) === 0, 'choosing “At a set time” swaps the interval fields for a time, weekdays and a time zone');
+  const zone = sched.getByLabel('Time zone');
+  ok(await zone.evaluate((el) => el.value !== '' && [...el.options].some((o) => o.value === el.value)), 'a new schedule starts on a real time zone (the one of the browser)');
+  await sched.getByLabel('Time', { exact: true }).fill('18:30');
+  await sched.getByRole('group', { name: 'Only on these days' }).getByRole('button', { name: 'Mon', exact: true }).click();
+  await sched.getByRole('group', { name: 'Only on these days' }).getByRole('button', { name: 'Fri', exact: true }).click();
+  await zone.selectOption('Asia/Kuala_Lumpur');
+  await page.locator('.fnode', { hasText: 'Mon, Fri at 18:30 (Asia/Kuala_Lumpur)' }).waitFor();
+  await nextRunsList.locator('li').first().waitFor();
+  const runs = await nextRunsList.locator('li').allTextContents();
+  ok(runs.length === 5 && runs.every((t) => /^(Mon|Fri) \d{1,2} \w{3} \d{4}, 18:30$/.test(t)), `the preview lists the next five runs, on Mondays and Fridays at 18:30 (${runs[0]})`);
+  ok((await nextRunsList.textContent()).includes('(Asia/Kuala_Lumpur)'), 'and says which time zone they are read in');
+  ok((await zone.locator('option[value="Asia/Kolkata"]').count()) === 1 && (await zone.locator('option[value="Asia/Calcutta"]').count()) === 0, 'India is offered as Asia/Kolkata');
+  await nextRunsList.scrollIntoViewIfNeeded();
+  await shot('27-schedule-time');
+
+  await sched.getByLabel('Run', { exact: true }).selectOption('cron');
+  await sched.getByLabel('Cron expression').waitFor();
+  await sched.getByLabel('Cron expression').fill('nope');
+  await sched.getByText(/A cron expression has 5 fields/).waitFor();
+  ok((await nextRunsList.count()) === 0, 'a cron expression that cannot work is explained in words, and nothing is previewed');
+  await sched.getByLabel('Cron expression').fill('0 0 31 2 *');
+  await sched.getByText(/This schedule never runs/).waitFor();
+  await sched.getByLabel('Cron expression').fill('*/15 * * * *');
+  await nextRunsList.locator('li').first().waitFor();
+  const quarter = await nextRunsList.locator('li').allTextContents();
+  ok(quarter.length === 5 && quarter.every((t) => /:(00|15|30|45)$/.test(t)), `cron */15 previews quarter-hour runs (${quarter[0]})`);
+  await page.locator('.fnode', { hasText: 'cron */15 * * * * (Asia/Kuala_Lumpur)' }).waitFor();
+  await nextRunsList.scrollIntoViewIfNeeded();
+  await shot('28-schedule-cron');
+
+  await sched.getByLabel('Run', { exact: true }).selectOption('every');
+  await sched.getByText(/Counts from when the flow is saved/).waitFor();
+  ok((await sched.getByLabel(/^Every\b/).count()) === 1 && (await sched.getByLabel('Cron expression').count()) === 0, 'and back to “Every …” hides the cron field again');
+
   await page.setViewportSize({ width: 820, height: 700 });
   await page.waitForTimeout(300);
   await shot('11-narrow');

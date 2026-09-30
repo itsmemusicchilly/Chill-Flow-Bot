@@ -287,12 +287,17 @@ triggered this flow”.
 
 ### ⏰ Schedule
 
-`trigger.schedule` — Runs repeatedly on a timer (at least every minute).
+`trigger.schedule` — Runs on a timer: every so many minutes, hours or days; at a set time of day (optionally only on some weekdays); or on a cron schedule. Set times and cron use the time zone you pick.
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| Every | number | required; range 1–… |
-| Unit | select | options: minutes, hours, days |
+| Run | select | options: Every … minutes, hours or days, At a set time of day, On a cron schedule |
+| Every | number | required; shown when `mode` is not `time` / `cron`; range 1–… |
+| Unit | select | shown when `mode` is not `time` / `cron`; options: minutes, hours, days |
+| Time | text | shown when `mode` is `time`; On a 24-hour clock, for example 09:30 or 18:00. |
+| Only on these days | multiselect | shown when `mode` is `time`; options: Mon, Tue, Wed, Thu, Fri, Sat, Sun; Leave them all off to run every day. |
+| Cron expression | text | shown when `mode` is `cron`; Five fields: minute, hour, day of month, month, day of week. For example 0 9 * * 1-5 is 09:00 on weekdays, */15 * * * * is every 15 minutes, 0 0 1 * * is midnight on the 1st. Also @hourly, @daily, @weekly, @monthly. |
+| Time zone | select | shown when `mode` is `time` / `cron`; options: a long list, chosen from the drop-down; The clock the time above is read on. Runs missed while the bot was off are not made up. |
 | Channel for context (optional) | channel |  |
 
 **Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`

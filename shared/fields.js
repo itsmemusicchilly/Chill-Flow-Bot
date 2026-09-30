@@ -66,7 +66,7 @@ export function checkFields(fields, data, prefix, push) {
         push(`${name} must be between ${f.min ?? '−∞'} and ${f.max ?? '∞'}.`);
       }
     }
-    if (f.type === 'select' && !f.options.some((o) => o.value === v)) push(`${name} has an invalid value.`);
+    if (f.type === 'select' && !f.open && !f.options.some((o) => o.value === v)) push(`${name} has an invalid value.`); // `open`: the list is a convenience, the node's own check judges the value
     // Anything that starts with "upload:" is meant as an uploaded picture, so a mangled one is a mistake, not a link.
     if (f.type === 'image' && !isTemplate(v) && looksLikeUpload(v) && !uploadIdOf(v)) push(`${name} is not a valid uploaded image. Choose it again.`);
   }

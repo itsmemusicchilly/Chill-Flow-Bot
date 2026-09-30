@@ -2,6 +2,7 @@ import { useMemo, useRef } from 'react';
 import { availableVariables, CATEGORIES, NODE_TYPES } from '@shared/catalog.js';
 import { useEditor } from '../context.js';
 import { FieldList } from './FieldEditor.jsx';
+import SchedulePreview from './SchedulePreview.jsx';
 
 function insertAtCaret(target, text) {
   const { el, apply } = target;
@@ -19,6 +20,10 @@ export default function Inspector({ node, nodes, edges, issues, onChange, onDupl
   const vars = useMemo(() => (node ? availableVariables(nodes, edges, node.id, { forms: guildData.forms }) : []), [node, nodes, edges, guildData.forms]);
   if (!node || !def) return null;
   const cat = CATEGORIES[def.category];
+  // a node with a live preview (Schedule) shows it right after the field named by `previewAfter`, not at the very bottom
+  const split = def.preview ? def.fields.findIndex((f) => f.key === def.previewAfter) + 1 : 0;
+  const fieldsBefore = split ? def.fields.slice(0, split) : def.fields;
+  const fieldsAfter = split ? def.fields.slice(split) : [];
 
   const useVar = (path) => {
     const token = `{{${path}}}`;
@@ -43,7 +48,9 @@ export default function Inspector({ node, nodes, edges, issues, onChange, onDupl
       )}
 
       <div className="insp-fields">
-        <FieldList fields={def.fields} data={node.data} onChange={(k, v) => onChange(node.id, { [k]: v })} focusRef={focusRef} />
+        <FieldList fields={fieldsBefore} data={node.data} onChange={(k, v) => onChange(node.id, { [k]: v })} focusRef={focusRef} />
+        {def.preview === 'schedule' && <SchedulePreview data={node.data} />}
+        {fieldsAfter.length > 0 && <FieldList fields={fieldsAfter} data={node.data} onChange={(k, v) => onChange(node.id, { [k]: v })} focusRef={focusRef} />}
       </div>
 
       {!def.isTrigger && (

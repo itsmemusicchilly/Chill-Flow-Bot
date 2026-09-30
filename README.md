@@ -29,8 +29,8 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (431 unit/integration tests plus a
-> 80-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (493 unit/integration tests plus a
+> 90-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it.
 
 ## Quick start
@@ -184,6 +184,43 @@ server (both need `ENABLE_MEMBERS_INTENT`). Handy for a thank-you message: *"Tha
   that person's boosts ended (`{{boost.days}}` is how long they boosted).
 * Discord only reports the change together with another change on the member (in practice the “Server Booster” role), so if an admin
   deleted that role some boosts may go unnoticed. Members the bot has not loaded yet are ignored rather than guessed at.
+
+### Schedules
+
+The **Schedule** trigger has three modes. The editor shows the **next five runs** under the settings, so you can see what you asked for
+before you switch the flow on.
+
+| Mode | Use it for |
+| --- | --- |
+| **Every … minutes, hours or days** | “every 30 minutes”. Counted from when the schedule was switched on; it keeps counting when you save *other* flows, and starts again if you change the schedule itself or the bot restarts. Any length up to 10 years. |
+| **At a set time of day** | “every day at 09:00”, “Mondays and Fridays at 18:30”. A time on a 24-hour clock and the weekdays you want (none ticked = every day). |
+| **On a cron schedule** | anything else — see below. |
+
+**Time zones.** A set time or cron schedule is read on the clock of the **Time zone** you pick (a new one starts on your browser's zone; `UTC`
+is always available). Old and new names of a zone both work (`Asia/Kolkata` and `Asia/Calcutta`).
+
+**Cron** is five fields — `minute hour day-of-month month day-of-week`:
+
+| Write | It runs |
+| --- | --- |
+| `*/15 * * * *` | every 15 minutes, on the quarter hours |
+| `0 9 * * 1-5` | 09:00 on weekdays (`MON-FRI` works too) |
+| `30 18 * * FRI` | 18:30 on Fridays |
+| `0 0 1 * *` | midnight on the 1st of every month |
+| `0 12 1,15 * *` | noon on the 1st and the 15th |
+| `@hourly` `@daily` `@weekly` `@monthly` `@yearly` | shortcuts |
+
+Fields take `*`, lists (`1,15`), ranges (`1-5`), steps (`*/10`, `10-40/5`), and month/day names (`JAN`, `MON`); `7` also means Sunday.
+As in classic cron, when you restrict **both** the day of the month and the day of the week, a day counts if **either** matches
+(`0 12 13 * FRI` = every 13th *and* every Friday). No seconds, and no `L`, `W` or `#`.
+
+* The bot looks once at the start of every minute, so a run starts within a moment of it. Minutes are the smallest step.
+* **Runs missed while the bot was off are not made up**, and a restart never fires a burst. Set-time and cron schedules simply carry on
+  with the clock; “every …” counts again from the restart.
+* **Clocks changing.** A time that does not exist that day (02:30 when the clocks jump forward) is skipped that day; a time that happens
+  twice (clocks going back) runs once.
+* A schedule that cannot work — a cron expression that does not parse, an unknown time zone, a date that never exists like 31 February —
+  is shown as a problem on the node and does not run (the server's log says why).
 
 ### Templates
 
@@ -358,7 +395,7 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 ## Development
 
 ```bash
-npm test          # 431 unit + API + event + button/transcript + public-page + upload + draft/live + access + maths + counter tests (fake Discord objects, in-memory SQLite)
+npm test          # 493 unit + API + event + button/transcript + public-page + upload + draft/live + access + maths + counter + cron/schedule tests (fake Discord objects, in-memory SQLite, a fake clock)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
@@ -390,6 +427,9 @@ Not yet automated — please run through this once on a test server:
       closes; with no log channel the ticket stays open and says why.
 - [ ] Boosts: boost the server with a test account → *Member Boosted Server* fires once (not again for a second boost); remove the boost
       → *Member Stopped Boosting* fires. Check it still fires for a member who was not cached (restart the bot first).
+- [ ] Schedules: set *At a set time of day* two minutes ahead in your own time zone — the log shows one “▶ … Schedule” run in that minute
+      and none after it; restart the bot and it does not run again. A cron schedule of `*/5 * * * *` runs on the clock (10:05, 10:10 …), and saving
+      other flows does not delay an “Every 1 hour” schedule.
 - [ ] Two accounts press the same panel button at the same time: each only sees their own variables.
 - [ ] Counters: switch on the *Member counter* template, pick a channel, then have several people join/leave within a few minutes —
       the first two renames appear at once, the log says the next is held back, and about ten minutes later the name settles on the

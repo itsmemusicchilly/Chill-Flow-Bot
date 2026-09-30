@@ -165,6 +165,7 @@ export default function FieldEditor({ field, value, onChange, focusRef }) {
     case 'select':
       control = (
         <select id={id} value={value ?? ''} onChange={(e) => onChange(e.target.value)}>
+          {field.open && value && !field.options.some((o) => o.value === value) && <option value={value}>{value}</option>}
           {field.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       );

@@ -3,6 +3,7 @@ import {
 } from '@xyflow/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { defaultsFor, getOutputs, isTriggerType, NODE_TYPES } from '@shared/catalog.js';
+import { localTimeZone } from '@shared/cron.js';
 import { toggleConnection } from '@shared/connections.js';
 import { LIMITS } from '@shared/limits.js';
 import { uid } from '@shared/util.js';
@@ -125,7 +126,9 @@ export default function FlowWorkspace({ gid, flow, meta, guildData, flash, apiRe
       const center = rf.screenToFlowPosition({ x: (box?.left ?? 0) + (box?.width ?? 600) / 2 - 130, y: (box?.top ?? 0) + (box?.height ?? 400) / 3 });
       pos = freeSpot(graphRef.current.nodes, center);
     }
-    const node = { id: freshId(), type, position: { x: Math.round(pos.x), y: Math.round(pos.y) }, data: defaultsFor(type), selected: true };
+    const data = defaultsFor(type);
+    if (type === 'trigger.schedule') data.timezone = localTimeZone(); // a new schedule starts on the clock of the person setting it up
+    const node = { id: freshId(), type, position: { x: Math.round(pos.x), y: Math.round(pos.y) }, data, selected: true };
     setGraph((g) => ({ ...g, nodes: [...g.nodes.map((n) => ({ ...n, selected: false })), node] }));
     markDirty();
   }, [rf, markDirty, toast]); // eslint-disable-line react-hooks/exhaustive-deps
