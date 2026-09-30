@@ -5,6 +5,7 @@ export const EditorContext = createContext({
   gid: null,
   flowId: null,
   dirty: false,
+  feedMinMinutes: 5,
   guildData: { channels: [], roles: [] },
   issuesByNode: {},
   flash: {},

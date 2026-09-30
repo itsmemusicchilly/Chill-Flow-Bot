@@ -61,7 +61,8 @@ describe('the settings of the platform triggers', () => {
     assert.deepEqual(check('trigger.youtube.subscribers', { channel: UC_A, step: 1000, minutes: 60 }), []);
     assert.match(check('trigger.youtube.subscribers', { channel: 'nope', step: 1000, minutes: 60 })[0], /starts with UC/);
     assert.deepEqual(check('trigger.twitch.live', { login: 'shroud', minutes: 2 }), []);
-    assert.match(check('trigger.twitch.live', { login: '', minutes: 2 })[0], /Twitch channel name/);
+    assert.match(check('trigger.twitch.live', { login: 'no way!', minutes: 2 })[0], /Twitch channel name/);
+    assert.deepEqual([check('trigger.twitch.live', { login: '', minutes: 2 }), check('trigger.youtube.subscribers', { channel: ' ', step: 10, minutes: 60 })], [[], []], 'a blank one is already reported as “required”, not twice');
   });
 });
 
@@ -465,6 +466,13 @@ describe('what the editor is told about the platforms', () => {
     assert.equal(me.status, 200);
     assert.deepEqual(me.json.meta.integrations, { youtube: true, twitch: true });
     for (const secret of ['SECRET-YT-KEY', 'SECRET-TWITCH-SECRET', 'twitch-id']) assert.ok(!me.text.includes(secret), `${secret} leaked to the browser`);
+  });
+
+  it('how often feeds may be looked at, so the editor can say what the bot will really do', async () => {
+    assert.equal((await h.call('GET', '/api/me')).json.meta.feedMinMinutes, 5);
+    await h.close();
+    h = await startHarness({ config: { integrations: KEYS, feedMinMinutes: 30 } });
+    assert.equal((await h.call('GET', '/api/me')).json.meta.feedMinMinutes, 30);
   });
 
   it('a platform the operator has not set up is reported as such, and a flow that uses it is shown the problem', async () => {

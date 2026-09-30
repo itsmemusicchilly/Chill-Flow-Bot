@@ -110,6 +110,13 @@ describe('webhook addresses and calls', () => {
       assert.ok(got.some((m) => m === 'got:  /  / '), 'nothing sent, nothing shown');
     });
 
+    it('reaches nested fields and list items by their path', async () => {
+      const { path } = await setup({ content: '{{webhook.body.user.name}} / {{webhook.body.tags.1}} / {{webhook.body.user.missing | default:none}}' });
+      assert.equal((await h.call('POST', path, hook({ body: { user: { name: 'Sam' }, tags: ['a', 'b'] } }))).status, 202);
+      await settle(60);
+      assert.deepEqual(said(), ['Sam / b / none']);
+    });
+
     it('needs no login, no Origin and no cookie — it is the address that is the permission', async () => {
       const { path } = await setup();
       assert.equal((await h.call('POST', path, hook({ body: { title: 'x' }, origin: 'https://evil.example' }))).status, 202);

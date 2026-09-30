@@ -21,17 +21,21 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **Reusable panels.** Give a button a *Button ID* and handle it with a **Button Clicked** trigger instead: it works on any
   copy of the message, from any flow, survives restarts, and **Toggle Role** turns a button into a one-press role switch.
   Ready-made *Ticket panel* and *Button role panel* templates show how.
-* **56 nodes**: 27 triggers (commands, buttons, messages, joins/leaves/kicks/bans/timeouts, server boosts, role and channel events,
-  reactions, voice, schedule, manual, form submitted) and 29 actions/logic nodes (messages with buttons/menus/forms, member moderation,
+* **Alerts from other platforms.** Run a flow when a YouTube channel uploads, a subreddit / Bluesky / Mastodon account / blog posts, a Twitch
+  channel goes live, a channel passes a subscriber milestone — or when *any* tool (Zapier, IFTTT, StreamElements…) calls a secret address, which is
+  how X, TikTok and Instagram posts or Twitch followers reach the bot (see [Alerts from other platforms](#alerts-from-other-platforms)).
+* **60 nodes**: 31 triggers (commands, buttons, messages, joins/leaves/kicks/bans/timeouts, server boosts, role and channel events,
+  reactions, voice, schedule, new feed item, webhook, YouTube subscribers, Twitch live, manual, form submitted) and 29 actions/logic nodes (messages with buttons/menus/forms, member moderation,
   channels and ticket transcripts, roles, variables and maths, conditions, loops, cooldowns, waits). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
 * **Remembers things**: run, per-server and per-user variables, usable everywhere as `{{templates}}` — with maths built in
   (see [Doing maths](#doing-maths)).
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (517 unit/integration tests plus a
-> 120-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
-> [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it.
+> **Status:** the engine, API, security rules and editor are covered by automated tests (657 unit/integration tests plus a
+> 142-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it. The alert triggers (feeds, YouTube, Twitch, webhooks) were tested against a pretend network and fake accounts,
+> not the real platforms; the same checklist covers them.
 
 ## Quick start
 
@@ -72,9 +76,12 @@ real dashboard and API against a fake in-memory Discord — useful for developme
 | `ENABLE_MEMBERS_INTENT` | `false` | Needed by *Member Joined / Left / Kicked / Timed Out*, *Member Boosted Server / Stopped Boosting* and *Role Given/Removed* triggers |
 | `ENABLE_MESSAGE_CONTENT_INTENT` | `false` | Needed by the *Message Received* trigger. Optional for *Save Transcript*: without it Discord hides what other people wrote, so a transcript lists who wrote when, but not what |
 
+| `FEED_MIN_INTERVAL_MINUTES` | `5` | The shortest time a *New Feed Item* trigger may wait between looks at a feed (whole minutes, at least 1) |
+| `YOUTUBE_API_KEY` | — | Optional. A YouTube Data API v3 key, for the *YouTube Subscribers* trigger |
+| `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` | — | Optional. A free Twitch developer application, for the *Twitch Channel Live* trigger |
 | `LIMIT_*` | unlimited | Optional caps, see [Limits](#limits) |
 
-Triggers whose intent is off are greyed out in the palette and never activated (their node shows why).
+Triggers whose intent is off — or whose platform key is missing — are greyed out in the palette and never activated (their node shows why). Keys are only ever read by the server; the editor is told yes or no, never the key.
 
 ### Limits
 
@@ -93,6 +100,8 @@ loop iterations, steps per run and as long a wait as you like. On a private bot 
 | `LIMIT_COMPONENT_STATE_DAYS` | how long a message's remembered button data is kept (default: until the message or its channel is deleted; ephemeral replies always expire after a day) |
 | `LIMIT_PAGES_PER_GUILD` · `LIMIT_BLOCKS_PER_PAGE` · `LIMIT_RESPONSES_PER_GUILD` | pages per server, blocks per page, stored form responses per server |
 | `LIMIT_UPLOAD_BYTES` · `LIMIT_UPLOADS_PER_GUILD` · `LIMIT_STORAGE_BYTES_PER_GUILD` | size of one uploaded picture, pictures per server, total picture storage per server |
+| `LIMIT_FEEDS_PER_GUILD` | feeds and Twitch/YouTube channels one server may watch |
+| `LIMIT_WEBHOOK_BYTES` · `LIMIT_WEBHOOKS_PER_MINUTE` | one webhook call's size (default 64 KB) / calls per minute to one address |
 | `LIMIT_REQUEST_BYTES` | HTTP request body (default 50 MB; always has a ceiling, max 1 GB) |
 
 `.env.example` contains a commented **public-host preset** with sensible caps.
@@ -102,7 +111,8 @@ per message, 25 options per slash command, 5 form inputs, 2000 characters per me
 memory and CPU, `setTimeout`'s maximum (~24.8 days), the form wait (10 min: Discord's interaction tokens expire), and the
 login/API/public-site rate limits that protect the site itself (10 form submissions per minute per visitor, 60 per IP, 600 page views
 per IP; a form answer is at most 10 000 characters and a public request 256 KB; an uploaded picture is at most 32 MB and 64 megapixels
-and 30 uploads per minute per person).
+and 30 uploads per minute per person; a webhook call is at most 256 KB and one address takes at most 600 calls a minute; a feed answer is
+read for at most 10 seconds and 1 MB; at most 5 new posts are announced per look).
 
 **How it stays safe without a step cap:** a run that loops forever uses constant memory and yields to the event loop, so the
 bot keeps answering everyone else (measured: 650k steps in 4 s, worst stall 7 ms). **To stop a runaway flow, switch it Off
@@ -242,6 +252,53 @@ As in classic cron, when you restrict **both** the day of the month and the day 
 * A schedule that cannot work — a cron expression that does not parse, an unknown time zone, a date that never exists like 31 February —
   is shown as a problem on the node and does not run (the server's log says why).
 
+### Alerts from other platforms
+
+Three ways in, from “nothing to set up” to “needs a key from the bot operator”. Pick the trigger, say what to watch, save, switch the flow on.
+
+| Platform | You can react to | Use | Needs |
+| --- | --- | --- | --- |
+| **YouTube** | a new video | *New Feed Item* → YouTube (paste the channel ID, `UC…`) | nothing |
+| **YouTube** | subscriber milestones | *YouTube Subscribers* | operator's `YOUTUBE_API_KEY` |
+| **Twitch** | a channel goes live | *Twitch Channel Live* | operator's Twitch application |
+| **Reddit** | a new post in a subreddit | *New Feed Item* → Reddit | nothing |
+| **Bluesky** | a new post by an account | *New Feed Item* → Bluesky | nothing |
+| **Mastodon** | a new post by an account | *New Feed Item* → Any feed address, `https://server/@name.rss` | nothing |
+| **Blogs, podcasts, GitHub releases…** | a new entry | *New Feed Item* → Any feed address (`…/releases.atom` on GitHub) | nothing |
+| **X, TikTok, Instagram** | a new post | *Webhook Received*, called by a tool that can watch them | the tool (Zapier, IFTTT, Make…) — **not the bot** |
+| **Twitch followers** and any other “someone followed / subscribed” | the event | *Webhook Received*, called by StreamElements, Streamlabs or Zapier | the tool |
+
+What is **not** possible, and why, so you are not surprised: X, TikTok and Instagram publish no free public feed, and Twitch only tells an app
+about a channel's followers with a token the *streamer* grants — so the bot cannot watch those by itself. What such a tool can offer changes over time; the
+bot only promises the address it gives you. YouTube **rounds** public subscriber counts to three significant figures once a channel has more than 1,000
+and a channel may hide its count, so choose a step much bigger than the rounding (every 100 for a small channel, every 10,000 for a big one).
+
+**New Feed Item** reads RSS, Atom and JSON Feed from any **public https address** and gives the flow `{{feed.title}}`, `{{feed.link}}`, `{{feed.author}}`,
+`{{feed.summary}}` (plain text), `{{feed.published}}`, `{{feed.image}}`, `{{feed.id}}` and `{{feed.name}}`. The editor shows the exact address it will read.
+
+* **The first look only remembers what is there.** Posts that already exist when you switch the flow on are not announced. After that each new post is announced
+  **once**, oldest first, even across restarts, and a post that appeared while the bot was off is announced when it is back (if the feed still lists it).
+  **Switching a flow off forgets what it had seen** — when you switch it on again it starts fresh, so posts made while it was off are not announced.
+* **Looks every N minutes** (at least 5; the operator can raise that). One request per address however many servers watch it. **At most 5** new posts are
+  announced per look; if a burst is bigger the newest five are announced and the log says how many were left out.
+* **A feed that cannot be read** (moved, down, not a feed, too big) is written to the server's log **once**, then the bot waits longer each time (5 minutes, up to 6 hours)
+  and logs again when it works. Changing the address starts fresh.
+* Text from a feed is only ever *text*: `{{…}}` in a title is shown as written, and `@everyone` in it pings nobody.
+
+**Webhook Received** gives the trigger a **secret address** (`https://your-bot/hooks/<43 characters>`), shown in the inspector after the first save, with **Copy** and
+**Generate a new address** (the old one stops working at once). Anything that can send an HTTP `POST` can start the flow:
+
+```
+curl -X POST https://your-bot.example/hooks/<the address> -H 'Content-Type: application/json' -d '{"title":"New post","message":"Hello","url":"https://example.com/1"}'
+```
+
+The flow gets `{{webhook.body.title}}` (any field of the JSON or form, `{{webhook.body.user.name}}` for nested ones), `{{webhook.text}}` (everything as text),
+`{{webhook.query.name}}` (a `?name=value` on the address), `{{webhook.method}}` and `{{webhook.contentType}}`. The bot answers `202` at once and runs the flow afterwards;
+`404` is an unknown address, `405` any method but POST, `413` too big, `415` an unsupported content type (JSON, form or text are accepted), `429` too many calls, `409` the flow is off.
+**Treat the address like a password**: whoever has it can start that flow (they cannot do anything else). A copied or imported flow gets its own new address, never the original's.
+
+Five starter flows are in **New flow → from template**: *YouTube upload announcer*, *Post announcer*, *Twitch live alert*, *YouTube subscriber milestone* and *Webhook alert*.
+
 ### Templates
 
 `{{path}}` works in any text field. Add filters with `|`: `{{user.name | upper}}`, `{{option.reason | default:none}}`.
@@ -261,6 +318,10 @@ As in classic cron, when you restrict **both** the day of the month and the day 
 | `user.vars.<name>`, `guild.vars.<name>` | remembered per-user / per-server variables |
 | `loop.index .item`, `error.message`, `cooldown.remaining`, `now.iso .date .time .timestamp` | misc |
 | `executor.*`, `reason`, `timeout.*` | moderator details for kick/ban/timeout triggers |
+| `feed.title .link .author .summary .published .image .id .name` | *New Feed Item*: the new post |
+| `webhook.text .body.<field> .query.<name> .method .contentType` | *Webhook Received*: what was sent |
+| `youtube.subscribers .milestone .previous .channelTitle .channelId .url` | *YouTube Subscribers* |
+| `twitch.user .login .title .game .viewers .url .thumbnail .started .id` | *Twitch Channel Live* |
 
 Filters: `default:x`, `upper`, `lower`, `trim`, `length`, `json`, plus the maths filters below. Filters chain left to right.
 Substituted text is never evaluated again, so member-supplied text cannot inject templates.
@@ -415,7 +476,15 @@ This is a multi-tenant service: many servers share one bot process, so isolation
   user-supplied regexes run under a hard timeout (a catastrophic pattern cannot freeze the bot).
 * **Limits**: none by default — see [Limits](#limits) for the caps you can turn on (recommended when hosting for others).
   The login and dashboard-API rate limits are always on.
-* Deliberately **not included**: an HTTP-request node (server-side request forgery risk in a shared host).
+* **Outbound requests** (feeds, YouTube, Twitch) go through **one guarded fetcher** that flows can never call directly — there is still deliberately **no HTTP-request node**.
+  Only `https` on the standard port, no user names or passwords in the address, no raw IP addresses or local names. The name is resolved by the fetcher itself and
+  the connection is refused if *any* answer is a private, loopback, link-local (`169.254.169.254`), shared, multicast or reserved address — IPv4 and IPv6, including mapped and
+  NAT64/6to4/Teredo forms — checked on **every** connection, so a name that changes its answer later (DNS rebinding) is caught. Redirects are followed by hand (3 at most), each
+  hop judged again; 10 s per request; the answer is cut off at 1 MB counted after decompression. Feeds are read by a small parser that never expands entities or DTDs, so
+  “billion laughs” and XXE files are inert. Feed text is plain text, feed links must be http(s) and pictures https.
+* **Webhooks** (the only other unauthenticated way in): a 256-bit random address per trigger (its own table, never in the flow, never exported or copied), compared only by lookup;
+  its own small body limit, JSON/form/text only, rate limits per address and per IP (with a stricter one for wrong guesses), the payload is reshaped to plain data (depth, key count
+  and string length capped, `__proto__` dropped) and treated as text, never as a template.
 
 ## Hosting notes
 
@@ -427,7 +496,7 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 ## Development
 
 ```bash
-npm test          # 517 unit + API + event + button/transcript + public-page + upload + draft/live + access + maths + counter + cron/schedule + role-check/title tests (fake Discord objects, in-memory SQLite, a fake clock)
+npm test          # 657 unit + API + event + button/transcript + public-page + upload + draft/live + access + maths + counter + cron/schedule + role-check/title + guarded-fetch/feed/webhook/platform-alert tests (fake Discord objects, in-memory SQLite, a fake clock, a pretend network)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
@@ -435,7 +504,7 @@ npm run docs      # regenerate docs/NODES.md from the catalog
 
 ```
 shared/   catalog.js (every node) · blocks.js (page blocks) · forms.js · render-page.js · page-meta.js (link previews) · validate.js · templates — used by the editor AND server
-server/   app/api/auth/public (the /s pages) · uploads + images (the /i pictures) · db (node:sqlite) · engine/ (runner, templates, executors, responder) · bot/ (events, commands)
+server/   app/api/auth/public (the /s pages) · hooks (the /hooks webhook addresses) · uploads + images (the /i pictures) · db (node:sqlite) · engine/ (runner, templates, executors, responder, watchers) · net/ (the guarded fetcher) · feeds/ (feed parser, YouTube, Twitch) · bot/ (events, commands)
 web/      React + @xyflow/react editor
 test/     node:test suites · e2e/ (Playwright) · helpers/fakes.js
 ```
@@ -466,6 +535,13 @@ Not yet automated — please run through this once on a test server:
       nodes by dragging, add one from **Nodes**, save; open the page builder, switch the three tabs, publish; open a published page and its link preview.
 - [ ] Role check: a *Condition* with “has the role” follows True for a member with the role and False without it; give and take the role and run again
       (it must notice at once); with Member set to someone else it looks at them; delete the role and it says “no” and the log warns.
+- [ ] Feeds (needs the real internet): a *New Feed Item* on a YouTube channel ID, a subreddit and a Bluesky handle each log “Now watching …” within a minute and announce nothing;
+      upload / post something and, within the interval, the flow posts it exactly once; restart the bot and it is not posted again. Point one at a wrong address and the log says why,
+      once. An `http://` or `https://localhost/` address is refused in the editor.
+- [ ] Webhook: save a *Webhook Received* flow, copy its address, `curl -X POST` it with JSON → `202` and the message appears; *Generate a new address* → the old one answers `404`.
+      Call it from Zapier/IFTTT/StreamElements once with a real X / TikTok / Instagram / follower event and check which fields you can use.
+- [ ] YouTube Subscribers with a real key: the log says the current count; a wrong key says the operator's key was refused (and never prints it). Twitch Channel Live with a real
+      application: go live on a test channel → one announcement; stay live → none; end and start again → one more. With no key set the nodes show “not set up”.
 - [ ] Two accounts press the same panel button at the same time: each only sees their own variables.
 - [ ] Counters: switch on the *Member counter* template, pick a channel, then have several people join/leave within a few minutes —
       the first two renames appear at once, the log says the next is held back, and about ten minutes later the name settles on the
@@ -490,5 +566,5 @@ Not yet automated — please run through this once on a test server:
 
 ## Ideas not done yet
 
-Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, HTTP/webhook node with SSRF protection, autocomplete options, sub-commands, embed preview, undo/redo, flow version history,
+Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, an outbound HTTP/webhook node, watching X/TikTok/Instagram/Twitch followers directly (needs each account's own consent), autocomplete options, sub-commands, embed preview, undo/redo, flow version history,
 sharding.

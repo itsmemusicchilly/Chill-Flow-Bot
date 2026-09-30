@@ -347,6 +347,7 @@ trigger('trigger.youtube.subscribers', {
   ],
   summary: (d) => (d.channel ? `${String(d.channel).slice(-24)} · every ${d.step || '?'}` : 'choose a channel'),
   check: (d) => {
+    if (!String(d.channel ?? '').trim()) return []; // “required” already says so
     try { youtubeSettings(d); return []; } catch (e) { if (e instanceof FeedSettingError) return [e.message]; throw e; }
   },
 });
@@ -365,6 +366,7 @@ trigger('trigger.twitch.live', {
   ],
   summary: (d) => (d.login ? String(d.login).replace(/^@/, '').slice(0, 40) : 'choose a channel'),
   check: (d) => {
+    if (!String(d.login ?? '').trim()) return [];
     try { twitchSettings(d); return []; } catch (e) { if (e instanceof FeedSettingError) return [e.message]; throw e; }
   },
 });

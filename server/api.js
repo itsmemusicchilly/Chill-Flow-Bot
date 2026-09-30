@@ -36,7 +36,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
         id: g.id, name: g.name, icon: iconUrl(g), botPresent: bot.hasGuild(g.id), inviteUrl: bot.hasGuild(g.id) ? null : bot.inviteUrl(g.id),
       })),
       meta: {
-        intents: config.intents, integrations: flags, limits: limitsToJSON(), minPermission: config.minPermission,
+        intents: config.intents, integrations: flags, feedMinMinutes: config.feedMinMinutes ?? 5, limits: limitsToJSON(), minPermission: config.minPermission,
         uploads: { available: imagesAvailable(), publicBase: uploads.publicBase, maxBytes: Math.min(IMAGE_LIMITS.maxInputBytes, isCapped(LIMITS.uploadBytes) ? LIMITS.uploadBytes : Infinity) },
         templates: TEMPLATES.map((t) => ({ id: t.id, name: t.name, description: t.description })),
       },

@@ -569,6 +569,79 @@ try {
   await sched.getByText(/Counts from when the flow is saved/).waitFor();
   ok((await sched.getByLabel(/^Every\b/).count()) === 1 && (await sched.getByLabel('Cron expression').count()) === 0, 'and back to “Every …” hides the cron field again');
 
+
+  // =================================================================================================
+  // Alerts from other platforms: starter flows, the webhook address, feed sources, and platforms the operator has not set up
+  // =================================================================================================
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
+  await page.getByRole('tab', { name: 'Flows' }).click();
+  await page.getByRole('button', { name: '+ New flow' }).click();
+  for (const name of [/YouTube upload announcer/, /Post announcer/, /Twitch live alert/, /YouTube subscriber milestone/, /Webhook alert/]) await page.getByRole('button', { name }).waitFor();
+  ok(true, 'the five alert starter flows are in the template list');
+  await page.getByRole('button', { name: /Webhook alert/ }).click();
+  await page.locator('.fnode', { hasText: 'Webhook Received' }).waitFor();
+  await page.locator('.fnode', { hasText: 'Webhook Received' }).click();
+  const hookPanel = page.getByRole('complementary', { name: 'Node settings' });
+  await hookPanel.locator('#webhook-url').waitFor();
+  const hookUrl = await hookPanel.locator('#webhook-url').inputValue();
+  ok(new RegExp(`^${BASE.replace(/[.]/g, '\\.')}/hooks/[A-Za-z0-9_-]{43}$`).test(hookUrl), 'a saved Webhook Received trigger shows its secret address');
+  ok((await hookPanel.locator('#webhook-url').getAttribute('readonly')) !== null, 'the address is read-only');
+  await hookPanel.getByRole('button', { name: 'Copy' }).click();
+  ok((await page.evaluate(() => navigator.clipboard.readText())) === hookUrl, 'Copy puts the address on the clipboard');
+  await shot('36-webhook-panel');
+  const call = (url) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"title":"hi"}' }).then((r) => r.status);
+  ok((await call(hookUrl)) === 409, 'the address is live (a flow that is switched off answers 409)');
+  await hookPanel.getByRole('button', { name: 'Make a new address' }).click();
+  await page.waitForFunction((old) => document.querySelector('#webhook-url') && document.querySelector('#webhook-url').value !== old, hookUrl);
+  const newUrl = await hookPanel.locator('#webhook-url').inputValue();
+  ok(newUrl !== hookUrl && (await call(hookUrl)) === 404 && (await call(newUrl)) === 409, 'Make a new address: the old one stops working at once, the new one works');
+
+  await page.getByRole('tab', { name: 'Nodes' }).click();
+  await page.getByRole('button', { name: /New Feed Item/ }).click();
+  await page.locator('.fnode', { hasText: 'New Feed Item' }).waitFor();
+  const feed = page.getByRole('complementary', { name: 'Node settings' });
+  await feed.getByLabel('Where').waitFor();
+  ok(await feed.getByLabel('YouTube channel ID').isVisible() && (await feed.getByLabel(/^Feed address/).count()) === 0, 'New Feed Item starts on YouTube and asks for a channel ID');
+  await feed.getByLabel('YouTube channel ID').fill(`UC${'a'.repeat(22)}`);
+  await feed.locator('.feed-url').waitFor();
+  ok((await feed.locator('.feed-url').textContent()) === `https://www.youtube.com/feeds/videos.xml?channel_id=UC${'a'.repeat(22)}`, 'it shows the exact address the bot will read');
+  await feed.getByLabel('Where').selectOption('url');
+  for (const [typed, message] of [['http://blog.example.com/feed.xml', /Only https/], ['https://localhost/feed', /not a public website name/], ['https://127.0.0.1/x', /raw IP/], ['https://user:pw@blog.example.com/x', /user name or password/]]) {
+    await feed.getByLabel(/^Feed address/).fill(typed);
+    await feed.getByText(message).waitFor();
+    ok((await feed.locator('.feed-url').count()) === 0, `${typed} is refused in words, and no address is previewed`);
+  }
+  await feed.getByLabel(/^Feed address/).fill('https://blog.example.com/feed.xml');
+  await feed.locator('.feed-url').waitFor();
+  await page.locator('.fnode', { hasText: 'blog.example.com/feed.xml' }).waitFor();
+  ok((await feed.locator('.issues .error').count()) === 0, 'a public https address is accepted, and the node shows what it watches');
+  await feed.getByLabel(/^Check every/).fill('1');
+  await feed.getByText(/must be between 5 and/).waitFor();
+  ok(true, 'checking more often than every 5 minutes is refused');
+  await feed.getByLabel(/^Check every/).fill('30');
+  await feed.getByLabel('Where').selectOption('reddit');
+  await feed.getByLabel('Subreddit').fill('r/gaming');
+  ok((await feed.locator('.feed-url').textContent()) === 'https://www.reddit.com/r/gaming/new/.rss', 'Reddit: r/gaming becomes the subreddit\'s feed address');
+  await feed.getByLabel('Where').selectOption('bluesky');
+  await feed.getByLabel('Bluesky handle').fill('@alice.bsky.social');
+  ok((await feed.locator('.feed-url').textContent()) === 'https://bsky.app/profile/alice.bsky.social/rss', 'Bluesky: a handle becomes its feed address');
+  await feed.locator('.feed-url').scrollIntoViewIfNeeded();
+  await shot('37-feed-inspector');
+
+  await page.getByRole('tab', { name: 'Nodes' }).click();
+  const ytItem = page.getByRole('button', { name: /YouTube Subscribers/ });
+  const twItem = page.getByRole('button', { name: /Twitch Channel Live/ });
+  ok(!(await ytItem.evaluate((el) => el.classList.contains('blocked'))) && (await twItem.evaluate((el) => el.classList.contains('blocked'))), 'the palette locks Twitch (the demo operator has no Twitch application) but not YouTube (it has a key)');
+  await twItem.click();
+  await page.locator('.fnode', { hasText: 'Twitch Channel Live' }).waitFor();
+  await feed.getByText(/needs a Twitch application/).waitFor();
+  ok(true, 'a Twitch node says the bot operator has not set that up, and that it will not run');
+  await shot('38-not-set-up');
+  await page.getByRole('tab', { name: 'Nodes' }).click();
+  await ytItem.click();
+  await page.locator('.fnode', { hasText: 'YouTube Subscribers' }).waitFor();
+  ok((await feed.getByText(/needs a YouTube API key/).count()) === 0 && (await feed.getByLabel(/^Announce every/).inputValue()) === '1000', 'a YouTube Subscribers node has no such warning, and starts at every 1,000');
+
   await page.setViewportSize({ width: 820, height: 700 });
   await page.waitForTimeout(300);
   await shot('11-narrow');
@@ -649,6 +722,31 @@ try {
   ok(!(await phone.locator('.outline').isVisible()) && (await phone.locator('.pane-tabs [aria-selected="true"]').textContent()).includes('settings'), 'phone: tapping a block jumps to its settings');
   await fits('a block\'s settings');
   await phoneShot('35-phone-block-settings');
+
+  // alert triggers on a phone: the long secret address and feed address stay inside the screen
+  await phone.getByRole('button', { name: 'Flows, pages and nodes' }).tap();
+  await phone.getByRole('tab', { name: 'Flows' }).tap();
+  await phone.locator('.flow-item', { hasText: 'Webhook alert' }).locator('.flow-open').tap();
+  await phone.locator('.fnode', { hasText: 'Webhook Received' }).waitFor();
+  await phone.locator('.fnode', { hasText: 'Webhook Received' }).scrollIntoViewIfNeeded();
+  await phone.locator('.fnode', { hasText: 'Webhook Received' }).tap();
+  const hookSheet = phone.getByRole('complementary', { name: 'Node settings' });
+  await hookSheet.locator('#webhook-url').waitFor();
+  await fits('the webhook settings');
+  const hookBox = await hookSheet.locator('#webhook-url').boundingBox();
+  ok(hookBox.x >= 0 && hookBox.x + hookBox.width <= 391, 'phone: the secret address box fits the screen');
+  await phoneShot('36-phone-webhook');
+  await hookSheet.getByRole('button', { name: 'Close settings' }).tap();
+  await phone.getByRole('button', { name: 'Flows, pages and nodes' }).tap();
+  await phone.getByRole('tab', { name: 'Nodes' }).tap();
+  await phone.getByRole('button', { name: /New Feed Item/ }).tap();
+  const phoneFeed = phone.getByRole('complementary', { name: 'Node settings' });
+  await phoneFeed.getByLabel('Where').waitFor();
+  await phoneFeed.getByLabel('Where').selectOption('url');
+  await phoneFeed.getByLabel(/^Feed address/).fill(`https://a-very-long-website-name.example.com/${'section/'.repeat(12)}feed.xml`);
+  await phoneFeed.locator('.feed-url').waitFor();
+  await fits('the feed settings with a long address');
+  await phoneShot('37-phone-feed');
   await phoneCtx.close();
   ok(phoneErrors.length === 0, `phone: no browser errors (${phoneErrors.slice(0, 3).join(' | ')})`);
 } catch (err) {
