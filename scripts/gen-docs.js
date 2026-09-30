@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BLOCK_LIST, THEME_FIELDS } from '../shared/blocks.js';
+import { BLOCK_LIST, PREVIEW_FIELDS, THEME_FIELDS } from '../shared/blocks.js';
 import { CATEGORIES, defaultsFor, getOutputs, NODE_LIST } from '../shared/catalog.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -69,6 +69,15 @@ const blocks = [
   '## Page settings',
   '',
   '| Field | Type | Notes |', '| --- | --- | --- |', ...fieldRows(THEME_FIELDS), '',
+  '### Link preview',
+  '',
+  'What Discord shows when the page\'s link is pasted. Both are part of the page\'s content, so they change when you **Publish**.',
+  '',
+  '| Field | Type | Notes |', '| --- | --- | --- |', ...fieldRows(PREVIEW_FIELDS), '',
+  '### Who can open this page',
+  '',
+  'Anyone with the link, members of the server, or members with **any one** of the chosen roles. Unlike the content this applies as soon as the page is saved.',
+  '',
 ];
 for (const b of BLOCK_LIST) {
   blocks.push(`## ${b.icon} ${b.label}`, '', `\`${b.type}\` — ${b.description}`, '');

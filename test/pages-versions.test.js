@@ -133,6 +133,8 @@ describe('shared: what counts as a change', () => {
     assert.equal(p.theme.description.length, 200);
     assert.equal(p.theme.previewImage, 'https://x.example/a.png');
     assert.deepEqual([p.access, p.roleIds], ['roles', ['333333']], 'duplicates, junk and short ids are dropped');
+    const many = normalizePage({ title: 'T', slug: 'a', access: 'roles', roleIds: Array.from({ length: 5000 }, (_, i) => String(100000 + i)) });
+    assert.equal(many.roleIds.length, 250, 'never more roles than a Discord server can have');
   });
 
   it('checks the preview picture and the role list', () => {

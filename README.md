@@ -25,8 +25,8 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (240 unit/integration tests plus a
-> 59-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (286 unit/integration tests plus a
+> 72-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it.
 
 ## Quick start
@@ -149,8 +149,27 @@ member-supplied text cannot inject templates.
 
 Open the **Pages** tab → **+ New page** (start from *Landing page*, *Staff application form*, *Contact form*, *Rules & verification*
 or blank). Add blocks from the left, arrange them with ↑ ↓, edit them on the right, and watch the **live preview** — it is rendered by
-exactly the same code as the public page. Switch the page to **Published** and share the link:
+exactly the same code as the public page. Press **Publish** and share the link:
 `https://your-site/s/<serverId>/<address>`. Pages start as drafts. Block reference: [docs/BLOCKS.md](docs/BLOCKS.md).
+
+**Draft and live.** **Save** only saves your *draft* — visitors keep seeing the last **published** version until you press **Publish
+changes** (which saves first if you have unsaved edits). The status chip says where you are: *Draft*, *Published*, or *Changes not live*
+(also shown as an amber dot in the page list). **Discard changes** (under **More**) goes back to the published version, **Unpublish**
+takes the page offline and keeps your draft. Publishing is refused while the page has real problems (for example a form with no questions).
+The address and *who can open the page* are not versioned: they apply as soon as you save. Responses and the CSV use the questions
+visitors actually answered (the published form). Pages made before drafts existed keep serving exactly what they served, because the
+database upgrade turns their current content into the published version.
+
+**Link previews.** When a page link is pasted into Discord it shows a card: title, description, picture and an edge in your accent colour.
+It works with no setup (the description comes from your hero subtitle or first text, the picture from your hero or the server icon); under
+**Page settings → Link preview** you can write a description and choose a preview picture, with a small mock of the card. Pictures need a public
+`BASE_URL`, and Discord may keep showing an old preview for a while.
+
+**Who can open a page.** Under **Page settings → Who can open this page**: *anyone with the link* (default), *members of this server*, or
+*members with one of these roles* (any one is enough). Visitors log in with Discord as for forms; membership and roles are checked live through the
+bot (cached up to a minute, so a new role can take that long to count). The rule also covers the page's forms and thank-you page. It **fails closed**:
+an empty role list, a deleted role or a failed lookup all refuse. Refusals show no page title, content or link-preview tags, so pasting the link
+reveals nothing. Note that **pictures on a gated page can still be opened by their direct link** (they are shared with Discord messages).
 
 **Forms.** A *Form* block has questions (short/long answer, number, dropdown, radio buttons, checkboxes, a single “I agree” box,
 date), each optionally required with min/max. Options per form: only members of the server may submit (checked live through the
@@ -209,6 +228,8 @@ This is a multi-tenant service: many servers share one bot process, so isolation
   (`javascript:`/`data:`/credential-carrying links refused), served with a no-script CSP, `X-Frame-Options: DENY` and
   `Referrer-Policy: same-origin`; unpublished, unknown and other-server pages are indistinguishable 404s; “check, then insert” for
   one-per-person rules is atomic so simultaneous submissions cannot both pass; CSV exports defuse spreadsheet formulas.
+* **Gated pages** (members / roles): one check guards the page, its form submission and the thank-you page; anything unexpected refuses; refusals
+  and login prompts carry no title, content or preview tags and are `noindex`/`no-store`. Not gated: pictures, which stay reachable by link.
 * **Uploaded pictures**: never served as sent — decoded, stripped of metadata and re-encoded as WebP by the server (only pixels we
   encoded reach a visitor; no SVG, no polyglot files), refused from their header when they declare an absurd size, at most two decoded
   at once. Files are named by random id, never by the uploaded name; paths are built only from validated ids; each picture is looked up
@@ -230,14 +251,14 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 ## Development
 
 ```bash
-npm test          # 240 unit + API + event + public-page + upload tests (fake Discord objects, in-memory SQLite)
+npm test          # 286 unit + API + event + public-page + upload + draft/live + access tests (fake Discord objects, in-memory SQLite)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
 ```
 
 ```
-shared/   catalog.js (every node) · blocks.js (page blocks) · forms.js · render-page.js · validate.js · templates — used by the editor AND server
+shared/   catalog.js (every node) · blocks.js (page blocks) · forms.js · render-page.js · page-meta.js (link previews) · validate.js · templates — used by the editor AND server
 server/   app/api/auth/public (the /s pages) · uploads + images (the /i pictures) · db (node:sqlite) · engine/ (runner, templates, executors, responder) · bot/ (events, commands)
 web/      React + @xyflow/react editor
 test/     node:test suites · e2e/ (Playwright) · helpers/fakes.js
@@ -257,6 +278,9 @@ Not yet automated — please run through this once on a test server:
 - [ ] Member Joined (with the Members intent) greets and gives a role; Kicked vs Left is told apart (with *View Audit Log*).
 - [ ] Reaction Added with message + emoji filter gives a role.
 - [ ] A second admin account in *another* server cannot see or edit the first server's flows.
+- [ ] Link preview: paste a published page's link into a Discord channel — the card shows the title, description and picture (needs a public `BASE_URL`).
+- [ ] Draft vs live: edit a published page and save — the public page must not change until you press Publish changes.
+- [ ] Gated pages: set a page to a role; a member with the role opens it, a member without it is refused, a non-member and a logged-out visitor are asked to log in / refused.
 - [ ] Pages: publish a page with a form; open it in a private window — **Log in with Discord** works on your real domain and returns
       you to the page; a member can submit; a non-member of a members-only form is told why; the Form Submitted flow reacts.
 - [ ] A form with “redirect to another address” lands on that address; the response and its CSV appear in the dashboard.

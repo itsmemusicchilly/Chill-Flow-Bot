@@ -16,6 +16,7 @@ export const THEME_DEFAULTS = { mode: 'dark', accent: '#5865f2', width: 'normal'
 export const DESCRIPTION_MAX = 200;
 // Who may open a page. Not part of the draft/live content: it applies as soon as it is saved.
 export const ACCESS_MODES = ['public', 'members', 'roles'];
+export const MAX_ROLES = 250; // Discord's own limit of roles in a server
 export const THEME_FIELDS = [
   select('mode', 'Look', [['dark', 'Dark'], ['light', 'Light']]),
   color('accent', 'Accent colour'),
@@ -156,7 +157,7 @@ export function normalizePage(input) {
       description: String(theme.description ?? '').trim().slice(0, DESCRIPTION_MAX), previewImage: String(theme.previewImage ?? '').trim().slice(0, 2048),
     },
     access: ACCESS_MODES.includes(input?.access) ? input.access : 'public',
-    roleIds: [...new Set((Array.isArray(input?.roleIds) ? input.roleIds : []).map(String).filter((id) => GUILD_ID_RE.test(id)))],
+    roleIds: [...new Set((Array.isArray(input?.roleIds) ? input.roleIds : []).map(String).filter((id) => GUILD_ID_RE.test(id)))].slice(0, MAX_ROLES),
     blocks: (Array.isArray(input?.blocks) ? input.blocks : []).map((b) => ({
       id: String(b?.id ?? ''), type: String(b?.type ?? ''), data: b?.data && typeof b.data === 'object' && !Array.isArray(b.data) ? b.data : {},
     })),

@@ -13,6 +13,19 @@ and never raw HTML. Links must be full `https://` (or `http://`) addresses. Imag
 | Accent colour | color |  |
 | Page width | select | options: Narrow, Normal, Wide |
 
+### Link preview
+
+What Discord shows when the page's link is pasted. Both are part of the page's content, so they change when you **Publish**.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Description | textarea | Up to 200 characters. Leave blank to use the start of your first text. |
+| Preview picture | image | Leave blank to use the hero picture, or the server icon. |
+
+### Who can open this page
+
+Anyone with the link, members of the server, or members with **any one** of the chosen roles. Unlike the content this applies as soon as the page is saved.
+
 ## 🌟 Hero
 
 `hero` — A big title with an optional subtitle, background image and button.
