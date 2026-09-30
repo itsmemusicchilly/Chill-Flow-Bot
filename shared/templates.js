@@ -216,7 +216,7 @@ export const TEMPLATES = [
   {
     id: 'webhook-alert',
     name: 'Webhook alert (Zapier, IFTTT, StreamElements…)',
-    description: 'Posts whatever another tool sends: a new X / TikTok / Instagram post, a Twitch follower, a sale. Save the flow, copy the secret address from the trigger into the tool, and have it send JSON like {"title":"…","message":"…","url":"…"}. Pick the channel in the last node.',
+    description: 'Posts whatever another tool sends: a new X / TikTok / Instagram / Facebook post, a Twitch follower, a sale. Save the flow, copy the secret address from the trigger into the tool, and have it send JSON like {"title":"…","message":"…","url":"…"}. Pick the channel in the last node.',
     build: () => ({
       nodes: [
         n('t1', 'trigger.webhook', 0, 60),

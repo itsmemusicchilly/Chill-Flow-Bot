@@ -23,7 +23,7 @@ channel, remember a variable…), press **Save** — it is live. No code.
   Ready-made *Ticket panel* and *Button role panel* templates show how.
 * **Alerts from other platforms.** Run a flow when a YouTube channel uploads, a subreddit / Bluesky / Mastodon account / blog posts, a Twitch
   channel goes live, a channel passes a subscriber milestone — or when *any* tool (Zapier, IFTTT, StreamElements…) calls a secret address, which is
-  how X, TikTok and Instagram posts or Twitch followers reach the bot (see [Alerts from other platforms](#alerts-from-other-platforms)).
+  how X, TikTok, Instagram and Facebook posts or Twitch followers reach the bot (see [Alerts from other platforms](#alerts-from-other-platforms)).
 * **60 nodes**: 31 triggers (commands, buttons, messages, joins/leaves/kicks/bans/timeouts, server boosts, role and channel events,
   reactions, voice, schedule, new feed item, webhook, YouTube subscribers, Twitch live, manual, form submitted) and 29 actions/logic nodes (messages with buttons/menus/forms, member moderation,
   channels and ticket transcripts, roles, variables and maths, conditions, loops, cooldowns, waits). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
@@ -265,7 +265,7 @@ Three ways in, from “nothing to set up” to “needs a key from the bot opera
 | **Bluesky** | a new post by an account | *New Feed Item* → Bluesky | nothing |
 | **Mastodon** | a new post by an account | *New Feed Item* → Any feed address, `https://server/@name.rss` | nothing |
 | **Blogs, podcasts, GitHub releases…** | a new entry | *New Feed Item* → Any feed address (`…/releases.atom` on GitHub) | nothing |
-| **X, TikTok, Instagram** | a new post | *Webhook Received*, called by a tool that can watch them | the tool (Zapier, IFTTT, Make…) — **not the bot** |
+| **X, TikTok, Instagram, Facebook** | a new post | *Webhook Received*, called by a tool that can watch them | the tool (Zapier, IFTTT, Make…) — **not the bot** |
 | **Twitch followers** and any other “someone followed / subscribed” | the event | *Webhook Received*, called by StreamElements, Streamlabs or Zapier | the tool |
 
 **Seen against the real internet** (a check from the machine this was built on, not a promise): Bluesky, Mastodon, GitHub releases, blog and Hacker News feeds were read and parsed correctly,
@@ -273,7 +273,7 @@ but YouTube's feed address answered *404* for channels that certainly exist, and
 providers now and then; if your log says a YouTube feed “was not found” for a channel ID you are sure of, that is the likely reason — the bot keeps trying with a growing pause, and the Webhook
 trigger (fed by Zapier or similar) is the fallback. Mastodon and Bluesky posts have **no title** — use `{{feed.summary}}` (the starter flow does).
 
-What is **not** possible, and why, so you are not surprised: X, TikTok and Instagram publish no free public feed, and Twitch only tells an app
+What is **not** possible, and why, so you are not surprised: X, TikTok, Instagram and Facebook publish no free public feed (a Facebook Page's posts are only handed to an app with the Page owner's own permission), and Twitch only tells an app
 about a channel's followers with a token the *streamer* grants — so the bot cannot watch those by itself. What such a tool can offer changes over time; the
 bot only promises the address it gives you. YouTube **rounds** public subscriber counts to three significant figures once a channel has more than 1,000
 and a channel may hide its count, so choose a step much bigger than the rounding (every 100 for a small channel, every 10,000 for a big one).
@@ -544,7 +544,7 @@ Not yet automated — please run through this once on a test server:
       upload / post something and, within the interval, the flow posts it exactly once; restart the bot and it is not posted again. Point one at a wrong address and the log says why,
       once. An `http://` or `https://localhost/` address is refused in the editor.
 - [ ] Webhook: save a *Webhook Received* flow, copy its address, `curl -X POST` it with JSON → `202` and the message appears; *Generate a new address* → the old one answers `404`.
-      Call it from Zapier/IFTTT/StreamElements once with a real X / TikTok / Instagram / follower event and check which fields you can use.
+      Call it from Zapier/IFTTT/StreamElements once with a real X / TikTok / Instagram / Facebook / follower event and check which fields you can use.
 - [ ] YouTube Subscribers with a real key: the log says the current count; a wrong key says the operator's key was refused (and never prints it). Twitch Channel Live with a real
       application: go live on a test channel → one announcement; stay live → none; end and start again → one more. With no key set the nodes show “not set up”.
 - [ ] Two accounts press the same panel button at the same time: each only sees their own variables.
@@ -571,5 +571,5 @@ Not yet automated — please run through this once on a test server:
 
 ## Ideas not done yet
 
-Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, an outbound HTTP/webhook node, watching X/TikTok/Instagram/Twitch followers directly (needs each account's own consent), autocomplete options, sub-commands, embed preview, undo/redo, flow version history,
+Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, an outbound HTTP/webhook node, watching X/TikTok/Instagram/Facebook/Twitch followers directly (needs each account's own consent), autocomplete options, sub-commands, embed preview, undo/redo, flow version history,
 sharding.

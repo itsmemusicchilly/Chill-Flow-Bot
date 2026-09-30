@@ -323,7 +323,7 @@ tell nodes apart; it is never sent to Discord.
 
 ### 🔔 Webhook Received
 
-`trigger.webhook` — Runs when something calls this trigger’s secret web address. Tools like Zapier, IFTTT, Make, StreamElements or GitHub can call it — that is how to react to a new X, TikTok or Instagram post, or a Twitch follower. Save the flow to get the address.
+`trigger.webhook` — Runs when something calls this trigger’s secret web address. Tools like Zapier, IFTTT, Make, StreamElements or GitHub can call it — that is how to react to a new X, TikTok, Instagram or Facebook post, or a Twitch follower. Save the flow to get the address.
 
 | Field | Type | Notes |
 | --- | --- | --- |

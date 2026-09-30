@@ -321,7 +321,7 @@ trigger('trigger.feed.item', {
 });
 trigger('trigger.webhook', {
   label: 'Webhook Received', icon: '🔔',
-  description: 'Runs when something calls this trigger’s secret web address. Tools like Zapier, IFTTT, Make, StreamElements or GitHub can call it — that is how to react to a new X, TikTok or Instagram post, or a Twitch follower. Save the flow to get the address.',
+  description: 'Runs when something calls this trigger’s secret web address. Tools like Zapier, IFTTT, Make, StreamElements or GitHub can call it — that is how to react to a new X, TikTok, Instagram or Facebook post, or a Twitch follower. Save the flow to get the address.',
   fields: [idField('channelId', 'Channel for context (optional)', 'channel')],
   preview: 'webhook', previewAfter: 'channelId',
   provides: () => [
