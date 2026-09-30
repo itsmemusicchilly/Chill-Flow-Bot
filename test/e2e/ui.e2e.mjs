@@ -138,6 +138,24 @@ try {
   ok((await checks.locator('.list-item').count()) === 12, 'an If node accepts 12 checks (no artificial cap)');
   ok(await checks.getByRole('button', { name: '+ Add' }).isEnabled(), '+ Add is still available after 12 checks');
 
+  // a check can ask whether someone has a role (with a role picker), and a node can carry an editor-only title
+  const firstCheck = checks.locator('.list-item').first();
+  ok((await firstCheck.getByLabel('Value').count()) === 1 && (await firstCheck.getByLabel('Pick role').count()) === 0, 'a text check asks for a value to compare, not for a role');
+  await firstCheck.getByLabel('Check', { exact: true }).selectOption('hasRole');
+  await firstCheck.getByLabel('Pick role').waitFor();
+  ok((await firstCheck.getByLabel('Value').count()) === 0 && (await firstCheck.getByLabel('Compare to').count()) === 0, 'choosing “has the role” swaps the value fields for a role picker');
+  await firstCheck.getByLabel('Pick role').selectOption({ label: '@Staff' });
+  await page.locator('.fnode', { hasText: 'has role Staff' }).waitFor();
+  ok((await firstCheck.locator('.list-title').textContent()).includes('has role Staff'), 'the check\'s heading in the list uses the role\'s name too');
+  ok(true, 'the node shows the check in words, with the role’s name (has role Staff)');
+  ok((await firstCheck.getByText('Someone who is not in the server does not have the role.').count()) === 1, 'the optional Member field explains what happens to someone who left');
+  const titleBox = page.getByLabel(/^Title\b/);
+  ok((await titleBox.inputValue()) === '' && (await titleBox.getAttribute('placeholder')) === 'Condition (If)', 'every node has an optional title, empty at first (the placeholder is the node’s own name)');
+  await titleBox.fill('Is staff?');
+  await page.locator('.fnode .fnode-title', { hasText: 'Is staff?' }).waitFor();
+  ok((await page.locator('.fnode .fnode-kind', { hasText: 'Condition (If)' }).count()) === 1, 'a titled node shows its title, with what kind of node it is underneath');
+  await shot('29-role-check-and-title');
+
   ok((await page.locator('.issue-menu summary.bad').count()) === 1, 'unfinished required fields are flagged');
   await page.locator('.issue-menu summary').click();
   await shot('08-issues');
@@ -155,6 +173,7 @@ try {
   await page.waitForTimeout(500);
   ok(page.url() === url, 'URL keeps the flow after reload');
   ok((await page.locator('.fnode', { hasText: '/help' }).count()) === 1, 'edits persisted across reload');
+  ok((await page.locator('.fnode .fnode-title', { hasText: 'Is staff?' }).count()) === 1 && (await page.locator('.fnode', { hasText: 'has role Staff' }).count()) === 1, 'the title and the role check are still there after reload');
   ok((await page.locator('.out.button').count()) === buttonsBefore + 1, 'added button persisted');
   ok(await page.locator('.switch input').isChecked(), 'enabled state persisted');
   await shot('09-after-reload');

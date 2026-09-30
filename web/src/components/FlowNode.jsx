@@ -1,11 +1,11 @@
 import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react';
 import { memo, useEffect } from 'react';
-import { CATEGORIES, getOutputs, NODE_TYPES } from '@shared/catalog.js';
-import { useEditor } from '../context.js';
+import { CATEGORIES, getOutputs, NODE_TYPES, nodeTitle } from '@shared/catalog.js';
+import { namesFor, useEditor } from '../context.js';
 
 function FlowNode({ id, type, data, selected }) {
   const def = NODE_TYPES[type];
-  const { issuesByNode, flash, canRun, runNode } = useEditor();
+  const { issuesByNode, flash, canRun, runNode, guildData } = useEditor();
   const updateNodeInternals = useUpdateNodeInternals();
   const outputs = def ? getOutputs(type, data) : [];
   const signature = outputs.map((o) => o.id).join('|');
@@ -16,7 +16,8 @@ function FlowNode({ id, type, data, selected }) {
   const cat = CATEGORIES[def.category];
   const issues = issuesByNode[id] || [];
   const errors = issues.filter((i) => i.level === 'error');
-  const summary = def.summary?.(data) ?? '';
+  const title = nodeTitle(data);
+  const summary = def.summary?.(data, namesFor(guildData)) ?? '';
   const classes = ['fnode', `cat-${def.category}`, selected ? 'selected' : '', flash[id] ? 'flash' : '', errors.length ? 'has-error' : issues.length ? 'has-warning' : ''].join(' ');
   const main = outputs.filter((o) => o.kind !== 'error');
   const error = outputs.find((o) => o.kind === 'error');
@@ -26,7 +27,7 @@ function FlowNode({ id, type, data, selected }) {
       {!def.isTrigger && <Handle type="target" position={Position.Left} id="in" className="h-in" style={{ top: 21 }} />}
       <div className="fnode-head">
         <span className="fnode-ico" aria-hidden="true">{def.icon}</span>
-        <span className="fnode-title">{def.label}</span>
+        <span className="fnode-title" title={title ? `${title} — ${def.label}` : undefined}>{title || def.label}</span>
         {def.type === 'trigger.manual' && (
           <button className="run-btn nodrag" title={canRun ? 'Run this flow now' : 'Save and enable the flow first'} disabled={!canRun} onClick={(e) => { e.stopPropagation(); runNode(id); }}>▶ Run</button>
         )}
@@ -34,6 +35,7 @@ function FlowNode({ id, type, data, selected }) {
           <span className={`badge ${errors.length ? 'bad' : 'warn'}`} title={issues.map((i) => i.message).join('\n')}>{errors.length ? '!' : '•'}</span>
         )}
       </div>
+      {title && <div className="fnode-kind">{def.label}</div>}
       {summary && <div className="fnode-body">{summary}</div>}
       <div className="fnode-outs">
         {main.map((o) => (

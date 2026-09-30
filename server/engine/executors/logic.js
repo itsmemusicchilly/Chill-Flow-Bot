@@ -1,6 +1,7 @@
 import { LIMITS } from '../../../shared/limits.js';
-import { evalConditions } from '../conditions.js';
-import { FlowAbort, FlowError } from '../errors.js';
+import { combine, evalCondition } from '../conditions.js';
+import { FlowAbort, FlowError, friendlyError } from '../errors.js';
+import { resolveRole, resolveUserId } from '../resolve.js';
 import { YIELD_EVERY, yieldToEventLoop } from '../yield.js';
 
 const MAX_TIMER_MS = 2 ** 31 - 1; // larger delays overflow setTimeout and would fire immediately
@@ -30,8 +31,37 @@ function parseItems(s) {
   return t.split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
 }
 
+/**
+ * Does this person have this role right now? A person who is not in the server, or a role that no longer exists, counts as "does not
+ * have it" (and the missing role is written to the log) — so a gate built on it stays shut rather than open. A flow that has no person
+ * at all (a schedule) and no Member filled in is a mistake in the flow, and says so.
+ */
+async function hasRole(ctx, c) {
+  const id = resolveUserId(ctx, c.memberId);
+  const guild = ctx.guild;
+  // the person who started the flow arrived with fresh roles; anyone else is asked for, so an old cached copy is never trusted
+  const member = ctx.member?.id === id && ctx.member.guild?.id === guild.id && !ctx.member.partial
+    ? ctx.member
+    : await guild.members.fetch({ user: id, force: true }).catch(() => null);
+  if (!member) return false;
+  let role;
+  try { role = await resolveRole(ctx, c.roleId); } catch (err) {
+    ctx.services.logger.log(guild.id, 'warn', `A role check could not find its role, so it counts as “no”: ${friendlyError(err)}`, ctx.logMeta);
+    return false;
+  }
+  return role.id === guild.id || Boolean(member.roles?.cache?.has(role.id)); // everyone has @everyone
+}
+
 export const logicExecutors = {
-  async 'logic.condition'({ d }) { return evalConditions(d.match, d.conditions) ? 'true' : 'false'; },
+  async 'logic.condition'({ ctx, d }) {
+    const results = [];
+    for (const c of d.conditions || []) {
+      if (c.op === 'hasRole') results.push(await hasRole(ctx, c));
+      else if (c.op === 'lacksRole') results.push(!(await hasRole(ctx, c)));
+      else results.push(evalCondition(c.op, c.left, c.right));
+    }
+    return combine(d.match, results) ? 'true' : 'false';
+  },
 
   async 'logic.random'({ d }) {
     const chance = Math.min(100, Math.max(0, Number(d.chance)));

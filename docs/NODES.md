@@ -6,6 +6,9 @@ Text fields accept `{{variables}}` (see the README). Every action also has an **
 failures, and read `{{error.message}}` there. Fields left blank on channel/role/user pickers usually mean “the one that
 triggered this flow”.
 
+Every node can also have an optional **Title** (the box at the top of its settings). It is shown on the node in the editor, so people who edit the flow can
+tell nodes apart; it is never sent to Discord.
+
 ## Triggers
 
 ### ⌨️ Slash Command
@@ -700,15 +703,17 @@ triggered this flow”.
 
 ### 🔀 Condition (If)
 
-`logic.condition` — Follow the True or False output depending on your checks.
+`logic.condition` — Follow the True or False output depending on your checks — compare values, or check whether someone has a role.
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | Continue on True when | select | options: ALL checks pass, ANY check passes |
 | Checks | list |  |
-| ↳ Value | text | required |
-| ↳ Check | select | options: equals, does not equal, contains, does not contain, starts with, ends with, is greater than, is at least, is less than, is at most, matches regex, is empty, is not empty |
-| ↳ Compare to | text | shown when `op` is not `isEmpty` / `isNotEmpty` |
+| ↳ Value | text | required; shown when `op` is not `hasRole` / `lacksRole` |
+| ↳ Check | select | options: equals, does not equal, contains, does not contain, starts with, ends with, is greater than, is at least, is less than, is at most, matches regex, is empty, is not empty, has the role, does not have the role |
+| ↳ Compare to | text | shown when `op` is not `isEmpty` / `isNotEmpty` / `hasRole` / `lacksRole` |
+| ↳ Role | role | required; shown when `op` is `hasRole` / `lacksRole`; Pick a role, or use a variable such as {{option.role}}. If the role no longer exists, the check counts as “no”. |
+| ↳ Member | user | shown when `op` is `hasRole` / `lacksRole`; Optional: check someone else, for example {{option.member}}. Someone who is not in the server does not have the role. |
 
 **Outputs:** True, False
 

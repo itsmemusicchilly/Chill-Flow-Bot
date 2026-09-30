@@ -6,6 +6,19 @@ import { uid } from './util.js';
 
 export { isVisible, VAR_NAME_RE };
 
+/**
+ * An optional title people who edit a flow can give a node, shown on the node in the editor. It is only ever read by the editor: the engine
+ * and Discord never see it. It lives in the node's data under a key no node field uses (the form node has its own `title`).
+ */
+export const TITLE_KEY = '_title';
+export const TITLE_MAX = 60;
+// control characters, line/paragraph separators and bidi overrides: a title is one plain line
+const TITLE_UNSAFE = new RegExp(`[\\u0000-\\u001F\\u007F-\\u009F${String.fromCharCode(0x2028, 0x2029)}\\u202A-\\u202E\\u2066-\\u2069]`, 'g');
+export function nodeTitle(data) {
+  const v = data?.[TITLE_KEY];
+  return typeof v === 'string' ? v.replace(TITLE_UNSAFE, ' ').replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX) : '';
+}
+
 export const CATEGORIES = {
   trigger: { label: 'Triggers', color: '#f59e0b', blurb: 'Start a flow' },
   message: { label: 'Messages', color: '#5865f2', blurb: 'Talk to people' },
@@ -615,23 +628,37 @@ def('data.math', {
 });
 
 // ---- logic --------------------------------------------------------------------------------------
-const COND_OPS = [['equals', 'equals'], ['notEquals', 'does not equal'], ['contains', 'contains'], ['notContains', 'does not contain'], ['startsWith', 'starts with'], ['endsWith', 'ends with'], ['gt', 'is greater than'], ['gte', 'is at least'], ['lt', 'is less than'], ['lte', 'is at most'], ['matches', 'matches regex'], ['isEmpty', 'is empty'], ['isNotEmpty', 'is not empty']];
+const ROLE_OPS = ['hasRole', 'lacksRole'];
+const COND_OPS = [['equals', 'equals'], ['notEquals', 'does not equal'], ['contains', 'contains'], ['notContains', 'does not contain'], ['startsWith', 'starts with'], ['endsWith', 'ends with'], ['gt', 'is greater than'], ['gte', 'is at least'], ['lt', 'is less than'], ['lte', 'is at most'], ['matches', 'matches regex'], ['isEmpty', 'is empty'], ['isNotEmpty', 'is not empty'], ['hasRole', 'has the role'], ['lacksRole', 'does not have the role']];
+/** One check as words. `names.role(id)` (when the editor can supply it) turns a role id into its name. */
+const conditionText = (c, names) => {
+  if (ROLE_OPS.includes(c.op)) return `${c.op === 'hasRole' ? 'has' : 'lacks'} role ${(names?.role?.(c.roleId) ?? c.roleId) || '?'}${c.memberId ? ` (${c.memberId})` : ''}`;
+  return `${c.left} ${c.op} ${c.right ?? ''}`;
+};
 def('logic.condition', {
-  category: 'logic', label: 'Condition (If)', icon: '🔀', description: 'Follow the True or False output depending on your checks.',
+  category: 'logic', label: 'Condition (If)', icon: '🔀', description: 'Follow the True or False output depending on your checks — compare values, or check whether someone has a role.',
   fields: [
     select('match', 'Continue on True when', [['all', 'ALL checks pass'], ['any', 'ANY check passes']]),
     list('conditions', 'Checks', {
-      create: () => ({ left: '{{user.name}}', op: 'equals', right: '' }),
-      label: (c) => `${c.left} ${c.op} ${c.right ?? ''}`,
+      create: () => ({ left: '{{user.name}}', op: 'equals', right: '', roleId: '', memberId: '' }),
+      label: (c, names) => conditionText(c, names),
       fields: [
-        text('left', 'Value', { required: true, placeholder: '{{option.amount}}' }),
+        text('left', 'Value', { required: true, placeholder: '{{option.amount}}', showIf: whenNot('op', ...ROLE_OPS) }),
         select('op', 'Check', COND_OPS),
-        text('right', 'Compare to', { showIf: whenNot('op', 'isEmpty', 'isNotEmpty') }),
+        text('right', 'Compare to', { showIf: whenNot('op', 'isEmpty', 'isNotEmpty', ...ROLE_OPS) }),
+        idField('roleId', 'Role', 'role', {
+          required: true, showIf: when('op', ...ROLE_OPS),
+          help: 'Pick a role, or use a variable such as {{option.role}}. If the role no longer exists, the check counts as “no”.',
+        }),
+        idField('memberId', 'Member', 'user', {
+          showIf: when('op', ...ROLE_OPS), placeholder: 'blank = whoever triggered this',
+          help: 'Optional: check someone else, for example {{option.member}}. Someone who is not in the server does not have the role.',
+        }),
       ],
     }),
   ],
   outputs: [{ id: 'true', label: 'True', kind: 'true' }, { id: 'false', label: 'False', kind: 'false' }],
-  summary: (d) => (d.conditions || []).map((c) => `${c.left} ${c.op} ${c.right ?? ''}`).join(d.match === 'any' ? ' OR ' : ' AND ').slice(0, 60),
+  summary: (d, names) => (d.conditions || []).map((c) => conditionText(c, names)).join(d.match === 'any' ? ' OR ' : ' AND ').slice(0, 60),
   check: (d) => ((d.conditions || []).length ? [] : ['Add at least one check.']),
 });
 def('logic.random', {

@@ -29,8 +29,8 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (495 unit/integration tests plus a
-> 112-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (517 unit/integration tests plus a
+> 120-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it.
 
 ## Quick start
@@ -173,6 +173,26 @@ existed get it too. The *Support tickets* and
 * **Size:** transcripts stop at 8 MB (Discord's upload limit) **for the two files together** — both stop at the same message, so a
   `.txt` costs a little room in very long conversations — or at `LIMIT_TRANSCRIPT_MESSAGES`. They keep the *start* of the
   conversation, and say where they stop (`{{transcript.truncated}}`). Long channels are read 100 messages at a time.
+
+### Checking roles
+
+The **Condition (If)** node can ask whether someone has a role. Add a check, set **Check** to *has the role* (or *does not have the role*) and pick
+the role from the list. The **True** output means yes, **False** means no.
+
+* **Whose role?** Whoever started the flow — or fill in **Member** to look at someone else, for example `{{option.member}}`. A flow that no person
+  started (a *Schedule* or *Manual* trigger) has nobody to look at, so it needs a Member; without one the run stops and the log says why.
+* **Combine them** with the node's *ALL* / *ANY* switch: “has Staff **or** Mod” is two role checks with ANY. Role checks and text checks mix freely.
+* **The role can be a variable** (`{{option.role}}`); everyone has `@everyone`.
+* **It stays shut when in doubt.** Someone who is not in the server does not have the role, and a role that was deleted counts as “no” (the log warns
+  about it), so a gate built on it never opens by accident.
+* **It is always current.** The roles are read when the check runs. The person who used the command or button arrives with their current roles; anyone
+  else is asked for from Discord each time, so a stale copy is never trusted.
+
+### Titles
+
+Every node has an optional **Title** (the first box in its settings). It is shown on the node in the editor — with what kind of node it is underneath —
+and in the list of problems, so people who edit the flow can tell nodes apart (“Is staff?”, “Welcome message”). It is only for the editor: it is never sent
+to Discord and does not change what the flow does.
 
 ### Server boosts
 
@@ -407,7 +427,7 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 ## Development
 
 ```bash
-npm test          # 495 unit + API + event + button/transcript + public-page + upload + draft/live + access + maths + counter + cron/schedule tests (fake Discord objects, in-memory SQLite, a fake clock)
+npm test          # 517 unit + API + event + button/transcript + public-page + upload + draft/live + access + maths + counter + cron/schedule + role-check/title tests (fake Discord objects, in-memory SQLite, a fake clock)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
@@ -444,6 +464,8 @@ Not yet automated — please run through this once on a test server:
       other flows does not delay an “Every 1 hour” schedule.
 - [ ] On a real phone (iOS Safari and Android Chrome): log in, open a flow from ☰, pan and zoom, tap a node and edit a field (the page must not zoom), connect two
       nodes by dragging, add one from **Nodes**, save; open the page builder, switch the three tabs, publish; open a published page and its link preview.
+- [ ] Role check: a *Condition* with “has the role” follows True for a member with the role and False without it; give and take the role and run again
+      (it must notice at once); with Member set to someone else it looks at them; delete the role and it says “no” and the log warns.
 - [ ] Two accounts press the same panel button at the same time: each only sees their own variables.
 - [ ] Counters: switch on the *Member counter* template, pick a channel, then have several people join/leave within a few minutes —
       the first two renames appear at once, the log says the next is held back, and about ten minutes later the name settles on the

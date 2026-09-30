@@ -10,6 +10,9 @@ export const EditorContext = createContext({
 });
 export const useEditor = () => useContext(EditorContext);
 
+/** Lookups a node's summary or a list item's heading can use to show names instead of ids (see `summary(d, names)` in the catalog). */
+export const namesFor = (guildData) => ({ role: (id) => (id === '@everyone' ? '@everyone' : guildData?.roles?.find((r) => r.id === id)?.name) });
+
 /**
  * The server's uploaded pictures, for image fields anywhere in the editor.
  * `ids` is the set of picture ids once loaded (null before), `openLibrary({ onPick })` opens the picture library.

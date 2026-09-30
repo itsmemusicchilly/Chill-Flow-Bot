@@ -36,6 +36,9 @@ const out = [
   'failures, and read `{{error.message}}` there. Fields left blank on channel/role/user pickers usually mean “the one that',
   'triggered this flow”.',
   '',
+  'Every node can also have an optional **Title** (the box at the top of its settings). It is shown on the node in the editor, so people who edit the flow can',
+  'tell nodes apart; it is never sent to Discord.',
+  '',
 ];
 
 for (const [key, cat] of Object.entries(CATEGORIES)) {

@@ -2,7 +2,7 @@ import {
   applyEdgeChanges, applyNodeChanges, Background, Controls, MarkerType, MiniMap, ReactFlow, useNodesInitialized, useReactFlow,
 } from '@xyflow/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { defaultsFor, getOutputs, isTriggerType, NODE_TYPES } from '@shared/catalog.js';
+import { defaultsFor, getOutputs, isTriggerType, NODE_TYPES, nodeTitle } from '@shared/catalog.js';
 import { localTimeZone } from '@shared/cron.js';
 import { PHONE, useMediaQuery } from '../hooks/useMediaQuery.js';
 import { toggleConnection } from '@shared/connections.js';
@@ -198,6 +198,7 @@ export default function FlowWorkspace({ gid, flow, meta, guildData, flash, apiRe
     URL.revokeObjectURL(a.href);
   };
 
+  const nameOf = (n) => { const label = NODE_TYPES[n?.type]?.label ?? 'Node'; const title = nodeTitle(n?.data); return title ? `${title} (${label})` : label; };
   const focusNode = (id) => {
     setGraph((g) => ({ ...g, nodes: g.nodes.map((n) => ({ ...n, selected: n.id === id })) }));
     rf.fitView({ nodes: [{ id }], duration: 300, maxZoom: 1, padding: 0.8 });
@@ -231,7 +232,7 @@ export default function FlowWorkspace({ gid, flow, meta, guildData, flash, apiRe
                   {listed.map((i, k) => (
                     <li key={k}>
                       <button className="link" onClick={() => i.nodeId && focusNode(i.nodeId)}>
-                        {i.nodeId ? `${NODE_TYPES[graph.nodes.find((n) => n.id === i.nodeId)?.type]?.label ?? 'Node'}: ` : ''}{i.message}
+                        {i.nodeId ? `${nameOf(graph.nodes.find((n) => n.id === i.nodeId))}: ` : ''}{i.message}
                       </button>
                     </li>
                   ))}

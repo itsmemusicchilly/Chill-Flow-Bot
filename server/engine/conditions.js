@@ -25,8 +25,13 @@ export function evalCondition(op, left, right) {
   }
 }
 
-export function evalConditions(match, conditions) {
-  const results = (conditions || []).map((c) => evalCondition(c.op, c.left, c.right));
+/** Turn the results of the individual checks into the node's answer: ALL of them, or ANY of them. No checks is never true. */
+export function combine(match, results) {
   if (!results.length) return false;
   return match === 'any' ? results.some(Boolean) : results.every(Boolean);
+}
+
+/** The text checks only. Role checks need the server, so the Condition node evaluates those itself. */
+export function evalConditions(match, conditions) {
+  return combine(match, (conditions || []).map((c) => evalCondition(c.op, c.left, c.right)));
 }

@@ -1,10 +1,18 @@
 // Graph normalisation + validation, shared by the editor (live warnings) and the server (authoritative).
-import { NODE_TYPES, getOutputs, isTriggerType } from './catalog.js';
+import { NODE_TYPES, TITLE_KEY, getOutputs, isTriggerType, nodeTitle } from './catalog.js';
 import { connectionKey } from './connections.js';
 import { checkFields } from './fields.js';
 import { isCapped, LIMITS } from './limits.js';
 
 export const ID_RE = /^[A-Za-z0-9_-]{1,12}$/;
+
+/** The node's title, tidied (one line, at most TITLE_MAX characters); an empty or missing title is not stored at all. */
+function withCleanTitle(data) {
+  if (!(TITLE_KEY in data)) return data;
+  const { [TITLE_KEY]: _old, ...rest } = data;
+  const title = nodeTitle(data);
+  return title ? { ...rest, [TITLE_KEY]: title } : rest;
+}
 
 /** Keep only the keys we persist (React Flow adds `selected`, `measured`, … at runtime). */
 export function normalizeGraph(input) {
@@ -12,7 +20,7 @@ export function normalizeGraph(input) {
     id: String(n?.id ?? ''),
     type: String(n?.type ?? ''),
     position: { x: Math.round(Number(n?.position?.x) || 0), y: Math.round(Number(n?.position?.y) || 0) },
-    data: n?.data && typeof n.data === 'object' && !Array.isArray(n.data) ? n.data : {},
+    data: withCleanTitle(n?.data && typeof n.data === 'object' && !Array.isArray(n.data) ? n.data : {}),
   }));
   const edges = (Array.isArray(input?.edges) ? input.edges : []).map((e) => {
     const sourceHandle = e?.sourceHandle || 'out';

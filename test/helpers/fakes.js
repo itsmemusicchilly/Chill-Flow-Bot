@@ -53,7 +53,7 @@ export function fakeGuild(over = {}) {
   };
   guild.channels.fetch = async (cid) => guild.channels.cache.get(cid) ?? guild.foreign?.get(cid) ?? null;
   guild.roles.fetch = async (rid) => guild.roles.cache.get(rid) ?? null;
-  guild.members.fetch = async (mid) => guild.members.cache.get(mid) ?? null;
+  guild.members.fetch = async (arg) => guild.members.cache.get(typeof arg === 'object' ? arg.user : arg) ?? null; // like discord.js: an id, or { user, force }
   guild.channels.create = async (options) => { guild.calls.push(['channelCreate', options]); return guild.addChannel({ name: options.name, type: options.type }); };
   guild.roles.create = async (options) => { guild.calls.push(['roleCreate', options]); return guild.addRole({ name: options.name }); };
   guild.members.ban = async (uid, options) => { guild.calls.push(['ban', uid, options]); };

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { isVisible } from '@shared/catalog.js';
 import { uploadIdOf, uploadPath } from '@shared/urls.js';
-import { useEditor, useImages } from '../context.js';
+import { namesFor, useEditor, useImages } from '../context.js';
 
 /** Renders every visible field of a node (or list item) and reports changes as (key, value). */
 export function FieldList({ fields, data, onChange, focusRef }) {
@@ -94,6 +94,8 @@ function MultiSelect({ field, value, onChange }) {
 }
 
 function ListField({ field, value, onChange, focusRef }) {
+  const { guildData } = useEditor();
+  const names = namesFor(guildData);
   const items = Array.isArray(value) ? value : [];
   const [open, setOpen] = useState(() => new Set(items.length <= 2 ? items.map((_, i) => i) : []));
   const toggle = (i) => setOpen((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; });
@@ -114,7 +116,7 @@ function ListField({ field, value, onChange, focusRef }) {
           <div className="list-head">
             <button type="button" className="list-title" aria-expanded={open.has(i)} onClick={() => toggle(i)}>
               <span className="caret">{open.has(i) ? '▾' : '▸'}</span>
-              {String(field.item.label?.(item) || `Item ${i + 1}`).slice(0, 40)}
+              {String(field.item.label?.(item, names) || `Item ${i + 1}`).slice(0, 40)}
             </button>
             <span className="list-actions">
               <button type="button" className="icon-btn" title="Move up" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)}>↑</button>

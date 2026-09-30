@@ -1,5 +1,5 @@
 import { useMemo, useRef } from 'react';
-import { availableVariables, CATEGORIES, NODE_TYPES } from '@shared/catalog.js';
+import { availableVariables, CATEGORIES, NODE_TYPES, TITLE_KEY, TITLE_MAX } from '@shared/catalog.js';
 import { useEditor } from '../context.js';
 import { FieldList } from './FieldEditor.jsx';
 import SchedulePreview from './SchedulePreview.jsx';
@@ -49,6 +49,11 @@ export default function Inspector({ node, nodes, edges, issues, onChange, onDupl
       )}
 
       <div className="insp-fields">
+        <div className="field">
+          <label htmlFor="node-title">Title <span className="tiny muted">(optional)</span></label>
+          <input id="node-title" type="text" maxLength={TITLE_MAX} value={node.data[TITLE_KEY] ?? ''} placeholder={def.label} onChange={(e) => onChange(node.id, { [TITLE_KEY]: e.target.value })} />
+          <div className="help">Shown on the node so you can tell nodes apart. Only people who edit this flow see it — it is never sent to Discord.</div>
+        </div>
         <FieldList fields={fieldsBefore} data={node.data} onChange={(k, v) => onChange(node.id, { [k]: v })} focusRef={focusRef} />
         {def.preview === 'schedule' && <SchedulePreview data={node.data} />}
         {fieldsAfter.length > 0 && <FieldList fields={fieldsAfter} data={node.data} onChange={(k, v) => onChange(node.id, { [k]: v })} focusRef={focusRef} />}
