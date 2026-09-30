@@ -39,6 +39,11 @@ page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 page.on('console', (m) => { if (m.type() === 'error' && !/401|status of 415|ERR_CERT_AUTHORITY_INVALID|ERR_NAME_NOT_RESOLVED|ERR_TUNNEL/.test(m.text())) errors.push(`console: ${m.text()}`); });
 page.on('dialog', (d) => d.accept());
 const shot = (name) => (SHOTS ? page.screenshot({ path: path.join(SHOTS, `${name}.png`) }) : null);
+// Toasts repeat (the same message can be on screen twice), so wait on the editor's state instead of on their text.
+const savedDraft = () => page.getByRole('button', { name: 'Saved', exact: true }).waitFor();
+const publishedLive = () => page.locator('.status-chip.live').waitFor();
+/** Opens the page editor's "More" menu (Copy link, Responses, Discard changes, Unpublish) if it is closed. */
+const openMore = async () => { const d = page.locator('details.more-menu'); if (!(await d.evaluate((e) => e.open))) await d.locator('summary').click(); };
 /** Has this <img> really loaded and decoded (a broken picture has no width)? */
 const loaded = (locator) => locator.evaluate(async (img) => { try { await img.decode(); } catch { return false; } return img.naturalWidth > 0; });
 
@@ -189,10 +194,11 @@ try {
   ok((await outline.locator('.block-item').count()) === blocksBefore + 1, 'adding a block adds it to the outline');
   await page.getByRole('button', { name: /Save changes/ }).click();
   await page.getByText('Saved.', { exact: true }).waitFor();
-  await page.locator('.switch').click();
-  await page.getByText('Published — anyone with the link can see it.').waitFor();
+  ok(await page.locator('.status-chip.draft').isVisible(), 'a new page is a draft');
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  await publishedLive();
   const slug = await page.getByLabel('Web address').inputValue();
-  ok(await page.locator('.switch input').isChecked(), 'the page can be published');
+  ok(await page.locator('.status-chip.live').isVisible(), 'the page can be published');
   await shot('13-page-published');
 
   // a flow that reacts to the form (created through the API; the trigger picker is checked in the UI below)
@@ -253,6 +259,7 @@ try {
   // back in the dashboard: the flow ran and the response is there
   await page.getByText(/APPLICATION from Demo Visitor: Mia wants Helper/).waitFor({ timeout: 8000 });
   ok(true, 'the “Form Submitted” flow ran with the answers');
+  await openMore();
   await page.getByRole('button', { name: 'Responses' }).click();
   const dialog = page.getByRole('dialog', { name: /Responses/ });
   await dialog.getByText('Demo Visitor').waitFor();
@@ -298,7 +305,9 @@ try {
   ok(await loaded(preview.getByRole('img', { name: 'Orange banner' })), 'an image block shows the uploaded picture in the preview');
   await shot('19-page-with-picture');
   await page.getByRole('button', { name: /Save changes/ }).click();
-  await page.getByText('Saved — the public page is updated.').waitFor();
+  await savedDraft();
+  await page.getByRole('button', { name: 'Publish changes' }).click();
+  await publishedLive();
 
   // visitors get it from this site, with locked-down headers
   await visitorPage.goto(`${BASE}/s/${gid}/${slug}`);
@@ -324,6 +333,91 @@ try {
   await library.getByRole('button', { name: 'Close' }).click();
   await outline.locator('.block-row', { hasText: 'Hero' }).locator('.badge.bad').waitFor();
   ok(true, 'the page editor flags the block whose picture was deleted');
+
+  // =================================================================================================
+  // Draft vs live: edits are private until published
+  // =================================================================================================
+  const publicUrl = `${BASE}/s/${gid}/${slug}`;
+  await outline.locator('.block-row', { hasText: 'Hero' }).click();
+  await blockInspector.getByLabel('Title', { exact: true }).fill('Join the team (version 2)');
+  await page.getByRole('button', { name: /Save changes/ }).click();
+  await savedDraft();
+  ok(await page.locator('.status-chip.changed').isVisible(), 'after saving, the page says its changes are not live');
+  await shot('22-draft-not-live');
+  await visitorPage.goto(publicUrl);
+  ok(await visitorPage.getByRole('heading', { name: 'Join the Pixel Café team' }).isVisible() && (await visitorPage.getByText('version 2').count()) === 0, 'visitors still see the published version while you edit');
+  await page.getByRole('button', { name: 'Publish changes' }).click();
+  await publishedLive();
+  await visitorPage.reload();
+  await visitorPage.getByRole('heading', { name: 'Join the team (version 2)' }).waitFor();
+  ok(await page.locator('.status-chip.live').isVisible(), 'publishing makes the change public');
+  await blockInspector.getByLabel('Title', { exact: true }).fill('A change I regret');
+  await page.getByRole('button', { name: /Save changes/ }).click();
+  await savedDraft();
+  await openMore();
+  await page.getByRole('button', { name: 'Discard changes' }).click();
+  await page.getByText('Back to the published version.').waitFor();
+  await preview.getByRole('heading', { name: 'Join the team (version 2)' }).waitFor();
+  ok(await page.locator('.status-chip.live').isVisible(), 'discarding goes back to the published version');
+
+  // =================================================================================================
+  // Link preview: what Discord shows for the page's link
+  // =================================================================================================
+  await outline.locator('.block-row', { hasText: 'Page settings' }).click();
+  const settings = page.getByRole('complementary', { name: 'Page settings' });
+  await settings.getByLabel('Description').fill('Apply to join our friendly team');
+  await settings.locator('.field', { has: page.locator('label', { hasText: /^Preview picture$/ }) }).getByRole('button', { name: 'Choose…' }).click();
+  await page.getByRole('dialog', { name: 'Choose a picture' }).getByLabel('Upload pictures').setInputFiles({ name: 'card.png', mimeType: 'image/png', buffer: bannerPng });
+  await settings.getByText('Uploaded picture').waitFor(); // the new picture is chosen (until then the card may still show the hero's)
+  const card = settings.getByLabel('How the link looks in Discord');
+  await card.getByText('Apply to join our friendly team').waitFor();
+  ok(await loaded(card.locator('img')), 'the card mock shows the description and the chosen picture');
+  await card.scrollIntoViewIfNeeded();
+  await shot('23-link-preview');
+  await page.getByRole('button', { name: /Save changes/ }).click();
+  await page.getByRole('button', { name: 'Publish changes' }).click();
+  await publishedLive();
+  const crawled = await (await page.request.get(publicUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)' } })).text();
+  ok(/property="og:title" content="Staff applications"/.test(crawled) && /property="og:description" content="Apply to join our friendly team"/.test(crawled), 'the public page carries Open Graph title and description for link cards');
+  ok(new RegExp(`property="og:image" content="${BASE}/i/${gid}/[a-z0-9]{16}\\.webp"`).test(crawled), 'the card picture is an absolute address on this site');
+
+  // =================================================================================================
+  // Who can open the page: members, then roles. Applies as soon as it is saved.
+  // =================================================================================================
+  await settings.getByLabel('Members of this server').check();
+  await page.getByRole('button', { name: /Save changes/ }).click();
+  await savedDraft();
+  const stranger = await (await browser.newContext({ viewport: { width: 900, height: 700 } })).newPage();
+  await stranger.goto(publicUrl);
+  await stranger.getByRole('heading', { name: 'Log in to continue' }).waitFor();
+  const gatePage = await stranger.content();
+  ok(!/Join the team|og:title|og:description/.test(gatePage), 'a stranger gets a login prompt and no content, and no link-preview tags');
+  if (SHOTS) await stranger.screenshot({ path: path.join(SHOTS, '25-gate.png') });
+  await visitorPage.reload();
+  await visitorPage.getByRole('heading', { name: 'Join the team (version 2)' }).waitFor();
+  ok(true, 'a logged-in member of the server can open a members-only page');
+
+  await settings.getByLabel('Members with one of these roles').check();
+  await settings.getByRole('button', { name: 'Staff', exact: true }).click();
+  await page.getByRole('button', { name: /Save changes/ }).click();
+  await savedDraft();
+  await shot('24-access');
+  await visitorPage.reload();
+  await visitorPage.getByRole('heading', { name: 'No access' }).waitFor();
+  ok(true, 'a member without the chosen role is turned away');
+  await settings.getByRole('button', { name: 'Member', exact: true }).click();
+  await page.getByRole('button', { name: /Save changes/ }).click();
+  await savedDraft();
+  await visitorPage.reload();
+  await visitorPage.getByRole('heading', { name: 'Join the team (version 2)' }).waitFor();
+  ok(true, 'having any one of the chosen roles is enough');
+  await settings.getByLabel('Anyone with the link').check();
+  await page.getByRole('button', { name: /Save changes/ }).click();
+  await savedDraft();
+  await stranger.reload();
+  await stranger.getByRole('heading', { name: 'Join the team (version 2)' }).waitFor();
+  ok(true, 'switching back to “anyone” opens the page again');
+  await stranger.context().close();
 
   // the flow's trigger lists the form, by name (the flow was created behind the editor's back, so reload to see it)
   await page.reload();
@@ -353,8 +447,9 @@ try {
   // unpublish: the public page disappears
   await page.getByRole('tab', { name: 'Pages' }).click();
   await page.locator('.flow-open', { hasText: 'Staff applications' }).click();
-  await page.locator('.switch').click();
-  await page.getByText('Unpublished.').waitFor();
+  await openMore();
+  await page.getByRole('button', { name: 'Unpublish' }).click();
+  await page.getByText('Unpublished. Your draft is still here.').waitFor();
   await visitorPage.goto(`${BASE}/s/${gid}/${slug}`);
   await visitorPage.getByRole('heading', { name: 'Page not found' }).waitFor();
   ok(true, 'unpublishing hides the public page');

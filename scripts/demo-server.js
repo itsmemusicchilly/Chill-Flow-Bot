@@ -59,9 +59,18 @@ const bot = {
   channels: (id) => [...guilds.get(id).channels.cache.values()].map((c) => ({ id: c.id, name: c.name, type: ChannelType[c.type], parentId: null })),
   roles: (id) => [...guilds.get(id).roles.cache.values()].filter((r) => r.id !== id).map((r) => ({ id: r.id, name: r.name, color: '#99aab5', managed: false })),
   inviteUrl: (gid) => `https://discord.com/oauth2/authorize?client_id=1&scope=bot&guild_id=${gid ?? ''}`,
-  // demo: everyone who logs in as a visitor counts as a member, so members-only forms can be tried
+  // demo: everyone who logs in as a visitor counts as a member with the "Member" role (not "Staff"), so members-only forms and
+  // pages, and role-gated pages, can be tried
   isMember: async () => true,
-  getMember: async (gid, uid) => guilds.get(gid).members.cache.get(uid) ?? guilds.get(gid).addMember({ user: fakeUser({ id: uid, username: 'Demo Visitor' }) }),
+  getMember: async (gid, uid) => {
+    const g = guilds.get(gid);
+    const existing = g.members.cache.get(uid);
+    if (existing) return existing;
+    const member = g.addMember({ user: fakeUser({ id: uid, username: 'Demo Visitor' }) });
+    const role = [...g.roles.cache.values()].find((r) => r.name === 'Member');
+    if (role) member.roles.cache.set(role.id, role);
+    return member;
+  },
 };
 const sync = { status: new Map(), sync: async (gid) => { const n = runtime.commandsFor(gid).length; const r = { ok: true, count: n, at: Date.now() }; sync.status.set(gid, r); logger.log(gid, 'info', `Slash commands updated (${n}). [demo]`); return r; } };
 

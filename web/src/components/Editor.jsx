@@ -188,7 +188,7 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
 
         <div className="stage">
           {pageId && pagesApi.page && pagesApi.page.id === pageId ? (
-            <PageEditor key={pagesApi.page.id} gid={gid} guild={guild} page={pagesApi.page} dirtyRef={dirtyRef} onSaved={pagesApi.onPageSaved} />
+            <PageEditor key={pagesApi.page.id} gid={gid} guild={guild} roles={roles} page={pagesApi.page} dirtyRef={dirtyRef} onSaved={pagesApi.onPageSaved} />
           ) : pageId ? (
             <div className="empty-stage"><p className="muted">Loading page…</p></div>
           ) : flow && flow.id === flowId ? (

@@ -7,7 +7,7 @@ export default function PagesList({ pages, pageId, limit, onOpen, onNew, onDupli
       {pages.map((p) => (
         <div key={p.id} className={`flow-item ${p.id === pageId ? 'active' : ''}`}>
           <button className="flow-open" onClick={() => onOpen(p.id)}>
-            <span className={`dot ${p.published ? 'on' : ''}`} title={p.published ? 'Published' : 'Not published'} />
+            <span className={`dot ${p.published ? (p.changed ? 'warn' : 'on') : ''}`} title={!p.published ? 'Draft — not public' : p.changed ? 'Published · changes not live' : 'Published'} />
             <span className="flow-title">{p.title}</span>
             {p.issues > 0 && <span className="badge bad" title={`${p.issues} thing(s) to fix`}>{p.issues}</span>}
           </button>

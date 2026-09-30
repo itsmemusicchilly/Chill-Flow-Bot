@@ -236,3 +236,23 @@ label.btn:focus-within { outline: 2px solid #8ea1ff; outline-offset: 2px; }
 .img-thumb-btn img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .img-meta { display: grid; gap: 2px; min-width: 0; } .img-meta b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .img-actions { display: flex; align-items: center; gap: 6px; } .img-actions .icon-btn { margin-left: auto; }
+
+/* ---- pages: status, link preview, access ------------------------------------------------------------------------------- */
+.dot.warn { background: var(--warn); box-shadow: 0 0 0 3px rgba(240, 178, 50, .2); }
+.status-chip { padding: 4px 10px; border-radius: 6px; font-size: 13px; background: var(--raised); color: var(--muted); white-space: nowrap; }
+.status-chip.live { background: rgba(59, 165, 93, .18); color: #7fd99b; }
+.status-chip.changed { background: rgba(240, 178, 50, .18); color: #f7d27a; }
+.insp-sub { margin: 10px 0 0; padding-top: 12px; border-top: 1px solid var(--line); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.link-card { margin: 0; display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; padding: 10px 12px; border-radius: 6px; border-left: 4px solid var(--edge, var(--brand)); background: var(--panel-2); }
+.lc-text { min-width: 0; flex: 1 1 140px; display: grid; gap: 2px; }
+.lc-site { font-size: 12px; color: var(--muted); } .lc-title { font-weight: 600; color: #8ea1ff; overflow-wrap: anywhere; } .lc-desc { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+.lc-img { border-radius: 6px; max-width: 100%; object-fit: cover; } .lc-img.wide { width: 100%; max-height: 150px; } .lc-img.thumb { width: 56px; height: 56px; }
+.access { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 8px; }
+.access-choice { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.help.warn-help { color: #f7d27a; } .help.bad-help { color: #ff8a8c; }
+.more-menu { position: relative; } .more-menu > summary { list-style: none; } .more-menu > summary::-webkit-details-marker { display: none; }
+.more-panel { position: absolute; right: 0; top: calc(100% + 4px); z-index: 40; display: grid; gap: 2px; min-width: 170px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); }
+.more-panel .btn { justify-content: flex-start; }
+.page-editor .flowbar { gap: 8px; }
+.page-editor .flowbar .flow-name { width: auto; flex: 0 1 200px; min-width: 110px; }
+.page-editor .slug input { width: 110px; }
