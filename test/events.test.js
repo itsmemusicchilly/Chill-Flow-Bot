@@ -5,6 +5,7 @@ import { AuditLogEvent, ChannelType, Events } from 'discord.js';
 import { buildCommandDefs, CommandSync, hashDefs } from '../server/bot/commands.js';
 import { wireEvents } from '../server/bot/events.js';
 import { Database } from '../server/db.js';
+import { normalizeGraph, validateFlow } from '../shared/validate.js';
 import { Runtime } from '../server/engine/runtime.js';
 import { Logger } from '../server/logger.js';
 import { Coll, edge, fakeChannel, fakeGuild, fakeUser, node } from './helpers/fakes.js';
@@ -229,5 +230,113 @@ describe('slash command registration', () => {
     assert.equal((await sync.sync(guild.id)).ok, true);
     assert.equal(puts.length, 2);
     assert.equal(hashDefs([]) === hashDefs([]), true);
+  });
+});
+
+describe('cleaning up what buttons remembered', () => {
+  const remember = (messageId, channelId, guildId = guild.id) => runtime.services.components.remember(messageId, { guild: { id: guildId }, vars: { a: 1 }, data: { user: { id: '1' } } }, { channelId });
+
+  it('forgets a message when it is deleted, a whole channel when it is deleted, and bulk-deleted messages', async () => {
+    remember('m1', 'c1'); remember('m2', 'c2'); remember('m3', 'c2'); remember('m4', 'c3'); remember('m5', 'c3');
+    assert.equal(db.countComponentState(guild.id), 5);
+
+    client.emit(Events.MessageDelete, { id: 'm1', guildId: guild.id, guild });
+    await tick(30);
+    assert.equal(runtime.services.components.get(guild.id, 'm1'), undefined);
+
+    client.emit(Events.ChannelDelete, { id: 'c2', guild, type: ChannelType.GuildText });
+    await tick(30);
+    assert.equal(runtime.services.components.get(guild.id, 'm2'), undefined);
+    assert.equal(runtime.services.components.get(guild.id, 'm3'), undefined);
+
+    client.emit(Events.MessageBulkDelete, new Coll([['m4', {}]]), { guildId: guild.id });
+    await tick(30);
+    assert.equal(runtime.services.components.get(guild.id, 'm4'), undefined);
+    assert.ok(runtime.services.components.get(guild.id, 'm5'), 'untouched messages keep their state');
+  });
+
+  it('a message deleted in another server does not touch this one', async () => {
+    remember('m1', 'c1');
+    client.emit(Events.MessageDelete, { id: 'm1', guildId: '999999', guild: { id: '999999' } });
+    await tick(30);
+    assert.ok(runtime.services.components.get(guild.id, 'm1'));
+  });
+});
+
+describe('server boosts', () => {
+  const DAY = 24 * 3600 * 1000;
+  const person = (id = '930001', username = 'booster') => guild.addMember({ user: fakeUser({ id, username }) });
+  const update = (m, before, after, extra = {}) => client.emit(
+    Events.GuildMemberUpdate,
+    { ...m, partial: false, premiumSinceTimestamp: before, roles: m.roles, ...(extra.old || {}) },
+    { ...m, premiumSinceTimestamp: after, roles: extra.newRoles ?? m.roles },
+  );
+  const boostLogs = () => logs().filter((m) => /^(BOOST|UNBOOST)/.test(m));
+
+  it('starting to boost runs the trigger with who, when and the server\'s boost numbers', async () => {
+    guild.premiumSubscriptionCount = 7; guild.premiumTier = 2;
+    install([node('t', 'trigger.user.boostserver'), log('BOOST {{user.name}} count={{guild.boostCount}} tier={{guild.boostTier}} since={{boost.since}} days={{boost.days}} member={{member.boostingSince}}')], [edge('t', 'l')]);
+    const m = person();
+    const at = Date.now();
+    update(m, null, at);
+    await tick(40);
+    assert.deepEqual(boostLogs(), [`BOOST booster count=7 tier=2 since=${new Date(at).toISOString()} days=0 member=${new Date(at).toISOString()}`]);
+  });
+
+  it('stopping runs the other trigger, with how long they boosted and no boost date left on the member', async () => {
+    install([node('t', 'trigger.user.unboostserver'), log('UNBOOST {{user.name}} days={{boost.days}} since={{boost.since}} member=[{{member.boostingSince}}]')], [edge('t', 'l')]);
+    const m = person();
+    const began = Date.now() - 3.5 * DAY;
+    update(m, began, null);
+    await tick(40);
+    assert.deepEqual(boostLogs(), [`UNBOOST booster days=3 since=${new Date(began).toISOString()} member=[]`]);
+  });
+
+  it('only the trigger that matches the change runs', async () => {
+    install([node('t', 'trigger.user.boostserver'), log('BOOST start')], [edge('t', 'l')], 'starts');
+    install([node('t', 'trigger.user.unboostserver'), log('UNBOOST stop')], [edge('t', 'l')], 'stops');
+    const m = person();
+    update(m, null, Date.now());
+    await tick(40);
+    assert.deepEqual(boostLogs(), ['BOOST start']);
+    update(m, Date.now(), null);
+    await tick(40);
+    assert.deepEqual(boostLogs(), ['BOOST start', 'UNBOOST stop']);
+  });
+
+  it('ordinary updates do not count: nothing changes, an extra boost, or a member Discord has not fully loaded', async () => {
+    install([node('t', 'trigger.user.boostserver'), log('BOOST x')], [edge('t', 'l')], 'starts');
+    install([node('t', 'trigger.user.unboostserver'), log('UNBOOST x')], [edge('t', 'l')], 'stops');
+    const m = person();
+    update(m, null, null); // e.g. a nickname change by someone who never boosted
+    update(m, Date.now() - DAY, Date.now() - DAY); // still boosting, e.g. a role change
+    update(m, Date.now() - DAY, Date.now()); // still boosting (Discord moved the date): not a new boost
+    update(m, null, Date.now(), { old: { partial: true } }); // no reliable "before": must stay quiet
+    await tick(40);
+    assert.deepEqual(boostLogs(), []);
+  });
+
+  it('a boost together with a role change runs both the boost and the role trigger, once each', async () => {
+    const booster = guild.addRole({ id: '880001', name: 'Server Booster' });
+    install([node('t', 'trigger.user.boostserver'), log('BOOST {{user.name}}')], [edge('t', 'l')], 'boost');
+    install([node('t', 'trigger.member.roleAdded'), log('ROLE {{role.name}}')], [edge('t', 'l')], 'role');
+    const m = person();
+    const withRole = { cache: new Coll([[booster.id, booster]]) };
+    update(m, null, Date.now(), { newRoles: withRole });
+    await tick(40);
+    assert.deepEqual(logs().filter((x) => /^(BOOST|ROLE)/.test(x)).sort(), ['BOOST booster', 'ROLE Server Booster']);
+    update(m, Date.now(), Date.now(), { old: { roles: withRole }, newRoles: withRole });
+    await tick(40);
+    assert.equal(boostLogs().length, 1, 'a later update while still boosting does not fire again');
+  });
+
+  it('the two boost triggers need the Server Members intent', () => {
+    const off = { members: false, messageContent: true };
+    for (const type of ['trigger.user.boostserver', 'trigger.user.unboostserver']) {
+      const issues = validateFlow(normalizeGraph({ nodes: [node('t', type), log('x')], edges: [edge('t', 'l')] }), { intents: off });
+      assert.ok(issues.some((i) => i.nodeId === 't' && i.level === 'error' && i.kind === 'intent'), type);
+      const on = validateFlow(normalizeGraph({ nodes: [node('t', type), log('x')], edges: [edge('t', 'l')] }), { intents: { members: true, messageContent: false } });
+      assert.ok(!on.some((i) => i.level === 'error'), `${type} is fine with the intent on`);
+    }
   });
 });

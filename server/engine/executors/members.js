@@ -1,5 +1,6 @@
 import { FlowError } from '../errors.js';
 import { reasonFor, resolveMember, resolveRole, resolveUserId, withSelf } from '../resolve.js';
+import { roleData } from '../serialize.js';
 
 const key = (ctx, kind, userId, extra = '') => `${kind}:${ctx.guild.id}:${userId}${extra}`;
 
@@ -13,6 +14,20 @@ export const memberExecutors = {
     const member = await resolveMember(ctx, d.userId);
     const role = await resolveRole(ctx, d.roleId);
     await withSelf(ctx, [key(ctx, 'roleRemove', member.id, `:${role.id}`)], () => member.roles.remove(role, reasonFor(ctx, d)));
+  },
+  async 'action.member.toggleRole'({ ctx, d }) {
+    let member = await resolveMember(ctx, d.userId);
+    const role = await resolveRole(ctx, d.roleId);
+    if (role.id === ctx.guild.id) throw new FlowError('The @everyone role cannot be toggled.');
+    // The clicker's own member object is fresh from Discord; anyone else may be stale in the cache, so ask again.
+    if (member.id !== ctx.user?.id) member = (await ctx.guild.members.fetch({ user: member.id, force: true }).catch(() => null)) ?? member;
+    const has = member.roles.cache.has(role.id);
+    const kind = has ? 'roleRemove' : 'roleAdd';
+    await withSelf(ctx, [key(ctx, kind, member.id, `:${role.id}`)], () => (has
+      ? member.roles.remove(role, reasonFor(ctx, d))
+      : member.roles.add(role, reasonFor(ctx, d))));
+    ctx.data.role = roleData(role);
+    ctx.data.toggle = { action: has ? 'removed' : 'added' };
   },
   async 'action.member.kick'({ ctx, d }) {
     const member = await resolveMember(ctx, d.userId);

@@ -41,7 +41,9 @@ bot.start().catch((err) => {
   process.exit(1);
 });
 
-setInterval(() => db.pruneSessions(), 3600_000).unref();
+const housekeeping = () => { db.pruneSessions(); db.pruneComponentState(); };
+housekeeping();
+setInterval(housekeeping, 3600_000).unref();
 
 let closing = false;
 async function shutdown() {

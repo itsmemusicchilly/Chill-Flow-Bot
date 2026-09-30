@@ -21,6 +21,13 @@ CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL, data TEXT NOT NULL, expires_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS command_sync (guild_id TEXT PRIMARY KEY, hash TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS component_state (
+  guild_id TEXT NOT NULL, message_id TEXT NOT NULL, channel_id TEXT NOT NULL DEFAULT '',
+  vars TEXT NOT NULL, data TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER,
+  PRIMARY KEY (guild_id, message_id)
+);
+CREATE INDEX IF NOT EXISTS component_state_channel ON component_state(guild_id, channel_id);
+CREATE INDEX IF NOT EXISTS component_state_expiry ON component_state(expires_at) WHERE expires_at IS NOT NULL;
 CREATE TABLE IF NOT EXISTS pages (
   id TEXT PRIMARY KEY, guild_id TEXT NOT NULL, slug TEXT NOT NULL, title TEXT NOT NULL, published INTEGER NOT NULL DEFAULT 0,
   theme TEXT NOT NULL, blocks TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT,
@@ -330,6 +337,39 @@ export class Database {
 
   deleteSession(rawId) { this.#stmt('DELETE FROM sessions WHERE id = ?').run(sha(String(rawId))); }
   pruneSessions() { this.#stmt('DELETE FROM sessions WHERE expires_at < ?').run(Date.now()); }
+
+  // ---- component state: what a message with buttons remembers about the run that posted it -----
+  // `vars` and `data` are JSON strings (the caller serializes, so every read is an independent copy).
+  saveComponentState({ guildId, messageId, channelId = '', vars, data, expiresAt = null, now = Date.now() }) {
+    this.#stmt(`INSERT INTO component_state (guild_id, message_id, channel_id, vars, data, created_at, expires_at) VALUES (?,?,?,?,?,?,?)
+      ON CONFLICT(guild_id, message_id) DO UPDATE SET channel_id = excluded.channel_id, vars = excluded.vars, data = excluded.data,
+        created_at = excluded.created_at, expires_at = excluded.expires_at`)
+      .run(guildId, messageId, channelId, vars, data, now, expiresAt);
+  }
+
+  /** @returns {{vars: string, data: string, at: number}|undefined} undefined when unknown or expired */
+  getComponentState(guildId, messageId, now = Date.now()) {
+    const r = this.#stmt('SELECT vars, data, created_at, expires_at FROM component_state WHERE guild_id = ? AND message_id = ?').get(guildId, messageId);
+    if (!r) return undefined;
+    if (r.expires_at !== null && r.expires_at <= now) return undefined; // expired; pruneComponentState() removes the row later
+    return { vars: r.vars, data: r.data, at: r.created_at };
+  }
+
+  deleteComponentState(guildId, messageId) {
+    return this.#stmt('DELETE FROM component_state WHERE guild_id = ? AND message_id = ?').run(guildId, messageId).changes > 0;
+  }
+
+  deleteComponentStateForChannel(guildId, channelId) {
+    return this.#stmt('DELETE FROM component_state WHERE guild_id = ? AND channel_id = ?').run(guildId, channelId).changes;
+  }
+
+  pruneComponentState(now = Date.now()) {
+    return this.#stmt('DELETE FROM component_state WHERE expires_at IS NOT NULL AND expires_at <= ?').run(now).changes;
+  }
+
+  countComponentState(guildId) {
+    return this.#stmt('SELECT COUNT(*) AS n FROM component_state WHERE guild_id = ?').get(guildId).n;
+  }
 
   // ---- slash-command sync state ---------------------------------------------------------------
   getSyncHash(guildId) { return this.#stmt('SELECT hash FROM command_sync WHERE guild_id = ?').get(guildId)?.hash; }

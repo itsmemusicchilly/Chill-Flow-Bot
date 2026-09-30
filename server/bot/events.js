@@ -6,7 +6,7 @@ const AUDIT_WINDOW_MS = 15000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function wireEvents({ client, runtime, logger, sync, auditDelayMs = 1000 }) {
-  const { selfActions } = runtime.services;
+  const { selfActions, components } = runtime.services;
   const warned = new Map();
   const has = (guild, type) => runtime.hasTrigger(guild.id, type);
   const safe = (label, fn) => async (...args) => {
@@ -44,8 +44,13 @@ export function wireEvents({ client, runtime, logger, sync, auditDelayMs = 1000 
     });
   }));
   client.on(Events.MessageDelete, safe('messageDelete', async (m) => {
+    components.forget(m.guildId ?? m.guild?.id, m.id); // a deleted panel no longer needs its remembered variables
     if (!m.guild || !has(m.guild, 'trigger.message.deleted')) return;
     runtime.fire('trigger.message.deleted', { guild: m.guild, channel: m.channel, user: m.author ?? undefined, message: m, info: { channelId: m.channelId } });
+  }));
+
+  client.on(Events.MessageBulkDelete, safe('messageBulkDelete', async (messages, channel) => {
+    for (const id of messages.keys()) components.forget(channel?.guildId ?? channel?.guild?.id, id);
   }));
 
   // ---- members --------------------------------------------------------------------------------
@@ -102,6 +107,15 @@ export function wireEvents({ client, runtime, logger, sync, auditDelayMs = 1000 
           runtime.fire(type, { guild, user, member: newM, role, info: { isBot: user.bot, byBot, roleId: role.id, roleName: role.name } });
         }
       }
+      // Boosts. Only with a real "before": a partial old member reads as "not boosting" and would look like a new boost.
+      const wasBoosting = Boolean(oldM.premiumSinceTimestamp);
+      const isBoosting = Boolean(newM.premiumSinceTimestamp);
+      const boostType = isBoosting ? 'trigger.user.boostserver' : 'trigger.user.unboostserver';
+      if (wasBoosting !== isBoosting && has(guild, boostType)) {
+        const since = isBoosting ? newM.premiumSinceTimestamp : oldM.premiumSinceTimestamp;
+        const days = isBoosting ? 0 : Math.max(0, Math.floor((Date.now() - since) / 86400000));
+        runtime.fire(boostType, { guild, user, member: newM, data: { boost: { since: new Date(since).toISOString(), days } }, info: { isBot: user.bot } });
+      }
     }
     const until = newM.communicationDisabledUntilTimestamp;
     if (has(guild, 'trigger.member.timeout') && until && until > Date.now() && (oldM.partial || oldM.communicationDisabledUntilTimestamp !== until)) {
@@ -136,6 +150,7 @@ export function wireEvents({ client, runtime, logger, sync, auditDelayMs = 1000 
   }));
   client.on(Events.ChannelDelete, safe('channelDelete', async (ch) => {
     if (!ch.guild) return;
+    components.forgetChannel(ch.guild.id, ch.id); // e.g. a closed ticket: its messages are gone too
     runtime.fire('trigger.channel.deleted', { guild: ch.guild, channel: ch, info: { byBot: selfActions.consume(`channelDelete:${ch.id}`) } });
   }));
   client.on(Events.ChannelUpdate, safe('channelUpdate', async (o, n) => {

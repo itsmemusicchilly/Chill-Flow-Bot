@@ -34,13 +34,18 @@ export const COMMAND_PERMISSIONS = [
   'ModerateMembers',
 ];
 
+/** A reusable button's public id. Lives in the Discord custom_id (`fcb:<id>`), so it must stay short and colon-free. */
+export const BUTTON_ID_RE = /^[A-Za-z0-9_.-]{1,64}$/;
+/** The reusable id of a button ('' when it is a normal button wired to its own output, or a Link button). */
+export const buttonKey = (b) => (b && b.style !== 'Link' ? String(b.customId ?? '').trim() : '');
+
 const OUT = { id: 'out', label: 'Next' };
 const ERR = { id: 'error', label: 'On error', kind: 'error' };
 const ACTION_OUTS = [OUT, ERR];
 
 const USER = [['user.id', 'User ID'], ['user.name', 'Username'], ['user.displayName', 'Display name'], ['user.mention', 'Mention'], ['user.tag', 'Tag'], ['user.avatar', 'Avatar URL'], ['user.isBot', 'Is a bot']];
-const MEMBER = [['member.nickname', 'Nickname'], ['member.joinedAt', 'Joined at'], ['member.roleIds', 'Role IDs'], ['member.permissions', 'Permissions']];
-const GUILD = [['guild.id', 'Server ID'], ['guild.name', 'Server name'], ['guild.memberCount', 'Member count']];
+const MEMBER = [['member.nickname', 'Nickname'], ['member.joinedAt', 'Joined at'], ['member.roleIds', 'Role IDs'], ['member.permissions', 'Permissions'], ['member.boostingSince', 'Boosting since (ISO, blank if not boosting)']];
+const GUILD = [['guild.id', 'Server ID'], ['guild.name', 'Server name'], ['guild.memberCount', 'Member count'], ['guild.boostCount', 'Server boosts'], ['guild.boostTier', 'Server boost level (0-3)']];
 const CHANNEL = [['channel.id', 'Channel ID'], ['channel.name', 'Channel name'], ['channel.mention', 'Channel mention'], ['channel.type', 'Channel type'], ['channel.parentId', 'Category ID']];
 const MESSAGE = [['message.id', 'Message ID'], ['message.content', 'Message text'], ['message.url', 'Message link'], ['message.authorId', 'Author ID']];
 const ROLE = [['role.id', 'Role ID'], ['role.name', 'Role name'], ['role.mention', 'Role mention'], ['role.color', 'Role color']];
@@ -118,6 +123,23 @@ trigger('trigger.command', {
   },
 });
 
+trigger('trigger.button.clicked', {
+  label: 'Button Clicked', icon: '🔘',
+  description: 'Runs when someone presses a button that has this Button ID — on any message, from any flow. Keeps working after restarts, so it is ideal for ticket and role panels.',
+  fields: [
+    text('customId', 'Button ID', {
+      required: true, placeholder: 'open_ticket',
+      help: 'Give a button in a Send Message node the same “Button ID”. Letters, numbers, - _ and . (max 64). Use each ID in only one flow.',
+    }),
+  ],
+  provides: () => [...USER, ...MEMBER, ...GUILD, ...CHANNEL, ...MESSAGE, ['button.id', 'Button ID'], ['button.label', 'Button label']],
+  summary: (d) => d.customId || '?',
+  check(d) {
+    const id = String(d.customId ?? '').trim();
+    return id && !BUTTON_ID_RE.test(id) ? ['Button ID can only use letters, numbers, - _ and . (max 64).'] : [];
+  },
+});
+
 trigger('trigger.message.received', {
   label: 'Message Received', icon: '💬', requires: 'messageContent',
   description: 'Runs when someone posts a message that matches your filter (e.g. a !prefix command).',
@@ -158,6 +180,19 @@ memberTrigger('trigger.member.timeout', 'Member Timed Out', '⏳', 'Runs when so
 for (const [type, label, icon] of [['trigger.member.roleAdded', 'Role Given to Member', '🎖️'], ['trigger.member.roleRemoved', 'Role Removed from Member', '📤']]) {
   memberTrigger(type, label, icon, `Runs when a member ${type.endsWith('Added') ? 'gains' : 'loses'} a role.`, {
     requires: 'members', provides: ROLE, fields: [idField('roleId', 'Only for role (optional)', 'role'), includeSelf],
+  });
+}
+
+// Boosts: "started" = the member had no boost and now has one; "stopped" = all of their boosts ended. Extra boosts by
+// someone who already boosts change nothing (Discord keeps the first boost date), so they do not count. Bots cannot boost.
+for (const [type, label, icon, description] of [
+  ['trigger.user.boostserver', 'Member Boosted Server', '🚀', 'Runs when a member starts boosting the server. Extra boosts from someone who already boosts do not count.'],
+  ['trigger.user.unboostserver', 'Member Stopped Boosting', '💔', 'Runs when a member stops boosting the server altogether (all of their boosts ended).'],
+]) {
+  trigger(type, {
+    label, icon, description, requires: 'members', fields: [],
+    provides: () => [...USER, ...MEMBER, ...GUILD, ['boost.since', 'When they started boosting (ISO)'], ['boost.days', 'Days they boosted (when they stop)']],
+    summary: () => '',
   });
 }
 
@@ -240,7 +275,7 @@ def('action.message.send', {
     area('content', 'Message text', { placeholder: 'Hello {{user.mention}}!' }),
     ...embedFields(),
     list('buttons', 'Buttons', {
-      create: () => ({ id: uid(6), label: 'Button', style: 'Primary', emoji: '', url: '', disabled: false }),
+      create: () => ({ id: uid(6), label: 'Button', style: 'Primary', emoji: '', url: '', disabled: false, customId: '' }),
       label: (b) => b.label,
       fields: [
         text('label', 'Label', { required: true }),
@@ -248,6 +283,10 @@ def('action.message.send', {
         text('url', 'URL', { showIf: when('style', 'Link'), required: true }),
         text('emoji', 'Emoji (optional)'),
         bool('disabled', 'Disabled'),
+        text('customId', 'Button ID (optional)', {
+          showIf: whenNot('style', 'Link'), placeholder: 'open_ticket',
+          help: 'Makes this a reusable button: it is handled by a “Button Clicked” trigger with the same ID instead of its own output here, and keeps working on every copy of the message. Adding an ID removes this button\'s output connection.',
+        }),
       ],
     }, { max: 25 }),
     bool('menuEnabled', 'Add a select menu'),
@@ -263,7 +302,7 @@ def('action.message.send', {
   ],
   outputs: (d) => [
     OUT,
-    ...(d.buttons || []).filter((b) => b.style !== 'Link').map((b) => ({ id: `btn_${b.id}`, label: b.label || 'Button', kind: 'button' })),
+    ...(d.buttons || []).filter((b) => b.style !== 'Link' && !buttonKey(b)).map((b) => ({ id: `btn_${b.id}`, label: b.label || 'Button', kind: 'button' })),
     ...(d.menuEnabled ? (d.menuOptions || []).map((o) => ({ id: `opt_${o.id}`, label: o.label || 'Option', kind: 'option' })) : []),
     ERR,
   ],
@@ -273,6 +312,15 @@ def('action.message.send', {
     if (!d.content && !d.useEmbed && !(d.buttons || []).length) e.push('Add message text, an embed or buttons — Discord will not send an empty message.');
     if ((d.buttons || []).length + (d.menuEnabled ? 1 : 0) > 25) e.push('Too many components.');
     if (d.menuEnabled && !(d.menuOptions || []).length) e.push('The select menu needs at least one option.');
+    const seen = new Set();
+    for (const b of d.buttons || []) {
+      const key = buttonKey(b);
+      if (!key) continue;
+      if (!/\{\{/.test(key) && !BUTTON_ID_RE.test(key)) e.push(`Button ID “${key}” can only use letters, numbers, - _ and . (max 64).`);
+      if (seen.has(key)) e.push(`Button ID “${key}” is used twice in this message — Discord needs them to be unique.`);
+      seen.add(key);
+    }
+    if (seen.size && d.target === 'dm') e.push('Buttons with a Button ID only work inside a server, not in direct messages.');
     return e;
   },
 });
@@ -347,6 +395,14 @@ def('action.member.removeRole', {
   fields: [userField(), idField('roleId', 'Role', 'role', { required: true }), reasonField()],
   outputs: ACTION_OUTS, summary: (d) => d.roleId || '',
 });
+def('action.member.toggleRole', {
+  category: 'member', label: 'Toggle Role', icon: '🔁',
+  description: 'Give the role if the member does not have it, take it away if they do. Perfect for role panels: one button per role. Use {{toggle.action}} (added / removed) in your reply.',
+  fields: [userField(), idField('roleId', 'Role', 'role', { required: true }), reasonField()],
+  outputs: ACTION_OUTS,
+  provides: () => [...ROLE, ['toggle.action', 'Whether the role was “added” or “removed”']],
+  summary: (d) => d.roleId || '',
+});
 def('action.member.kick', {
   category: 'member', label: 'Kick Member', icon: '🥾', description: 'Kick a member from the server.',
   fields: [userField(), reasonField()], outputs: ACTION_OUTS, summary: (d) => d.userId || 'triggering user',
@@ -415,6 +471,33 @@ def('action.channel.update', {
     overwriteList(),
   ],
   outputs: ACTION_OUTS, summary: (d) => d.channelId || 'current channel',
+});
+def('action.channel.transcript', {
+  category: 'channel', label: 'Save Transcript', icon: '📄',
+  description: 'Record everything said in a channel (for example a ticket that is being closed) as an .html file, post it in a log channel and optionally send it to someone by direct message. If it cannot be saved, follow On error and keep the channel.',
+  fields: [
+    idField('channelId', 'Channel to record', 'channel', { placeholder: 'blank = current channel' }),
+    idField('sendChannelId', 'Post the transcript in', 'channel', {
+      required: true, help: 'For example your staff log. The bot needs Send Messages and Attach Files there. Do not use the channel being recorded.',
+    }),
+    area('channelMessage', 'Message with the file (log channel)', { default: '📄 Transcript of #{{channel.name}}', rows: 2 }),
+    idField('sendUserId', 'Also send it to (direct message)', 'user', {
+      placeholder: '{{original.user.id}} = whoever opened the ticket',
+      help: 'Optional. If their DMs are closed, or they can no longer see the channel, the DM is skipped and the flow carries on.',
+    }),
+    area('dmMessage', 'Message with the file (direct message)', {
+      showIf: whenNot('sendUserId', ''), rows: 2,
+      default: 'Here is a copy of your conversation in {{guild.name}}. Download the file and open it in your browser.',
+    }),
+  ],
+  outputs: ACTION_OUTS,
+  provides: () => [
+    ['transcript.messages', 'Messages in the transcript'], ['transcript.name', 'Transcript file name'], ['transcript.bytes', 'File size (bytes)'],
+    ['transcript.truncated', 'true if the transcript was cut short'], ['transcript.dm', 'Direct message: sent, failed or skipped'],
+  ],
+  wants: 'messageContent',
+  wantsNote: 'without the Message Content intent Discord hides other people\'s message text, so the transcript can only show who wrote when (plus the bot\'s own messages). Ask the bot operator to enable it.',
+  summary: (d) => (d.sendChannelId ? `→ ${d.sendChannelId}${d.sendUserId ? ' + DM' : ''}` : 'choose a log channel'),
 });
 
 // ---- roles --------------------------------------------------------------------------------------
@@ -568,7 +651,7 @@ export function availableVariables(nodes, edges, nodeId, extra = {}) {
       const src = byId.get(e.source);
       if (!src) continue;
       const h = e.sourceHandle || 'out';
-      if (h.startsWith('btn_') || h.startsWith('opt_')) fromComponent = true;
+      if (h.startsWith('btn_') || h.startsWith('opt_') || src.type === 'trigger.button.clicked') fromComponent = true;
       if (h === 'error') fromError = true;
       if (seen.has(src.id)) continue;
       seen.add(src.id);

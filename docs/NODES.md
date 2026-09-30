@@ -24,7 +24,17 @@ triggered this flow”.
 | Who can use it | select | options: Everyone, Administrators, Manage Server, Manage Roles, Manage Channels, Manage Messages, Kick Members, Ban Members, Timeout Members; Discord's default permission for the command. Server admins can still change it in Integrations. |
 | Make the "thinking…" reply private | boolean | Used when a flow takes longer than ~2 s to answer. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+
+### 🔘 Button Clicked
+
+`trigger.button.clicked` — Runs when someone presses a button that has this Button ID — on any message, from any flow. Keeps working after restarts, so it is ideal for ticket and role panels.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Button ID | text | required; Give a button in a Send Message node the same “Button ID”. Letters, numbers, - _ and . (max 64). Use each ID in only one flow. |
+
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{button.id}}`, `{{button.label}}`
 
 ### 💬 Message Received
 
@@ -40,7 +50,7 @@ triggered this flow”.
 | Only in channel (optional) | channel |  |
 | Ignore bots | boolean |  |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{message.after}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{message.after}}`
 
 ### 🗑️ Message Deleted
 
@@ -50,7 +60,7 @@ triggered this flow”.
 | --- | --- | --- |
 | Only in channel (optional) | channel |  |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`
 
 ### 👋 Member Joined
 
@@ -62,7 +72,7 @@ triggered this flow”.
 | --- | --- | --- |
 | Ignore bots | boolean |  |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`
 
 ### 🚪 Member Left
 
@@ -75,7 +85,7 @@ triggered this flow”.
 | Ignore bots | boolean |  |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`
 
 ### 🥾 Member Kicked
 
@@ -88,7 +98,7 @@ triggered this flow”.
 | Ignore bots | boolean |  |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
 
 ### 🔨 Member Banned
 
@@ -99,7 +109,7 @@ triggered this flow”.
 | Ignore bots | boolean |  |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
 
 ### 🕊️ Member Unbanned
 
@@ -110,7 +120,7 @@ triggered this flow”.
 | Ignore bots | boolean |  |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
 
 ### ⏳ Member Timed Out
 
@@ -123,7 +133,7 @@ triggered this flow”.
 | Ignore bots | boolean |  |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{timeout.until}}`, `{{timeout.minutes}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{timeout.until}}`, `{{timeout.minutes}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
 
 ### 🎖️ Role Given to Member
 
@@ -137,7 +147,7 @@ triggered this flow”.
 | Only for role (optional) | role |  |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
 
 ### 📤 Role Removed from Member
 
@@ -151,7 +161,23 @@ triggered this flow”.
 | Only for role (optional) | role |  |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
+
+### 🚀 Member Boosted Server
+
+`trigger.user.boostserver` — Runs when a member starts boosting the server. Extra boosts from someone who already boosts do not count.
+
+> Needs the **Server Members** privileged intent (the bot operator must enable it).
+
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{boost.since}}`, `{{boost.days}}`
+
+### 💔 Member Stopped Boosting
+
+`trigger.user.unboostserver` — Runs when a member stops boosting the server altogether (all of their boosts ended).
+
+> Needs the **Server Members** privileged intent (the bot operator must enable it).
+
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{boost.since}}`, `{{boost.days}}`
 
 ### 🎭 Role Created
 
@@ -161,7 +187,7 @@ triggered this flow”.
 | --- | --- | --- |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
 
 ### #️⃣ Channel Created
 
@@ -171,7 +197,7 @@ triggered this flow”.
 | --- | --- | --- |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
 ### 🎭 Role Deleted
 
@@ -181,7 +207,7 @@ triggered this flow”.
 | --- | --- | --- |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
 
 ### #️⃣ Channel Deleted
 
@@ -191,7 +217,7 @@ triggered this flow”.
 | --- | --- | --- |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
 ### 🎭 Role Updated
 
@@ -201,7 +227,7 @@ triggered this flow”.
 | --- | --- | --- |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`, `{{oldRole.name}}`, `{{oldRole.color}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`, `{{oldRole.name}}`, `{{oldRole.color}}`
 
 ### #️⃣ Channel Updated
 
@@ -211,7 +237,7 @@ triggered this flow”.
 | --- | --- | --- |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{oldChannel.name}}`, `{{oldChannel.topic}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{oldChannel.name}}`, `{{oldChannel.topic}}`
 
 ### 😀 Reaction Added
 
@@ -223,7 +249,7 @@ triggered this flow”.
 | Only for emoji (optional) | text |  |
 | Ignore bots | boolean |  |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{emoji.name}}`, `{{emoji.id}}`, `{{emoji.display}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{emoji.name}}`, `{{emoji.id}}`, `{{emoji.display}}`
 
 ### 😶 Reaction Removed
 
@@ -235,7 +261,7 @@ triggered this flow”.
 | Only for emoji (optional) | text |  |
 | Ignore bots | boolean |  |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{emoji.name}}`, `{{emoji.id}}`, `{{emoji.display}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{emoji.name}}`, `{{emoji.id}}`, `{{emoji.display}}`
 
 ### 🎙️ Voice Joined
 
@@ -246,7 +272,7 @@ triggered this flow”.
 | Only channel (optional) | channel |  |
 | Ignore bots | boolean |  |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
 ### 🎙️ Voice Left
 
@@ -257,7 +283,7 @@ triggered this flow”.
 | Only channel (optional) | channel |  |
 | Ignore bots | boolean |  |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
 ### ⏰ Schedule
 
@@ -269,7 +295,7 @@ triggered this flow”.
 | Unit | select | options: minutes, hours, days |
 | Channel for context (optional) | channel |  |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
 ### ▶️ Manual (Run button)
 
@@ -279,7 +305,7 @@ triggered this flow”.
 | --- | --- | --- |
 | Channel for context (optional) | channel | Becomes the “current channel” for the flow. |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
 ### 🧾 Form Submitted
 
@@ -289,7 +315,7 @@ triggered this flow”.
 | --- | --- | --- |
 | Form | form | required; Only forms on pages of this server are listed. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{form.title}}`, `{{form.summary}}`, `{{response.id}}`, `{{page.title}}`, `{{page.url}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{form.title}}`, `{{form.summary}}`, `{{response.id}}`, `{{page.title}}`, `{{page.url}}`
 
 ## Messages
 
@@ -322,6 +348,7 @@ triggered this flow”.
 | ↳ URL | text | required; shown when `style` is `Link` |
 | ↳ Emoji (optional) | text |  |
 | ↳ Disabled | boolean |  |
+| ↳ Button ID (optional) | text | shown when `style` is not `Link`; Makes this a reusable button: it is handled by a “Button Clicked” trigger with the same ID instead of its own output here, and keeps working on every copy of the message. Adding an ID removes this button's output connection. |
 | Add a select menu | boolean |  |
 | Menu placeholder | text | shown when `menuEnabled` is `true` |
 | Menu options | list | shown when `menuEnabled` is `true`; up to 25 items |
@@ -332,7 +359,7 @@ triggered this flow”.
 | Allow role, @everyone and @here pings | boolean | Off by default so member-supplied text can never mass-ping. Individual users can always be mentioned. |
 | Save message ID as variable | text |  |
 
-**Outputs:** Next, On error — plus one per button and menu option
+**Outputs:** Next, On error — plus one per button and menu option (a button with a Button ID has no output: a “Button Clicked” trigger handles it instead)
 
 ### 📝 Edit Message
 
@@ -423,6 +450,20 @@ triggered this flow”.
 | Reason (audit log) | text |  |
 
 **Outputs:** Next, On error
+
+### 🔁 Toggle Role
+
+`action.member.toggleRole` — Give the role if the member does not have it, take it away if they do. Perfect for role panels: one button per role. Use {{toggle.action}} (added / removed) in your reply.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Member | user |  |
+| Role | role | required |
+| Reason (audit log) | text |  |
+
+**Outputs:** Next, On error
+
+**Adds variables:** `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`, `{{toggle.action}}`
 
 ### 🥾 Kick Member
 
@@ -537,6 +578,24 @@ triggered this flow”.
 | ↳ Deny | multiselect | options: ViewChannel, SendMessages, SendMessagesInThreads, ReadMessageHistory, AddReactions, AttachFiles, EmbedLinks, UseExternalEmojis, MentionEveryone, ManageMessages, ManageChannels, ManageRoles, ManageThreads, CreatePublicThreads, CreatePrivateThreads, UseApplicationCommands, CreateInstantInvite, Connect, Speak, Stream, UseVAD, MuteMembers, DeafenMembers, MoveMembers |
 
 **Outputs:** Next, On error
+
+### 📄 Save Transcript
+
+`action.channel.transcript` — Record everything said in a channel (for example a ticket that is being closed) as an .html file, post it in a log channel and optionally send it to someone by direct message. If it cannot be saved, follow On error and keep the channel.
+
+> Works best with the **Message Content** privileged intent — without the Message Content intent Discord hides other people's message text, so the transcript can only show who wrote when (plus the bot's own messages). Ask the bot operator to enable it.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Channel to record | channel |  |
+| Post the transcript in | channel | required; For example your staff log. The bot needs Send Messages and Attach Files there. Do not use the channel being recorded. |
+| Message with the file (log channel) | textarea |  |
+| Also send it to (direct message) | user | Optional. If their DMs are closed, or they can no longer see the channel, the DM is skipped and the flow carries on. |
+| Message with the file (direct message) | textarea | shown when `sendUserId` is not `` |
+
+**Outputs:** Next, On error
+
+**Adds variables:** `{{transcript.messages}}`, `{{transcript.name}}`, `{{transcript.bytes}}`, `{{transcript.truncated}}`, `{{transcript.dm}}`
 
 ## Roles
 

@@ -18,14 +18,17 @@ channel, remember a variable…), press **Save** — it is live. No code.
   administrator (configurable). Every flow, variable, slash command and log is scoped to one server.
 * **Every button is its own path.** A *Send Message* node can carry several buttons and a select menu; each one becomes an
   output you connect to whatever should happen next.
-* **50 nodes**: 24 triggers (commands, messages, joins/leaves/kicks/bans/timeouts, role and channel events, reactions,
-  voice, schedule, manual) and 26 actions/logic nodes (messages with buttons/menus/forms, member moderation, channels,
-  roles, variables, conditions, loops, cooldowns, waits). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
+* **Reusable panels.** Give a button a *Button ID* and handle it with a **Button Clicked** trigger instead: it works on any
+  copy of the message, from any flow, survives restarts, and **Toggle Role** turns a button into a one-press role switch.
+  Ready-made *Ticket panel* and *Button role panel* templates show how.
+* **55 nodes**: 27 triggers (commands, buttons, messages, joins/leaves/kicks/bans/timeouts, server boosts, role and channel events,
+  reactions, voice, schedule, manual, form submitted) and 28 actions/logic nodes (messages with buttons/menus/forms, member moderation,
+  channels and ticket transcripts, roles, variables, conditions, loops, cooldowns, waits). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
 * **Remembers things**: run, per-server and per-user variables, usable everywhere as `{{templates}}`.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (286 unit/integration tests plus a
+> **Status:** the engine, API, security rules and editor are covered by automated tests (363 unit/integration tests plus a
 > 72-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it.
 
@@ -65,8 +68,8 @@ real dashboard and API against a fake in-memory Discord — useful for developme
 | `TRUST_PROXY` | off | Number of reverse proxies in front (or `true`) so client IPs and `https` are detected correctly |
 | `DATA_DIR` | `data` | Where `flowbot.sqlite` and the `uploads/` folder (uploaded pictures) live. Back both up |
 | `DASHBOARD_MIN_PERMISSION` | `Administrator` | Or `ManageGuild`. Flows run with the **bot's** permissions, so the default is the safe one |
-| `ENABLE_MEMBERS_INTENT` | `false` | Needed by *Member Joined / Left / Kicked / Timed Out* and *Role Given/Removed* triggers |
-| `ENABLE_MESSAGE_CONTENT_INTENT` | `false` | Needed by the *Message Received* trigger |
+| `ENABLE_MEMBERS_INTENT` | `false` | Needed by *Member Joined / Left / Kicked / Timed Out*, *Member Boosted Server / Stopped Boosting* and *Role Given/Removed* triggers |
+| `ENABLE_MESSAGE_CONTENT_INTENT` | `false` | Needed by the *Message Received* trigger. Optional for *Save Transcript*: without it Discord hides what other people wrote, so a transcript lists who wrote when, but not what |
 
 | `LIMIT_*` | unlimited | Optional caps, see [Limits](#limits) |
 
@@ -85,6 +88,8 @@ loop iterations, steps per run and as long a wait as you like. On a private bot 
 | `LIMIT_VARS_PER_GUILD` · `LIMIT_VAR_VALUE_BYTES` | remembered variables per server / size of one value |
 | `LIMIT_RUNS_PER_10S` · `LIMIT_CONCURRENT_RUNS` · `LIMIT_ACTIONS_PER_10S` | flow starts, simultaneous runs and Discord actions per server |
 | `LIMIT_STEPS_PER_RUN` · `LIMIT_LOOP_ITERATIONS` · `LIMIT_WAIT_SECONDS` | nodes executed per run, loop length, longest single wait |
+| `LIMIT_TRANSCRIPT_MESSAGES` | most messages one ticket transcript records (default: all, up to the file-size ceiling below) |
+| `LIMIT_COMPONENT_STATE_DAYS` | how long a message's remembered button data is kept (default: until the message or its channel is deleted; ephemeral replies always expire after a day) |
 | `LIMIT_PAGES_PER_GUILD` · `LIMIT_BLOCKS_PER_PAGE` · `LIMIT_RESPONSES_PER_GUILD` | pages per server, blocks per page, stored form responses per server |
 | `LIMIT_UPLOAD_BYTES` · `LIMIT_UPLOADS_PER_GUILD` · `LIMIT_STORAGE_BYTES_PER_GUILD` | size of one uploaded picture, pictures per server, total picture storage per server |
 | `LIMIT_REQUEST_BYTES` | HTTP request body (default 50 MB; always has a ceiling, max 1 GB) |
@@ -92,7 +97,7 @@ loop iterations, steps per run and as long a wait as you like. On a private bot 
 `.env.example` contains a commented **public-host preset** with sensible caps.
 
 **What cannot be unlimited** — these are physical or Discord's own rules, not ours: 25 buttons / menu options / embed fields
-per message, 25 options per slash command, 5 form inputs, 2000 characters per message, 100 slash commands per server,
+per message, 25 options per slash command, 5 form inputs, 2000 characters per message, 8 MB per ticket transcript file (Discord's upload limit), 100 slash commands per server,
 memory and CPU, `setTimeout`'s maximum (~24.8 days), the form wait (10 min: Discord's interaction tokens expire), and the
 login/API/public-site rate limits that protect the site itself (10 form submissions per minute per visitor, 60 per IP, 600 page views
 per IP; a form answer is at most 10 000 characters and a public request 256 KB; an uploaded picture is at most 32 MB and 64 megapixels
@@ -116,14 +121,61 @@ Development with hot reload: `npm run dev` (server + Vite). Set `BASE_URL=http:/
 * **Errors**: every action has an **On error** output. Connect it to react (`{{error.message}}`); unconnected, the error
   is logged and that branch ends. Interactions never end with Discord's red “interaction failed”.
 * **Slow flows** are fine: after ~2 s the bot defers the reply for you, and the next *Send Message → reply* fills it in.
-* **Buttons & menus** are routed by their custom id, so they keep working after restarts. Run variables (`{{var.x}}`) are
-  remembered *in memory* per message, so they survive edits but not a restart. `{{original.user.name}}` etc. refer to
-  whoever/whatever created the message.
+* **Buttons & menus** are routed by their custom id, so they keep working after restarts. What the run that posted a message
+  knew — its run variables (`{{var.x}}`) and `{{original.user.name}}` etc. (whoever/whatever created the message) — is stored
+  in the database, so it survives restarts too. **Every press gets its own private copy**: one person's press can never
+  change what the next person sees. If you want something to carry over between presses, use a server or user variable.
 * **Forms (modals)** must be the first thing a command/button does; answers are `{{input.<id>}}`.
 * **No feedback loops**: changes the bot makes itself (a role it gave, a channel it created) do not trigger flows unless you
   tick *Also run for changes made by this bot*.
 * **Kick vs leave, who banned whom**: read from the audit log — give the bot *View Audit Log* or kicks look like leaves.
 * **Slash commands** are registered per server when you save (instant, no global propagation delay).
+
+### Reusable panels (tickets, role menus)
+
+A normal button is wired to an output of the *Send Message* node that posted it. To make a button reusable, open the button
+in the node and fill **Button ID** (for example `open_ticket`), then add a **Button Clicked** trigger with the same ID:
+
+* The button keeps working on **every copy** of the message, after restarts, and even if you duplicate or rebuild the flow —
+  its Discord id is `fcb:open_ticket`, which does not mention any flow or node.
+* **One handler per ID.** A press can only be answered once, so if two flows use the same ID the oldest wins and the log
+  says so. Buttons with an ID only work inside servers (not in DMs), and adding an ID to a button that is already posted
+  makes that old message stop working until you post it again.
+* Inside the flow `{{button.id}}`, `{{button.label}}`, `{{user.*}}` (whoever pressed) and `{{original.*}}` (whoever posted the
+  message) are available. **Toggle Role** gives the role, or takes it away if the member already has it (`{{toggle.action}}`
+  says which).
+* Panels are posted by a **Manual** trigger (press ▶ Run once). Start from the **Ticket panel** or **Button role panel**
+  template. In the ticket template a cooldown stops double-clicks from opening two tickets.
+
+### Ticket transcripts
+
+The **Save Transcript** node records everything said in a channel — the person, the time, the text, embeds, attachments (as
+links), stickers, replies — and saves it as an `.html` file. It posts the file in a **log channel** you choose and can also
+**DM a copy** to someone (in a ticket: `{{original.user.id}}`, the person who opened it). The *Support tickets* and
+*Ticket panel* templates run it when **Close** is pressed; pick the log channel in that node.
+
+* **The ticket only closes if the transcript was saved.** If the log channel is missing or Discord refuses the post, the flow
+  follows **On error** (the templates say why and leave the ticket open). A DM that cannot be delivered — closed DMs, or the
+  person can no longer see the channel — never blocks anything; it is skipped with a warning in the logs
+  (`{{transcript.dm}}` is `sent`, `failed` or `skipped`).
+* **Message Content intent.** Without `ENABLE_MESSAGE_CONTENT_INTENT` Discord returns *empty text* for other people's messages.
+  The node still works, but the file says so in a banner and the editor shows a warning on the node.
+* **What the file is:** one self-contained page — no scripts, no pictures, everything escaped — so it is safe to open. Discord does
+  not preview `.html`; download it and open it in a browser. Attachment links are Discord's own and **expire** (and vanish with
+  the channel), so the transcript records that a file was shared, not its content.
+* **Size:** transcripts stop at 8 MB (Discord's upload limit) or at `LIMIT_TRANSCRIPT_MESSAGES`, keep the *start* of the
+  conversation, and say where they stop (`{{transcript.truncated}}`). Long channels are read 100 messages at a time.
+
+### Server boosts
+
+**Member Boosted Server** and **Member Stopped Boosting** start a flow when someone starts, or completely stops, boosting the
+server (both need `ENABLE_MEMBERS_INTENT`). Handy for a thank-you message: *"Thanks {{user.mention}}! We now have
+{{guild.boostCount}} boosts (level {{guild.boostTier}})."*
+
+* Extra boosts from someone who already boosts do not count — Discord keeps the date of the first one — and *stopped* means all of
+  that person's boosts ended (`{{boost.days}}` is how long they boosted).
+* Discord only reports the change together with another change on the member (in practice the “Server Booster” role), so if an admin
+  deleted that role some boosts may go unnoticed. Members the bot has not loaded yet are ignored rather than guessed at.
 
 ### Templates
 
@@ -132,11 +184,14 @@ Development with hot reload: `npm run dev` (server + Vite). Set `BASE_URL=http:/
 | | |
 | --- | --- |
 | `user.id .name .displayName .mention .tag .avatar .isBot` | who triggered the flow (or who the event is about) |
-| `member.nickname .joinedAt .roleIds .permissions` | their server membership |
-| `guild.id .name .memberCount` | the server |
+| `member.nickname .joinedAt .roleIds .permissions .boostingSince` | their server membership |
+| `guild.id .name .memberCount .boostCount .boostTier` | the server |
 | `channel.id .name .mention .type`, `message.id .content .url .after`, `role.*`, `emoji.*` | event details |
 | `option.<name>` | slash-command options |
 | `input.<id>`, `select.value`, `original.*` | forms, menus, the message that a button belongs to |
+| `button.id`, `button.label`, `toggle.action` | the button that was pressed (*Button Clicked*), and whether *Toggle Role* added or removed the role |
+| `boost.since`, `boost.days` | *Member Boosted / Stopped Boosting*: when they started, and for how many days they boosted |
+| `transcript.messages .name .bytes .truncated .dm` | after *Save Transcript* |
 | `var.<name>` | run variable (or something saved by *Save … as variable*) |
 | `user.vars.<name>`, `guild.vars.<name>` | remembered per-user / per-server variables |
 | `loop.index .item`, `error.message`, `cooldown.remaining`, `now.iso .date .time .timestamp` | misc |
@@ -251,7 +306,7 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 ## Development
 
 ```bash
-npm test          # 286 unit + API + event + public-page + upload + draft/live + access tests (fake Discord objects, in-memory SQLite)
+npm test          # 363 unit + API + event + button/transcript + public-page + upload + draft/live + access tests (fake Discord objects, in-memory SQLite)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
@@ -272,9 +327,18 @@ node has no executor).
 Not yet automated — please run through this once on a test server:
 
 - [ ] Login works, the server appears, *Add bot* link opens the right server.
-- [ ] `/ticket` template: channel is created privately, the reply is ephemeral, **Close** deletes the channel.
+- [ ] `/ticket` template: channel is created privately, the reply is ephemeral, **Close** saves a transcript and deletes the channel.
 - [ ] A slash command that takes > 3 s still answers (auto-defer).
-- [ ] Button role panel: ▶ Run posts the panel; each button gives its own role.
+- [ ] Button role panel: ▶ Run posts the panel; each button toggles its own role (press three times: added, removed, added).
+- [ ] Ticket panel: ▶ Run posts the panel; pressing **Open a ticket** twice quickly gives one private channel, one private
+      reply and one “please wait” message; **Close ticket** mentions the person who opened it and deletes the channel.
+- [ ] Transcript: with a log channel picked, **Close** posts an `.html` file there and DMs the opener; open it in a browser (with
+      `ENABLE_MESSAGE_CONTENT_INTENT` on it shows the text; off, it says the text is hidden). With the opener's DMs closed the ticket still
+      closes; with no log channel the ticket stays open and says why.
+- [ ] Boosts: boost the server with a test account → *Member Boosted Server* fires once (not again for a second boost); remove the boost
+      → *Member Stopped Boosting* fires. Check it still fires for a member who was not cached (restart the bot first).
+- [ ] Two accounts press the same panel button at the same time: each only sees their own variables.
+- [ ] Use one Button ID in two flows: the log warns that the newer flow is ignored for it.
 - [ ] Member Joined (with the Members intent) greets and gives a role; Kicked vs Left is told apart (with *View Audit Log*).
 - [ ] Reaction Added with message + emoji filter gives a role.
 - [ ] A second admin account in *another* server cannot see or edit the first server's flows.
@@ -287,11 +351,11 @@ Not yet automated — please run through this once on a test server:
 - [ ] Pictures: upload a photo taken with a phone (it comes out upright, without location data); pick it for a page and open the
       public page in a private window; on your real domain, use an uploaded picture in a *Send Message* embed and check Discord shows it.
 - [ ] `DATA_DIR/uploads/` is part of your backup; restoring the database and the folder together brings the pictures back.
-- [ ] Bot restarts: an old button still works; slash commands are not re-registered needlessly.
+- [ ] Bot restarts: an old button still works and still knows who opened its ticket (`{{original.user.mention}}`); slash commands are not re-registered needlessly.
 - [ ] Build a flow that loops forever (two Log nodes pointing at each other), run it, confirm other commands still answer,
       then switch the flow Off and confirm it stops.
 
 ## Ideas not done yet
 
 Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, HTTP/webhook node with SSRF protection, autocomplete options, sub-commands, embed preview, undo/redo, flow version history,
-persisting run variables across restarts, sharding.
+sharding.

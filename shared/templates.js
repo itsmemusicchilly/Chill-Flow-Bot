@@ -24,34 +24,84 @@ export const TEMPLATES = [
   {
     id: 'ticket',
     name: 'Support tickets',
-    description: '/ticket opens a private channel with a Close button. Add your staff role in the “Create Channel” overrides.',
+    description: '/ticket opens a private channel with a Close button. Closing saves a transcript (.html) in a log channel — pick it in “Save Transcript” — and sends a copy to whoever opened the ticket. Add your staff role in the “Create Channel” overrides.',
     build: () => ({
       nodes: [
         n('t1', 'trigger.command', 0, 120, {
           name: 'ticket', description: 'Open a support ticket',
           options: [{ name: 'reason', description: 'What do you need help with?', type: 'string', required: false }],
         }),
-        n('c1', 'action.channel.create', 340, 60, {
+        n('c1', 'action.channel.create', 320, 60, {
           name: 'ticket-{{user.name}}', privateChannel: true, outputVar: 'ticket',
           overwrites: [{ targetType: 'member', targetId: '{{user.id}}', allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'], deny: [] }],
         }),
-        n('r1', 'action.message.send', 700, 60, { target: 'reply', ephemeral: true, content: 'Your ticket is ready: <#{{var.ticket}}>' }),
-        n('s1', 'action.message.send', 1060, 60, {
+        n('r1', 'action.message.send', 640, 60, { target: 'reply', ephemeral: true, content: 'Your ticket is ready: <#{{var.ticket}}>' }),
+        n('s1', 'action.message.send', 960, 60, {
           target: 'channel', channelId: '{{var.ticket}}', useEmbed: true, embedTitle: '🎫 Ticket', embedColor: '#5865f2',
           embedDescription: '{{user.mention}} opened a ticket.\n**Reason:** {{option.reason | default:No reason given}}',
           buttons: [{ id: 'close', label: 'Close ticket', style: 'Danger', emoji: '🔒', url: '', disabled: false }],
         }),
-        n('r2', 'action.message.send', 1440, 200, { target: 'reply', content: 'Closing this ticket in 5 seconds…' }),
-        n('w1', 'logic.wait', 1800, 200, { seconds: 5 }),
-        n('d1', 'action.channel.delete', 2140, 200, { reason: 'Ticket closed' }),
+        n('r2', 'action.message.send', 1600, 200, { target: 'reply', content: 'Closing this ticket in 5 seconds…' }),
+        n('w1', 'logic.wait', 1920, 200, { seconds: 5 }),
+        n('d1', 'action.channel.delete', 2240, 200, { reason: 'Ticket closed' }),
+        n('ts1', 'action.channel.transcript', 1280, 200, {
+          sendUserId: '{{original.user.id}}',
+          channelMessage: '📄 Transcript of #{{channel.name}} — opened by {{original.user.mention}}, closed by {{user.mention}}. Download the file and open it in a browser.',
+          dmMessage: 'Here is a copy of your conversation in {{guild.name}}. Download the file and open it in your browser.',
+        }),
+        n('ke1', 'action.message.send', 1600, 460, { target: 'reply', ephemeral: true, content: 'The transcript could not be saved, so this ticket was **not** closed: {{error.message}}' }),
       ],
-      edges: [e('t1', 'c1'), e('c1', 'r1'), e('r1', 's1'), e('s1', 'r2', 'btn_close'), e('r2', 'w1'), e('w1', 'd1')],
+      edges: [
+        e('t1', 'c1'), e('c1', 'r1'), e('r1', 's1'), e('s1', 'ts1', 'btn_close'), e('ts1', 'r2'), e('ts1', 'ke1', 'error'),
+        e('r2', 'w1'), e('w1', 'd1'),
+      ],
+    }),
+  },
+  {
+    id: 'ticket-panel',
+    name: 'Ticket panel (Open button)',
+    description: 'Press ▶ Run once to post an “Open a ticket” button. Each press opens a private channel with a Close button, and the panel keeps working after restarts. Closing saves a transcript (.html) in a log channel — pick it in “Save Transcript” — and sends a copy to whoever opened the ticket. Add your staff role in the “Create Channel” overrides.',
+    build: () => ({
+      nodes: [
+        n('t1', 'trigger.manual', 0, 100),
+        n('p1', 'action.message.send', 320, 60, {
+          target: 'current_channel', useEmbed: true, embedTitle: '🎫 Need help?', embedColor: '#5865f2',
+          embedDescription: 'Press the button below to open a private support ticket.',
+          buttons: [{ id: 'open', label: 'Open a ticket', style: 'Success', emoji: '🎫', url: '', disabled: false, customId: 'open_ticket' }],
+        }),
+        n('t2', 'trigger.button.clicked', 0, 460, { customId: 'open_ticket' }),
+        n('k1', 'logic.cooldown', 320, 460, { seconds: 60, scope: 'user' }),
+        n('b1', 'action.message.send', 640, 700, { target: 'reply', ephemeral: true, content: 'Please wait {{cooldown.remaining}} seconds before opening another ticket.' }),
+        n('c1', 'action.channel.create', 640, 400, {
+          name: 'ticket-{{user.name}}', privateChannel: true, outputVar: 'ticket',
+          overwrites: [{ targetType: 'member', targetId: '{{user.id}}', allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'], deny: [] }],
+        }),
+        n('r1', 'action.message.send', 960, 400, { target: 'reply', ephemeral: true, content: 'Your ticket is ready: <#{{var.ticket}}>' }),
+        n('s1', 'action.message.send', 1280, 400, {
+          target: 'channel', channelId: '{{var.ticket}}', useEmbed: true, embedTitle: '🎫 Ticket', embedColor: '#5865f2',
+          embedDescription: '{{user.mention}} opened a ticket. Someone from the team will be with you soon.',
+          buttons: [{ id: 'close', label: 'Close ticket', style: 'Danger', emoji: '🔒', url: '', disabled: false, customId: '' }],
+        }),
+        n('r2', 'action.message.send', 1920, 540, { target: 'reply', content: 'Closing this ticket (opened by {{original.user.mention}}) in 5 seconds…' }),
+        n('w1', 'logic.wait', 2240, 540, { seconds: 5 }),
+        n('d1', 'action.channel.delete', 2560, 540, { reason: 'Ticket closed' }),
+        n('ts1', 'action.channel.transcript', 1600, 540, {
+          sendUserId: '{{original.user.id}}',
+          channelMessage: '📄 Transcript of #{{channel.name}} — opened by {{original.user.mention}}, closed by {{user.mention}}. Download the file and open it in a browser.',
+          dmMessage: 'Here is a copy of your conversation in {{guild.name}}. Download the file and open it in your browser.',
+        }),
+        n('ke1', 'action.message.send', 1920, 800, { target: 'reply', ephemeral: true, content: 'The transcript could not be saved, so this ticket was **not** closed: {{error.message}}' }),
+      ],
+      edges: [
+        e('t1', 'p1'), e('t2', 'k1'), e('k1', 'c1', 'ok'), e('k1', 'b1', 'blocked'), e('c1', 'r1'), e('r1', 's1'),
+        e('s1', 'ts1', 'btn_close'), e('ts1', 'r2'), e('ts1', 'ke1', 'error'), e('r2', 'w1'), e('w1', 'd1'),
+      ],
     }),
   },
   {
     id: 'role-panel',
     name: 'Button role panel',
-    description: 'Press ▶ Run on the trigger to post a panel; each button gives a different role. Set a channel on the trigger.',
+    description: 'Press ▶ Run on the trigger to post a panel; each button toggles a different role on and off. Pick the roles in the Toggle Role nodes and set a channel on the trigger.',
     build: () => ({
       nodes: [
         n('t1', 'trigger.manual', 0, 140),
@@ -62,10 +112,10 @@ export const TEMPLATES = [
             { id: 'b2', label: 'Artist', style: 'Secondary', emoji: '🎨', url: '', disabled: false },
           ],
         }),
-        n('g1', 'action.member.addRole', 760, 20, { reason: 'Role panel' }),
-        n('g2', 'action.member.addRole', 760, 300, { reason: 'Role panel' }),
-        n('a1', 'action.message.send', 1120, 20, { target: 'reply', ephemeral: true, content: 'You got the Gamer role ✅' }),
-        n('a2', 'action.message.send', 1120, 300, { target: 'reply', ephemeral: true, content: 'You got the Artist role ✅' }),
+        n('g1', 'action.member.toggleRole', 760, 20, { reason: 'Role panel' }),
+        n('g2', 'action.member.toggleRole', 760, 300, { reason: 'Role panel' }),
+        n('a1', 'action.message.send', 1120, 20, { target: 'reply', ephemeral: true, content: 'The **{{role.name}}** role was {{toggle.action}} ✅' }),
+        n('a2', 'action.message.send', 1120, 300, { target: 'reply', ephemeral: true, content: 'The **{{role.name}}** role was {{toggle.action}} ✅' }),
       ],
       edges: [e('t1', 'm1'), e('m1', 'g1', 'btn_b1'), e('m1', 'g2', 'btn_b2'), e('g1', 'a1'), e('g2', 'a2')],
     }),

@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { PermissionFlagsBits } from 'discord.js';
-import { CHANNEL_PERMISSIONS, COMMAND_PERMISSIONS, NODE_LIST, NODE_TYPES, ROLE_PERMISSIONS, availableVariables, defaultsFor, getOutputs, isTriggerType } from '../shared/catalog.js';
+import { CHANNEL_PERMISSIONS, COMMAND_PERMISSIONS, NODE_LIST, NODE_TYPES, ROLE_PERMISSIONS, availableVariables, buttonKey, defaultsFor, getOutputs, isTriggerType } from '../shared/catalog.js';
 import { TEMPLATES } from '../shared/templates.js';
-import { applyLimits, resetLimits } from '../shared/limits.js';
+import { applyLimits, LIMIT_KEYS, LIMITS, resetLimits } from '../shared/limits.js';
+import { LIMIT_ENV } from '../server/config.js';
+import { guildData, memberData } from '../server/engine/serialize.js';
 import { hasStructureErrors, normalizeGraph, validateFlow } from '../shared/validate.js';
 import { Database } from '../server/db.js';
 import { evalCondition, evalConditions } from '../server/engine/conditions.js';
@@ -13,7 +15,7 @@ import { RateLimiter, SelfActions } from '../server/engine/rate-limit.js';
 import { safeRegexTest } from '../server/engine/safe-regex.js';
 import { getPath, renderDeep, renderTemplate } from '../server/engine/template.js';
 import { matches } from '../server/engine/triggers.js';
-import { buildCustomId, parseCustomId } from '../server/engine/custom-id.js';
+import { buildButtonId, buildCustomId, parseButtonId, parseCustomId } from '../server/engine/custom-id.js';
 import { Logger } from '../server/logger.js';
 import { edge, node } from './helpers/fakes.js';
 
@@ -155,6 +157,88 @@ describe('catalog integrity', () => {
   });
 });
 
+describe('reusable buttons (catalog)', () => {
+  const sendCheck = (buttons, extra = {}) => NODE_TYPES['action.message.send'].check({ ...defaultsFor('action.message.send'), content: 'x', buttons, ...extra });
+  const btn = (over = {}) => ({ id: 'b', label: 'B', style: 'Primary', ...over });
+
+  it('reusable button ids round-trip, stay within Discord\'s 100 characters and never pass for flow ids', () => {
+    const id = buildButtonId({ id: 'open_ticket', invokerId: '123456789012345678' });
+    assert.equal(id, 'fcb:open_ticket:123456789012345678');
+    assert.deepEqual(parseButtonId(id), { id: 'open_ticket', invokerId: '123456789012345678' });
+    assert.deepEqual(parseButtonId('fcb:open_ticket:'), { id: 'open_ticket', invokerId: '' });
+    assert.equal(parseButtonId('fc:a:b:btn_x:'), null);
+    assert.equal(parseCustomId('fcb:open_ticket:'), null, 'the flow-wired parser ignores reusable ids');
+    assert.equal(parseButtonId('fcb:bad id:'), null);
+    assert.equal(parseButtonId('fcb::'), null);
+    assert.throws(() => buildButtonId({ id: 'has:colon' }));
+    assert.ok(buildButtonId({ id: 'x'.repeat(64), invokerId: '1'.repeat(20) }).length <= 100);
+  });
+
+  it('a button with a Button ID has no output of its own (Link buttons never do either)', () => {
+    const d = defaultsFor('action.message.send');
+    d.buttons = [btn({ id: 'a' }), btn({ id: 'b', customId: 'open' }), btn({ id: 'l', style: 'Link', customId: 'ignored' })];
+    assert.deepEqual(getOutputs('action.message.send', d).map((o) => o.id), ['out', 'btn_a', 'error']);
+    assert.equal(buttonKey(d.buttons[1]), 'open');
+    assert.equal(buttonKey(d.buttons[2]), '');
+    assert.equal(buttonKey(d.buttons[0]), '', 'buttons made before Button IDs existed still work');
+  });
+
+  it('checks Button IDs on the message: characters, duplicates, direct messages', () => {
+    assert.deepEqual(sendCheck([btn({ customId: 'ok_1.a-b' })]), []);
+    assert.ok(sendCheck([btn({ customId: 'bad id' })]).some((m) => /Button ID/.test(m)));
+    assert.ok(sendCheck([btn({ customId: 'a:b' })]).some((m) => /Button ID/.test(m)));
+    assert.ok(sendCheck([btn({ id: '1', customId: 'a' }), btn({ id: '2', customId: 'a' })]).some((m) => /twice/.test(m)));
+    assert.ok(sendCheck([btn({ customId: 'a' })], { target: 'dm' }).some((m) => /direct messages/.test(m)));
+    assert.deepEqual(sendCheck([btn({ customId: 'a' })], { target: 'reply' }), []);
+    assert.deepEqual(sendCheck([btn({ style: 'Link', url: 'https://x.y', customId: 'ignored' })], { target: 'dm' }), []);
+    assert.deepEqual(sendCheck([btn({ customId: '{{option.x}}' })]), [], 'templated ids are checked once they are filled in');
+  });
+
+  it('the Button Clicked trigger needs a valid ID', () => {
+    const check = NODE_TYPES['trigger.button.clicked'].check;
+    assert.deepEqual(check({ customId: 'open_ticket' }), []);
+    assert.ok(check({ customId: 'bad id' }).length);
+    assert.ok(check({ customId: 'a'.repeat(65) }).length);
+    const issues = validateFlow(normalizeGraph({ nodes: [node('h', 'trigger.button.clicked', { customId: '' }), node('l', 'logic.log', { message: 'm' })], edges: [edge('h', 'l')] }));
+    assert.ok(issues.some((i) => i.nodeId === 'h' && i.level === 'error' && /Button ID/.test(i.message)), 'an empty ID stops the trigger from activating');
+  });
+
+  it('warns when one flow handles the same Button ID twice', () => {
+    const issues = validateFlow(normalizeGraph({
+      nodes: [node('a', 'trigger.button.clicked', { customId: 'x' }), node('b', 'trigger.button.clicked', { customId: 'x' }), node('l', 'logic.log', { message: 'm' })],
+      edges: [edge('a', 'l'), edge('b', 'l')],
+    }));
+    assert.ok(issues.some((i) => i.nodeId === 'b' && i.level === 'warning' && /already handled/.test(i.message)));
+    assert.ok(!issues.some((i) => i.nodeId === 'a' && /already handled/.test(i.message)));
+  });
+
+  it('offers button and original-run variables after a Button Clicked trigger', () => {
+    const nodes = [node('t', 'trigger.button.clicked', { customId: 'x' }), node('r', 'action.message.send', { content: 'x' })];
+    const paths = availableVariables(nodes, [edge('t', 'r')], 'r').map((v) => v.path);
+    for (const p of ['button.id', 'button.label', 'original.user.name', 'user.name', 'message.id']) assert.ok(paths.includes(p), p);
+  });
+
+  it('Toggle Role offers the role and what happened', () => {
+    const nodes = [node('t', 'trigger.manual'), node('g', 'action.member.toggleRole', { roleId: '1' }), node('r', 'action.message.send', { content: 'x' })];
+    const paths = availableVariables(nodes, [edge('t', 'g'), edge('g', 'r')], 'r').map((v) => v.path);
+    for (const p of ['toggle.action', 'role.name']) assert.ok(paths.includes(p), p);
+    assert.deepEqual(getOutputs('action.member.toggleRole', defaultsFor('action.member.toggleRole')).map((o) => o.id), ['out', 'error']);
+  });
+
+  it('every Button Clicked ID in a template is put on a button in the same flow', () => {
+    let seen = 0;
+    for (const t of TEMPLATES) {
+      const g = t.build();
+      const ids = new Set(g.nodes.filter((n) => n.type === 'action.message.send').flatMap((n) => (n.data.buttons || []).map(buttonKey).filter(Boolean)));
+      for (const h of g.nodes.filter((n) => n.type === 'trigger.button.clicked')) {
+        seen += 1;
+        assert.ok(ids.has(h.data.customId), `${t.id}: nothing sends a button with ID “${h.data.customId}”`);
+      }
+    }
+    assert.ok(seen > 0, 'at least one template uses the trigger');
+  });
+});
+
 describe('graph validation', () => {
   const ok = (nodes, edges) => validateFlow(normalizeGraph({ nodes, edges }), { intents: { members: true, messageContent: true } });
   it('starter templates have no structural problems', () => {
@@ -245,5 +329,56 @@ describe('logger', () => {
     off();
     lg.log('A', 'info', 'after');
     assert.equal(seen.length, 5);
+  });
+});
+
+describe('boost triggers and transcripts (catalog)', () => {
+  const issuesFor = (nodes, edges, intents) => validateFlow(normalizeGraph({ nodes, edges }), { intents });
+
+  it('exposes safe boost data for members and servers, whatever discord.js gives us', () => {
+    const at = Date.UTC(2026, 5, 1, 12);
+    assert.equal(memberData({ premiumSinceTimestamp: at }).boostingSince, new Date(at).toISOString());
+    assert.equal(memberData({ premiumSinceTimestamp: null }).boostingSince, '');
+    assert.equal(memberData({}).boostingSince, '');
+    assert.deepEqual([guildData({ id: '1', premiumSubscriptionCount: 14, premiumTier: 3 }).boostCount, guildData({ id: '1', premiumSubscriptionCount: 14, premiumTier: 3 }).boostTier], [14, 3]);
+    const bare = guildData({ id: '1' });
+    assert.deepEqual([bare.boostCount, bare.boostTier], [0, 0]);
+  });
+
+  it('the two boost triggers are ordinary triggers that offer who, when and the server\'s boosts', () => {
+    for (const type of ['trigger.user.boostserver', 'trigger.user.unboostserver']) {
+      const d = NODE_TYPES[type];
+      assert.ok(isTriggerType(type) && d.requires === 'members' && d.fields.length === 0, type);
+      const paths = availableVariables([node('t', type), node('r', 'action.message.send', { content: 'x' })], [edge('t', 'r')], 'r').map((v) => v.path);
+      for (const p of ['user.mention', 'member.boostingSince', 'guild.boostCount', 'guild.boostTier', 'boost.since', 'boost.days']) assert.ok(paths.includes(p), `${type} offers ${p}`);
+    }
+  });
+
+  it('Save Transcript needs a log channel and has an On error output', () => {
+    const d = NODE_TYPES['action.channel.transcript'];
+    assert.equal(d.fields.find((f) => f.key === 'sendChannelId').required, true);
+    assert.deepEqual(getOutputs(d.type, defaultsFor(d.type)).map((o) => o.id), ['out', 'error']);
+    const issues = issuesFor([node('t', 'trigger.manual'), node('s', 'action.channel.transcript', {})], [edge('t', 's')], { members: true, messageContent: true });
+    assert.ok(issues.some((i) => i.nodeId === 's' && i.level === 'error' && /Post the transcript in/.test(i.message)));
+    const paths = availableVariables([node('t', 'trigger.manual'), node('s', 'action.channel.transcript', {}), node('r', 'action.message.send', { content: 'x' })], [edge('t', 's'), edge('s', 'r')], 'r').map((v) => v.path);
+    for (const p of ['transcript.messages', 'transcript.name', 'transcript.truncated', 'transcript.dm']) assert.ok(paths.includes(p), p);
+  });
+
+  it('warns — but never blocks — when the Message Content intent is off', () => {
+    const graph = [node('t', 'trigger.manual'), node('s', 'action.channel.transcript', { sendChannelId: '123456' })];
+    const off = issuesFor(graph, [edge('t', 's')], { members: true, messageContent: false });
+    const warn = off.find((i) => i.nodeId === 's' && i.kind === 'intent');
+    assert.ok(warn && warn.level === 'warning' && /Message Content/.test(warn.message), JSON.stringify(warn));
+    assert.ok(!off.some((i) => i.nodeId === 's' && i.level === 'error'), 'the flow is still usable');
+    assert.ok(!hasStructureErrors(off));
+    const on = issuesFor(graph, [edge('t', 's')], { members: true, messageContent: true });
+    assert.ok(!on.some((i) => i.kind === 'intent'));
+    assert.ok(!issuesFor(graph, [edge('t', 's')], undefined).some((i) => i.kind === 'intent'), 'no intents given (nothing to compare) → no warning');
+  });
+
+  it('the transcript message cap is an operator limit with an environment variable', () => {
+    assert.ok(LIMIT_KEYS.includes('transcriptMessages'));
+    assert.equal(LIMIT_ENV.transcriptMessages, 'LIMIT_TRANSCRIPT_MESSAGES');
+    assert.equal(LIMITS.transcriptMessages, Infinity, 'unlimited by default');
   });
 });

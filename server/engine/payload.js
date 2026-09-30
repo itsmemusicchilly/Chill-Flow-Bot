@@ -1,7 +1,8 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder } from 'discord.js';
+import { BUTTON_ID_RE, buttonKey } from '../../shared/catalog.js';
 import { looksLikeUpload } from '../../shared/urls.js';
 import { FlowError } from './errors.js';
-import { buildCustomId } from './custom-id.js';
+import { buildButtonId, buildCustomId } from './custom-id.js';
 
 const STYLES = { Primary: ButtonStyle.Primary, Secondary: ButtonStyle.Secondary, Success: ButtonStyle.Success, Danger: ButtonStyle.Danger, Link: ButtonStyle.Link };
 const HTTP = /^https?:\/\/\S+$/i;
@@ -65,6 +66,7 @@ export function buildPayload(ctx, d, node, { components = true, replace = false 
     const rows = [];
     const invokerId = d.restrictToInvoker ? (ctx.user?.id ?? '') : '';
     const mk = (handle) => buildCustomId({ flowId: ctx.flow.id, nodeId: node.id, handle, invokerId });
+    const seenKeys = new Set();
     const buttons = (d.buttons || []).slice(0, 25).map((b) => {
       const style = STYLES[b.style] ?? ButtonStyle.Primary;
       const btn = new ButtonBuilder().setStyle(style).setDisabled(Boolean(b.disabled));
@@ -75,6 +77,13 @@ export function buildPayload(ctx, d, node, { components = true, replace = false 
       if (style === ButtonStyle.Link) {
         if (!HTTP.test(b.url || '')) throw new FlowError(`Link button “${b.label}” needs an http(s) URL.`);
         btn.setURL(b.url);
+      } else if (buttonKey(b)) {
+        // Templates are already rendered here, so a member-controlled value could have become the id: check it again.
+        const key = buttonKey(b);
+        if (!BUTTON_ID_RE.test(key)) throw new FlowError(`Button ID “${cut(key, 40)}” can only use letters, numbers, - _ and . (max 64).`);
+        if (seenKeys.has(key)) throw new FlowError(`Button ID “${key}” is used twice in this message.`);
+        seenKeys.add(key);
+        btn.setCustomId(buildButtonId({ id: key, invokerId }));
       } else {
         btn.setCustomId(mk(`btn_${b.id}`));
       }

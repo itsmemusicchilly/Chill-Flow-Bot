@@ -20,6 +20,7 @@ const DISCORD_HINTS = {
   30005: 'Maximum number of roles reached.',
   30013: 'Maximum number of channels reached.',
   50035: 'Discord rejected a value (check lengths, colors and URLs).',
+  40005: 'The file is too big for Discord to accept.',
 };
 
 /** Turn any thrown value into a short message for logs and `{{error.message}}`. */

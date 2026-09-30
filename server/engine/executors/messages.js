@@ -30,7 +30,17 @@ async function send({ ctx, d, node }) {
     default: throw new FlowError(`Unknown target “${d.target}”.`);
   }
   if (d.outputVar && sent?.id) ctx.vars[d.outputVar] = sent.id;
-  if (sent?.id && (payload.components?.length)) ctx.services.components.remember(sent.id, ctx);
+  if (sent?.id && (payload.components?.length)) {
+    try {
+      ctx.services.components.remember(sent.id, ctx, {
+        channelId: sent.channelId ?? ctx.channel?.id ?? '',
+        ephemeral: Boolean(d.target === 'reply' && d.ephemeral),
+      });
+    } catch (err) {
+      // The message is already out; losing its remembered variables must not turn a success into an error.
+      ctx.services.logger.log(ctx.guild.id, 'warn', `Could not remember the buttons' variables: ${err.message}`, ctx.logMeta);
+    }
+  }
 }
 
 async function edit({ ctx, d, node }) {

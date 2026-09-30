@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 import { applyLimits, resetLimits } from '../shared/limits.js';
+import { TEMPLATES } from '../shared/templates.js';
 import { Database } from '../server/db.js';
 import { CEILINGS } from '../server/engine/engine.js';
 import { Runtime } from '../server/engine/runtime.js';
@@ -305,6 +306,408 @@ describe('buttons and select menus', () => {
     assert.match(click.calls[0][1].content, /no longer active/);
     assert.equal(guild.calls.length, 0);
     assert.ok(flow);
+  });
+});
+
+describe('reusable buttons and persistent panels', () => {
+  const settle = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+  const rows = (payload) => payload.components.flatMap((r) => r.components.map((c) => c.data));
+  const click = (customId, over = {}) => fakeComponent({ guild, channel, user, member, customId, ...over });
+
+  /** A panel posted by the manual trigger and answered by a "Button Clicked" trigger. */
+  function installPanel(replyContent = 'hi {{user.name}} id={{button.id}} label={{button.label}}') {
+    return install({
+      nodes: [
+        node('t', 'trigger.manual', { channelId: channel.id }),
+        node('p', 'action.message.send', { target: 'current_channel', content: 'Open a ticket', buttons: [{ id: 'open', label: 'Open', style: 'Success', customId: 'open_ticket' }] }),
+        node('h', 'trigger.button.clicked', { customId: 'open_ticket' }),
+        node('r', 'action.message.send', { target: 'reply', ephemeral: true, content: replyContent }),
+      ],
+      edges: [edge('t', 'p'), edge('h', 'r')],
+    });
+  }
+  const post = async (flow, triggerId = 't') => {
+    const before = channel.sent.length;
+    await runtime.runManual(guild.id, flow.id, triggerId);
+    await settle();
+    assert.equal(channel.sent.length, before + 1, 'the panel was posted');
+    return { payload: channel.sent.at(-1), messageId: channel.sentIds.at(-1) };
+  };
+
+  it('a Button ID makes an fcb: button with no output of its own, answered by the matching trigger on every copy of the message', async () => {
+    const flow = installPanel();
+    const first = await post(flow);
+    const btn = rows(first.payload)[0];
+    assert.equal(btn.custom_id, 'fcb:open_ticket:');
+    const a = await run(click(btn.custom_id, { messageId: first.messageId, label: 'Open' }));
+    assert.equal(a.calls[0][0], 'reply');
+    assert.equal(a.calls[0][1].content, 'hi mia id=open_ticket label=Open');
+    assert.ok(a.calls[0][1].flags, 'the reply is ephemeral');
+
+    const second = await post(flow); // reposting the panel anywhere just works
+    const b = await run(click(rows(second.payload)[0].custom_id, { messageId: second.messageId, label: 'Open' }));
+    assert.equal(b.calls[0][1].content, 'hi mia id=open_ticket label=Open');
+  });
+
+  it('gives every click its own variables, even on the same panel message', async () => {
+    install({
+      nodes: [
+        node('t', 'trigger.command', { name: 'panel', description: 'x' }),
+        node('m', 'action.message.send', { target: 'reply', content: 'go', buttons: [{ id: 'g', label: 'Go', style: 'Primary', customId: 'go' }] }),
+        node('h', 'trigger.button.clicked', { customId: 'go' }),
+        node('r', 'action.message.send', { target: 'reply', content: 'seen={{var.seen | default:none}}' }),
+        node('v', 'data.variable.set', { scope: 'run', name: 'seen', operation: 'set', value: 'yes' }),
+      ],
+      edges: [edge('t', 'm'), edge('h', 'r'), edge('r', 'v')],
+    });
+    const first = await run(slash('panel'));
+    const id = rows(first.calls[0][1])[0].custom_id;
+    const a = await run(click(id, { messageId: 'm1' }));
+    const b = await run(click(id, { messageId: 'm1' }));
+    assert.equal(a.calls[0][1].content, 'seen=none');
+    assert.equal(b.calls[0][1].content, 'seen=none', 'the first click did not leak its variables into the second');
+  });
+
+  it('still knows the original run and its variables after a restart', async () => {
+    install({
+      nodes: [
+        node('t', 'trigger.command', { name: 'panel', description: 'x' }),
+        node('v', 'data.variable.set', { scope: 'run', name: 'ticket', operation: 'set', value: 'abc' }),
+        node('m', 'action.message.send', { target: 'reply', content: 'go', buttons: [{ id: 'g', label: 'Go', style: 'Primary', customId: 'go' }] }),
+        node('h', 'trigger.button.clicked', { customId: 'go' }),
+        node('r', 'action.message.send', { target: 'reply', content: '{{original.user.name}}/{{var.ticket}}/{{user.name}}' }),
+      ],
+      edges: [edge('t', 'v'), edge('v', 'm'), edge('h', 'r')],
+    });
+    const first = await run(slash('panel'));
+    const id = rows(first.calls[0][1])[0].custom_id;
+
+    // "restart": a brand-new runtime on the same database
+    runtime = new Runtime({ db, logger: new Logger({ console: false }), intents: { members: true, messageContent: true } });
+    runtime.attachClient(guild.client);
+    runtime.loadGuild(guild.id);
+    const clicker = fakeUser({ id: '333333', username: 'bob' });
+    const after = await run(click(id, { messageId: 'm1', user: clicker, member: guild.addMember({ user: clicker }) }));
+    assert.equal(after.calls[0][1].content, 'mia/abc/bob');
+  });
+
+  it('keeps the person-only restriction and answers politely when nothing handles the button', async () => {
+    install({
+      nodes: [
+        node('t', 'trigger.command', { name: 'p', description: 'x' }),
+        node('m', 'action.message.send', { target: 'reply', content: 'x', restrictToInvoker: true, buttons: [{ id: 'g', label: 'Go', style: 'Primary', customId: 'go' }] }),
+        node('h', 'trigger.button.clicked', { customId: 'go' }),
+        node('r', 'action.message.send', { target: 'reply', content: 'ok' }),
+      ],
+      edges: [edge('t', 'm'), edge('h', 'r')],
+    });
+    const first = await run(slash('p'));
+    const id = rows(first.calls[0][1])[0].custom_id;
+    assert.equal(id, 'fcb:go:222222');
+    const stranger = fakeUser({ id: '444444' });
+    const denied = await run(click(id, { user: stranger, member: guild.addMember({ user: stranger }) }));
+    assert.match(denied.calls[0][1].content, /Only <@222222> can use this/);
+    assert.equal((await run(click(id))).calls[0][1].content, 'ok');
+
+    assert.match((await run(click('fcb:nobody:'))).calls[0][1].content, /no longer active/);
+    const dm = fakeComponent({ guild: null, channel, user, member, customId: id });
+    assert.match((await run(dm)).calls[0][1].content, /only works inside a server/);
+  });
+
+  it('never lets one server\'s button reach another server\'s flow, and stops when the flow is off', async () => {
+    const flow = installPanel();
+    const otherGuild = fakeGuild({ id: '777777' });
+    const ch = otherGuild.addChannel({});
+    const u = fakeUser({ id: '888888' });
+    const foreign = fakeComponent({ guild: otherGuild, channel: ch, user: u, member: otherGuild.addMember({ user: u }), customId: 'fcb:open_ticket:' });
+    assert.match((await run(foreign)).calls[0][1].content, /no longer active/);
+
+    db.updateFlow(guild.id, flow.id, { enabled: false });
+    runtime.loadGuild(guild.id);
+    assert.match((await run(click('fcb:open_ticket:'))).calls[0][1].content, /no longer active/);
+  });
+
+  it('lets only the first flow handle a Button ID and warns about the other', async () => {
+    installPanel('first');
+    install({
+      nodes: [node('h', 'trigger.button.clicked', { customId: 'open_ticket' }), node('r', 'action.message.send', { target: 'reply', content: 'second' })],
+      edges: [edge('h', 'r')],
+    }, guild.id, 'Copycat');
+    const i = await run(click('fcb:open_ticket:'));
+    assert.equal(i.calls[0][1].content, 'first');
+    assert.ok(logs().some((l) => l.startsWith('warn:') && /open_ticket/.test(l) && /Copycat/.test(l)), logs().join('\n'));
+  });
+
+  it('refuses a Button ID that becomes invalid once templates are filled in', async () => {
+    install(commandFlow(
+      [node('m', 'action.message.send', { target: 'reply', content: 'x', buttons: [{ id: 'g', label: 'Go', style: 'Primary', customId: '{{option.x}}' }] })],
+      [edge('t', 'm')],
+    ));
+    const i = await run(slash('cmd', [{ name: 'x', value: 'fcb:evil id' }]));
+    assert.ok(logs().some((l) => l.startsWith('error:') && /Button ID/.test(l)), logs().join('\n'));
+    assert.ok(!i.calls.some((c) => c[0] === 'reply' && c[1].components), 'no message with a bad id was sent');
+  });
+
+  it('Toggle Role adds, then removes, then adds again — and its own changes do not trigger role events', async () => {
+    const role = guild.addRole({ name: 'Gamer' });
+    install({
+      nodes: [
+        node('h', 'trigger.button.clicked', { customId: 'gamer' }),
+        node('g', 'action.member.toggleRole', { roleId: role.id, reason: 'panel' }),
+        node('r', 'action.message.send', { target: 'reply', ephemeral: true, content: '{{role.name}} {{toggle.action}}' }),
+      ],
+      edges: [edge('h', 'g'), edge('g', 'r')],
+    });
+    const said = [];
+    for (let n = 0; n < 3; n += 1) said.push((await run(click('fcb:gamer:'))).calls[0][1].content);
+    assert.deepEqual(said, ['Gamer added', 'Gamer removed', 'Gamer added']);
+    assert.deepEqual(member.calls.map((c) => c[0]), ['roleAdd', 'roleRemove', 'roleAdd']);
+    assert.equal(member.calls[0][2], '[Test flow] panel');
+    assert.equal(member.roles.cache.has(role.id), true);
+    assert.equal(runtime.services.selfActions.consume(`roleAdd:${guild.id}:222222:${role.id}`), true);
+  });
+
+  it('the Button role panel template toggles roles from its own buttons', async () => {
+    const gamer = guild.addRole({ name: 'Gamer' });
+    const t = TEMPLATES.find((x) => x.id === 'role-panel').build();
+    t.nodes.find((x) => x.id === 't1').data.channelId = channel.id;
+    t.nodes.find((x) => x.id === 'g1').data.roleId = gamer.id;
+    const flow = install(t);
+    await runtime.runManual(guild.id, flow.id, 't1');
+    await settle();
+    const gamerBtn = rows(channel.sent.at(-1)).find((c) => c.label === 'Gamer');
+    assert.equal((await run(click(gamerBtn.custom_id, { messageId: channel.sentIds.at(-1) }))).calls[0][1].content, 'The **Gamer** role was added ✅');
+    assert.equal((await run(click(gamerBtn.custom_id, { messageId: channel.sentIds.at(-1) }))).calls[0][1].content, 'The **Gamer** role was removed ✅');
+  });
+
+  it('the Ticket panel template opens one ticket per press window and closes it with the opener remembered', async () => {
+    const t = TEMPLATES.find((x) => x.id === 'ticket-panel').build();
+    t.nodes.find((x) => x.id === 't1').data.channelId = channel.id;
+    t.nodes.find((x) => x.id === 'w1').data.seconds = 0; // do not really wait 5 s
+    const logCh = guild.addChannel({ name: 'ticket-log' });
+    t.nodes.find((x) => x.id === 'ts1').data.sendChannelId = logCh.id;
+    const flow = install(t);
+    const panel = await post(flow, 't1');
+    const open = rows(panel.payload)[0];
+    assert.equal(open.custom_id, 'fcb:open_ticket:');
+
+    const opened = await run(click(open.custom_id, { messageId: panel.messageId }));
+    assert.match(opened.calls[0][1].content, /^Your ticket is ready: <#\d+>$/);
+    const ticket = guild.channels.cache.find((c) => c.name === 'ticket-mia');
+    assert.ok(ticket, 'a private ticket channel was created');
+
+    const again = await run(click(open.custom_id, { messageId: panel.messageId }));
+    assert.match(again.calls[0][1].content, /^Please wait \d+ seconds/, 'a second press right away is held back');
+    assert.equal([...guild.channels.cache.values()].filter((c) => c.name === 'ticket-mia').length, 1);
+
+    const close = rows(ticket.sent[0]).find((c) => c.label === 'Close ticket');
+    assert.match(close.custom_id, /^fc:[a-z0-9]+:s1:btn_close:$/);
+    const staff = fakeUser({ id: '555555', username: 'sam' });
+    const closed = await run(fakeComponent({ guild, channel: ticket, user: staff, member: guild.addMember({ user: staff }), customId: close.custom_id, messageId: ticket.sentIds[0] }));
+    assert.equal(closed.calls[0][1].content, 'Closing this ticket (opened by <@222222>) in 5 seconds…');
+    assert.ok(ticket.calls.some((c) => c[0] === 'delete'), 'the ticket channel was deleted');
+
+    // the transcript went to the log channel and to the opener before the channel disappeared
+    const file = logCh.sent[0].files[0];
+    assert.match(file.name, /^transcript-ticket-mia-\d{4}-\d{2}-\d{2}-\d{4}\.html$/);
+    assert.match(file.attachment.toString('utf8'), /opened a ticket\. Someone from the team/);
+    assert.match(logCh.sent[0].content, /opened by <@222222>, closed by <@555555>/);
+    const dm = member.calls.find((c) => c[0] === 'dm');
+    assert.ok(dm, 'the opener got a copy');
+    assert.equal(dm[1].files[0].name, file.name);
+  });
+
+  it('the Ticket panel does NOT close when the transcript cannot be saved (no log channel picked)', async () => {
+    const t = TEMPLATES.find((x) => x.id === 'ticket-panel').build();
+    t.nodes.find((x) => x.id === 't1').data.channelId = channel.id;
+    t.nodes.find((x) => x.id === 'w1').data.seconds = 0;
+    const flow = install(t); // ts1.sendChannelId is still blank
+    const panel = await post(flow, 't1');
+    await run(click(rows(panel.payload)[0].custom_id, { messageId: panel.messageId }));
+    const ticket = guild.channels.cache.find((c) => c.name === 'ticket-mia');
+    const close = rows(ticket.sent[0]).find((c) => c.label === 'Close ticket');
+    const closed = await run(fakeComponent({ guild, channel: ticket, user, member, customId: close.custom_id, messageId: ticket.sentIds[0] }));
+    assert.match(closed.calls[0][1].content, /transcript could not be saved, so this ticket was \*\*not\*\* closed: Choose the channel to post the transcript in/);
+    assert.ok(!ticket.calls.some((c) => c[0] === 'delete'), 'the ticket is still there');
+  });
+
+  it('the /ticket template saves a transcript on close too', async () => {
+    const t = TEMPLATES.find((x) => x.id === 'ticket').build();
+    t.nodes.find((x) => x.id === 'w1').data.seconds = 0;
+    const logCh = guild.addChannel({ name: 'ticket-log' });
+    t.nodes.find((x) => x.id === 'ts1').data.sendChannelId = logCh.id;
+    install(t);
+    await run(slash('ticket', [{ name: 'reason', value: 'billing' }]));
+    const ticket = guild.channels.cache.find((c) => c.name === 'ticket-mia');
+    ticket.addMessage({ content: 'my invoice is wrong', author: { id: '222222', username: 'mia', bot: false } });
+    const close = rows(ticket.sent[0]).find((c) => c.label === 'Close ticket');
+    const staff = fakeUser({ id: '555555', username: 'sam' });
+    const closed = await run(fakeComponent({ guild, channel: ticket, user: staff, member: guild.addMember({ user: staff }), customId: close.custom_id, messageId: ticket.sentIds[0] }));
+    assert.equal(closed.calls[0][1].content, 'Closing this ticket in 5 seconds…');
+    const html = logCh.sent[0].files[0].attachment.toString('utf8');
+    assert.match(html, /my invoice is wrong/);
+    assert.match(html, /Reason:<\/b> billing|\*\*Reason:\*\* billing/);
+    assert.ok(ticket.calls.some((c) => c[0] === 'delete'));
+    assert.ok(member.calls.some((c) => c[0] === 'dm' && c[1].files?.length), 'the opener got the file');
+  });
+});
+
+describe('Save Transcript', () => {
+  let logCh;
+  const human = (id = '222222', username = 'mia') => ({ id, username, bot: false });
+  const saved = (over = {}) => install(commandFlow([
+    node('ts', 'action.channel.transcript', { sendChannelId: logCh.id, ...over }),
+    node('ok', 'action.message.send', { target: 'reply', content: 'saved={{transcript.messages}} dm={{transcript.dm}} cut={{transcript.truncated}} name={{transcript.name}}' }),
+    node('bad', 'action.message.send', { target: 'reply', content: 'FAILED {{error.message}}' }),
+  ], [edge('t', 'ts'), edge('ts', 'ok'), edge('ts', 'bad', 'error')]));
+  const said = (i) => i.calls.find((c) => c[0] === 'reply' || c[0] === 'editReply')[1].content;
+  const html = (ch = logCh) => ch.sent[0].files[0].attachment.toString('utf8');
+
+  beforeEach(() => { logCh = guild.addChannel({ name: 'ticket-log' }); });
+
+  it('records the channel and posts it as an .html file in the log channel', async () => {
+    channel.addMessage({ content: 'hello there', author: human() });
+    channel.addMessage({ content: 'how can I help?', author: { id: '999', username: 'sam', bot: false } });
+    saved({ channelMessage: 'Transcript of #{{channel.name}}' });
+    const i = await run(slash());
+    assert.match(said(i), /^saved=2 dm=skipped cut=false name=transcript-general-\d{4}-\d{2}-\d{2}-\d{4}\.html$/);
+    assert.equal(logCh.sent.length, 1);
+    assert.equal(logCh.sent[0].content, 'Transcript of #general');
+    assert.deepEqual(logCh.sent[0].allowedMentions, { parse: [] }, 'a transcript never pings anyone');
+    assert.match(logCh.sent[0].files[0].name, /\.html$/);
+    const out = html();
+    assert.ok(out.indexOf('hello there') < out.indexOf('how can I help?'));
+    assert.match(out, /Channel: #general/);
+    assert.equal(channel.sent.length, 0, 'nothing is posted in the recorded channel itself');
+  });
+
+  it('reads long channels page by page, oldest first, whichever order Discord sends a page in', async () => {
+    for (const order of ['desc', 'asc']) {
+      channel.messages.store.clear(); channel.messages.fetchCalls.length = 0; logCh.sent.length = 0; channel.messages.order = order;
+      for (let n = 0; n < 250; n += 1) channel.addMessage({ content: `msg-${String(n).padStart(3, '0')}`, author: human() });
+      const flow = saved();
+      const i = await run(slash());
+      assert.match(said(i), /^saved=250 /, order);
+      assert.equal(channel.messages.fetchCalls.length, 3, `${order}: 100 + 100 + 50`);
+      assert.deepEqual(channel.messages.fetchCalls.map((c) => [c.limit, c.cache]), [[100, false], [100, false], [100, false]]);
+      assert.equal(channel.messages.fetchCalls[0].after, '0');
+      const out = html();
+      assert.ok(out.indexOf('msg-000') < out.indexOf('msg-100') && out.indexOf('msg-100') < out.indexOf('msg-249'), `${order}: in order`);
+      assert.equal((out.match(/msg-\d{3}/g) || []).length, 250, `${order}: none lost or repeated`);
+      db.deleteFlow(guild.id, flow.id);
+      runtime.loadGuild(guild.id);
+    }
+  });
+
+  it('sends a copy to the person by direct message when asked', async () => {
+    const opener = guild.addMember({ user: fakeUser({ id: '700001', username: 'olly' }) });
+    channel.addMessage({ content: 'hi', author: human('700001', 'olly') });
+    saved({ sendUserId: '{{user.id}}', dmMessage: 'Your copy, {{user.name}}' });
+    const i = await run(fakeCommand({ guild, channel, user: opener.user, member: opener, commandName: 'cmd' }));
+    assert.match(said(i), /dm=sent/);
+    const [, dm] = opener.calls.find((c) => c[0] === 'dm');
+    assert.equal(dm.content, 'Your copy, olly');
+    assert.equal(dm.files[0].name, logCh.sent[0].files[0].name);
+    assert.deepEqual(dm.allowedMentions, { parse: [] });
+    assert.ok(dm.files[0].attachment.equals(logCh.sent[0].files[0].attachment), 'the same file');
+  });
+
+  it('a closed DM does not fail the node: the log copy stands, the run carries on, a warning is logged', async () => {
+    const opener = guild.addMember({ user: fakeUser({ id: '700002', username: 'quiet' }) });
+    opener.send = async () => { const e = new Error('Cannot send messages to this user'); e.code = 50007; throw e; };
+    saved({ sendUserId: opener.id });
+    const i = await run(slash());
+    assert.match(said(i), /dm=failed/);
+    assert.equal(logCh.sent.length, 1);
+    assert.ok(logs().some((l) => l.startsWith('warn:') && /direct message/.test(l) && /DMs are closed/.test(l)), logs().join('\n'));
+  });
+
+  it('does not DM someone who can no longer see the channel', async () => {
+    const opener = guild.addMember({ user: fakeUser({ id: '700003', username: 'gone' }) });
+    channel.hidden.add(opener.id);
+    saved({ sendUserId: opener.id });
+    const i = await run(slash());
+    assert.match(said(i), /dm=skipped/);
+    assert.ok(!opener.calls.some((c) => c[0] === 'dm'));
+    assert.equal(logCh.sent.length, 1);
+  });
+
+  it('follows On error, and sends nothing, when there is no usable log channel', async () => {
+    const opener = guild.addMember({ user: fakeUser({ id: '700004' }) });
+    saved({ sendChannelId: '', sendUserId: opener.id });
+    assert.match(said(await run(slash())), /^FAILED Choose the channel to post the transcript in/, 'blank would otherwise mean "this channel"');
+    db.deleteFlow(guild.id, db.listFlows(guild.id)[0].id);
+    saved({ sendChannelId: channel.id });
+    assert.match(said(await run(slash())), /^FAILED Post the transcript in a different channel/);
+    db.deleteFlow(guild.id, db.listFlows(guild.id)[0].id);
+    saved({ sendChannelId: '999999999' });
+    assert.match(said(await run(slash())), /^FAILED Channel “999999999” was not found/);
+    assert.equal(logCh.sent.length, 0);
+    assert.ok(!opener.calls.some((c) => c[0] === 'dm'), 'no DM when the log copy could not be saved');
+  });
+
+  it('follows On error when Discord refuses the log post, before any DM is sent', async () => {
+    const opener = guild.addMember({ user: fakeUser({ id: '700005' }) });
+    logCh.send = async () => { const e = new Error('Missing Permissions'); e.code = 50013; throw e; };
+    saved({ sendUserId: opener.id });
+    assert.match(said(await run(slash())), /^FAILED Missing permissions/);
+    assert.ok(!opener.calls.some((c) => c[0] === 'dm'));
+  });
+
+  it('follows On error when the history cannot be read', async () => {
+    channel.messages.fetch = async () => { const e = new Error('Missing Access'); e.code = 50001; throw e; };
+    saved();
+    assert.match(said(await run(slash())), /^FAILED Missing access/);
+    assert.equal(logCh.sent.length, 0);
+  });
+
+  it('refuses to record the same channel twice at the same time (a double-click on Close)', async () => {
+    channel.addMessage({ content: 'x', author: human() });
+    const real = channel.messages.fetch.bind(channel.messages);
+    let release; const gate = new Promise((r) => { release = r; });
+    channel.messages.fetch = async (a) => { await gate; return real(a); };
+    saved();
+    const first = run(slash());
+    await new Promise((r) => setTimeout(r, 20));
+    assert.match(said(await run(slash())), /^FAILED A transcript of #general is already being saved/);
+    release();
+    assert.match(said(await first), /^saved=1/);
+    assert.equal(logCh.sent.length, 1, 'only one transcript was posted');
+    channel.messages.fetch = real;
+    assert.match(said(await run(slash())), /^saved=1/, 'and the channel can be recorded again afterwards');
+  });
+
+  it('still delivers without the Message Content intent, with a warning in the log and a banner in the file', async () => {
+    runtime.services.intents = { members: true, messageContent: false };
+    channel.addMessage({ content: '', author: human() });
+    saved();
+    assert.match(said(await run(slash())), /^saved=1/);
+    assert.ok(logs().some((l) => l.startsWith('warn:') && /Message Content intent is off/.test(l)));
+    assert.match(html(), /Message text is not included/);
+    assert.match(html(), /\[content unavailable\]/);
+  });
+
+  it('honours the operator\'s cap on messages and says the transcript is cut short', async () => {
+    applyLimits({ transcriptMessages: 5 });
+    for (let n = 0; n < 20; n += 1) channel.addMessage({ content: `m${n}`, author: human() });
+    saved();
+    assert.match(said(await run(slash())), /^saved=5 dm=skipped cut=true/);
+    assert.match(html(), /stops here: the message limit was reached/);
+  });
+
+  it('a transcript of an empty channel is still a valid file', async () => {
+    saved();
+    assert.match(said(await run(slash())), /^saved=0 /);
+    assert.match(html(), /There are no messages in this channel/);
+  });
+
+  it('stops paging when the flow is switched off mid-way', async () => {
+    for (let n = 0; n < 300; n += 1) channel.addMessage({ content: `m${n}`, author: human() });
+    const real = channel.messages.fetch.bind(channel.messages);
+    channel.messages.fetch = async (a) => { const page = await real(a); for (const ctx of runtime.live) runtime.abortRun(ctx); return page; };
+    saved();
+    await run(slash());
+    assert.equal(logCh.sent.length, 0, 'nothing was posted');
   });
 });
 

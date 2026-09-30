@@ -84,11 +84,25 @@ export function validateFlow(graph, { intents } = {}) {
     if (d.requires && intents && !intents[d.requires]) {
       add(n.id, 'error', 'intent', `This trigger needs the ${d.requires === 'members' ? 'Server Members' : 'Message Content'} intent, which the bot operator has not enabled — it will not run.`);
     }
+    // `wants` = works better with an intent but does not need it: warn, never block.
+    if (d.wants && intents && !intents[d.wants]) {
+      add(n.id, 'warning', 'intent', d.wantsNote || `This works better with the ${d.wants === 'members' ? 'Server Members' : 'Message Content'} intent, which the bot operator has not enabled.`);
+    }
     if (d.isTrigger) {
       if (!edges.some((e) => e.source === n.id)) add(n.id, 'warning', 'graph', 'Connect this trigger to something to do.');
     } else if (!reachable.has(n.id)) {
       add(n.id, 'warning', 'graph', 'Not connected to a trigger, so it will never run.');
     }
+  }
+
+  // A button press can only be answered once, so every Button ID needs exactly one handler.
+  const handlers = new Map();
+  for (const n of nodes) {
+    if (n.type !== 'trigger.button.clicked') continue;
+    const id = String(n.data?.customId ?? '').trim();
+    if (!id) continue;
+    if (handlers.has(id)) add(n.id, 'warning', 'graph', `Button ID “${id}” is already handled by another trigger in this flow — only the first one runs.`);
+    else handlers.set(id, n.id);
   }
   return issues;
 }

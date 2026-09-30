@@ -44,10 +44,11 @@ for (const [key, cat] of Object.entries(CATEGORIES)) {
   for (const n of nodes) {
     out.push(`### ${n.icon} ${n.label}`, '', `\`${n.type}\` — ${n.description}`, '');
     if (n.requires) out.push(`> Needs the **${n.requires === 'members' ? 'Server Members' : 'Message Content'}** privileged intent (the bot operator must enable it).`, '');
+    if (n.wants) out.push(`> Works best with the **${n.wants === 'members' ? 'Server Members' : 'Message Content'}** privileged intent${n.wantsNote ? ` — ${n.wantsNote}` : ''}`, '');
     const rows = fieldRows(n.fields);
     if (rows.length) out.push('| Field | Type | Notes |', '| --- | --- | --- |', ...rows, '');
     const outputs = getOutputs(n.type, defaultsFor(n.type));
-    if (!n.isTrigger || outputs.length > 1) out.push(`**Outputs:** ${outputs.map((o) => o.label).join(', ')}${n.type === 'action.message.send' ? ' — plus one per button and menu option' : ''}`, '');
+    if (!n.isTrigger || outputs.length > 1) out.push(`**Outputs:** ${outputs.map((o) => o.label).join(', ')}${n.type === 'action.message.send' ? ' — plus one per button and menu option (a button with a Button ID has no output: a “Button Clicked” trigger handles it instead)' : ''}`, '');
     const provides = n.provides?.(defaultsFor(n.type)) ?? [];
     if (provides.length) out.push(`**Adds variables:** ${provides.map(([p]) => `\`{{${p}}}\``).join(', ')}`, '');
   }
