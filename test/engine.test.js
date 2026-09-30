@@ -515,6 +515,10 @@ describe('reusable buttons and persistent panels', () => {
     const dm = member.calls.find((c) => c[0] === 'dm');
     assert.ok(dm, 'the opener got a copy');
     assert.equal(dm[1].files[0].name, file.name);
+    // and both files came along, in the log channel and in the DM: the .html first, then the plain-text copy
+    assert.deepEqual(logCh.sent[0].files.map((f) => f.name.split('.').pop()), ['html', 'txt']);
+    assert.deepEqual(dm[1].files.map((f) => f.name), logCh.sent[0].files.map((f) => f.name));
+    assert.match(logCh.sent[0].files[1].attachment.toString('utf8'), /opened a ticket\. Someone from the team/);
   });
 
   it('the Ticket panel does NOT close when the transcript cannot be saved (no log channel picked)', async () => {
@@ -579,6 +583,75 @@ describe('Save Transcript', () => {
     assert.ok(out.indexOf('hello there') < out.indexOf('how can I help?'));
     assert.match(out, /Channel: #general/);
     assert.equal(channel.sent.length, 0, 'nothing is posted in the recorded channel itself');
+  });
+
+  it('attaches a plain-text (.txt) copy next to the .html, in the same message, with the same messages', async () => {
+    channel.addMessage({ content: 'hello there', author: human() });
+    channel.addMessage({ content: 'how can I help?', author: { id: '999', username: 'sam', bot: false } });
+    saved();
+    const i = await run(slash());
+    assert.match(said(i), /^saved=2 dm=skipped cut=false name=transcript-general-\d{4}-\d{2}-\d{2}-\d{4}\.html$/, 'the name output stays the .html');
+    assert.equal(logCh.sent.length, 1, 'one message carries both files');
+    const [page, plain] = logCh.sent[0].files;
+    assert.match(page.name, /\.html$/);
+    assert.equal(plain.name, page.name.replace(/\.html$/, '.txt'));
+    const txt = plain.attachment.toString('utf8');
+    assert.match(txt, /^Transcript of #general\n/);
+    assert.match(txt, /\| 2 messages\n/);
+    assert.match(txt, /^\[[^\]]+ UTC\] mia \(222222\)\n {4}hello there$/m);
+    assert.match(txt, /^\[[^\]]+ UTC\] sam \(999\)\n {4}how can I help\?$/m);
+    assert.ok(txt.indexOf('hello there') < txt.indexOf('how can I help?'));
+    assert.ok(!/<[a-z]/i.test(txt), 'plain text, no markup');
+    assert.deepEqual(logCh.sent[0].allowedMentions, { parse: [] });
+  });
+
+  it('gives the plain-text name to later nodes as {{transcript.textName}}', async () => {
+    install(commandFlow([
+      node('ts', 'action.channel.transcript', { sendChannelId: logCh.id }),
+      node('ok', 'action.message.send', { target: 'reply', content: 'html={{transcript.name}} txt={{transcript.textName}}' }),
+    ], [edge('t', 'ts'), edge('ts', 'ok')]));
+    const said2 = said(await run(slash()));
+    const [, htmlName, txtName] = said2.match(/^html=(\S+) txt=(\S+)$/);
+    assert.equal(txtName, htmlName.replace(/\.html$/, '.txt'));
+    assert.equal(logCh.sent[0].files[1].name, txtName);
+  });
+
+  it('sends both files in the direct message too', async () => {
+    const opener = guild.addMember({ user: fakeUser({ id: '700010', username: 'tess' }) });
+    channel.addMessage({ content: 'hi', author: human('700010', 'tess') });
+    saved({ sendUserId: opener.id });
+    assert.match(said(await run(slash())), /dm=sent/);
+    const [, dm] = opener.calls.find((c) => c[0] === 'dm');
+    assert.deepEqual(dm.files.map((f) => f.name), logCh.sent[0].files.map((f) => f.name));
+    assert.equal(dm.files.length, 2);
+    assert.ok(dm.files[1].attachment.equals(logCh.sent[0].files[1].attachment), 'the same plain-text file');
+  });
+
+  it('“Leave out the plain-text copy” sends the .html alone and leaves {{transcript.textName}} blank', async () => {
+    channel.addMessage({ content: 'hello', author: human() });
+    install(commandFlow([
+      node('ts', 'action.channel.transcript', { sendChannelId: logCh.id, skipText: true }),
+      node('ok', 'action.message.send', { target: 'reply', content: 'txt=[{{transcript.textName}}]' }),
+    ], [edge('t', 'ts'), edge('ts', 'ok')]));
+    assert.equal(said(await run(slash())), 'txt=[]');
+    assert.deepEqual(logCh.sent[0].files.map((f) => f.name.split('.').pop()), ['html']);
+  });
+
+  it('a Save Transcript node saved before this option existed also gets the .txt', async () => {
+    channel.addMessage({ content: 'hello', author: human() });
+    saved({ skipText: undefined }); // the field is simply missing from the saved flow
+    assert.match(said(await run(slash())), /^saved=1 /);
+    assert.deepEqual(logCh.sent[0].files.map((f) => f.name.split('.').pop()), ['html', 'txt']);
+  });
+
+  it('the plain-text copy says why message text is missing when the Message Content intent is off', async () => {
+    runtime.services.intents = { members: true, messageContent: false };
+    channel.addMessage({ content: '', author: human() });
+    saved();
+    await run(slash());
+    const txt = logCh.sent[0].files[1].attachment.toString('utf8');
+    assert.match(txt, /^NOTE: Message text is not included/m);
+    assert.match(txt, /\[content unavailable\]/);
   });
 
   it('reads long channels page by page, oldest first, whichever order Discord sends a page in', async () => {

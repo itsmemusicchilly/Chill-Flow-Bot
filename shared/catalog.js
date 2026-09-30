@@ -474,7 +474,7 @@ def('action.channel.update', {
 });
 def('action.channel.transcript', {
   category: 'channel', label: 'Save Transcript', icon: '📄',
-  description: 'Record everything said in a channel (for example a ticket that is being closed) as an .html file, post it in a log channel and optionally send it to someone by direct message. If it cannot be saved, follow On error and keep the channel.',
+  description: 'Record everything said in a channel (for example a ticket that is being closed) as an .html file (plus a plain .txt copy), post it in a log channel and optionally send it to someone by direct message. If it cannot be saved, follow On error and keep the channel.',
   fields: [
     idField('channelId', 'Channel to record', 'channel', { placeholder: 'blank = current channel' }),
     idField('sendChannelId', 'Post the transcript in', 'channel', {
@@ -487,12 +487,15 @@ def('action.channel.transcript', {
     }),
     area('dmMessage', 'Message with the file (direct message)', {
       showIf: whenNot('sendUserId', ''), rows: 2,
-      default: 'Here is a copy of your conversation in {{guild.name}}. Download the file and open it in your browser.',
+      default: 'Here is a copy of your conversation in {{guild.name}}. Download the files: open the .html one in your browser, or the .txt one in any text editor.',
+    }),
+    bool('skipText', 'Leave out the plain-text (.txt) copy', {
+      help: 'By default a .txt file with the same messages is attached next to the .html one, in the log channel and in the direct message. It is easy to search, copy and read on a phone.',
     }),
   ],
   outputs: ACTION_OUTS,
   provides: () => [
-    ['transcript.messages', 'Messages in the transcript'], ['transcript.name', 'Transcript file name'], ['transcript.bytes', 'File size (bytes)'],
+    ['transcript.messages', 'Messages in the transcript'], ['transcript.name', 'Transcript file name (.html)'], ['transcript.textName', 'Plain-text file name (.txt, blank if left out)'], ['transcript.bytes', 'File size (bytes, .html)'],
     ['transcript.truncated', 'true if the transcript was cut short'], ['transcript.dm', 'Direct message: sent, failed or skipped'],
   ],
   wants: 'messageContent',

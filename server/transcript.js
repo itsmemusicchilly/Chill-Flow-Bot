@@ -1,16 +1,19 @@
-// Builds the .html transcript of a channel (used when a ticket is closed). Pure: the executor turns Discord messages into plain
-// records, this file turns records into a document. Nothing here imports discord.js.
+// Builds the .html transcript of a channel (used when a ticket is closed), and optionally a plain .txt copy of the same messages.
+// Pure: the executor turns Discord messages into plain records, this file turns records into documents. Nothing here imports discord.js.
 //
 // Security model (the text comes from anyone who could type in the channel, and the file is opened in a browser by staff):
 //   - every interpolated value is escaped (esc) and stripped of control and bidi-override characters;
 //   - there is no script, no inline handler, no <img>, no CSS url(); a CSP <meta> forbids everything except inline CSS;
 //   - message text is never turned into links; the only links are attachment URLs that pass safeUrl (https only), and they
 //     are labelled as temporary because Discord's file links expire and vanish with the channel;
-//   - the file name is an ASCII slug.
+//   - the file name is an ASCII slug;
+//   - in the .txt every line of message text is indented, so a member cannot type a line that looks like a message header (who wrote
+//     what, when), and line-break characters other than \n are removed.
 import { esc } from '../shared/render-page.js';
 import { safeUrl } from '../shared/urls.js';
 
-/** A physical ceiling, not a policy limit: below what Discord accepts as an upload (believed 10 MiB; not verified here). */
+/** A physical ceiling, not a policy limit: below what Discord accepts as an upload (believed 10 MiB; not verified here). It covers
+ *  the .html and the .txt TOGETHER, because both go out in one message. */
 export const TRANSCRIPT_MAX_BYTES = 8 * 1024 * 1024;
 
 // control characters (keeps \t \n \r), line/paragraph separators, and the bidi overrides that can make text look reordered
@@ -31,11 +34,11 @@ export function formatBytes(n) {
   return `${(v / 1024 / 1024).toFixed(1)} MB`;
 }
 
-/** `transcript-<ascii-slug>-YYYY-MM-DD-HHmm.html` — the slug is [a-z0-9-] only, so the name is safe everywhere. */
-export function transcriptFileName(channelName, date = new Date()) {
+/** `transcript-<ascii-slug>-YYYY-MM-DD-HHmm.html` (or `.txt`) — the slug is [a-z0-9-] only, so the name is safe everywhere. */
+export function transcriptFileName(channelName, date = new Date(), ext = 'html') {
   const slug = String(channelName ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/g, '') || 'channel';
   const stamp = `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}-${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}`;
-  return `transcript-${slug}-${stamp}.html`;
+  return `transcript-${slug}-${stamp}.${ext === 'txt' ? 'txt' : 'html'}`;
 }
 
 const CSS = `
@@ -109,6 +112,57 @@ function renderMessage(r, textVisible) {
   return `${html}</div>`;
 }
 
+// ---- the plain-text copy ------------------------------------------------------------------------------------------------
+const INDENT = '    ';
+/** Message text, every non-blank line indented, with every kind of line break turned into \n. */
+const block = (s) => clean(s).replace(/\r\n?|\u0085/g, '\n').split('\n').map((l) => (l.trim() ? INDENT + l : '')).join('\n');
+
+function renderText(r, textVisible) {
+  const when = new Date(r.at);
+  const author = r.author || {};
+  const attachments = Array.isArray(r.attachments) ? r.attachments : [];
+  const embeds = Array.isArray(r.embeds) ? r.embeds : [];
+  const stickers = Array.isArray(r.stickers) ? r.stickers : [];
+
+  let head = `[${Number.isNaN(when.getTime()) ? 'unknown time' : utc(when)}] ${oneLine(author.name || author.username || 'Unknown')}`;
+  if (author.bot) head += ' [BOT]';
+  if (author.id) head += ` (${oneLine(author.id)})`;
+  if (r.edited) head += ' (edited)';
+  if (r.replyTo) head += ` - reply to message ${oneLine(r.replyTo)}`;
+
+  const body = [];
+  const content = clean(r.content);
+  if (r.system) body.push(`${INDENT}[system message: ${oneLine(r.system)}]`);
+  if (content) body.push(block(content));
+  for (const e of embeds) {
+    const lines = [];
+    if (e.title) lines.push(`${INDENT}[embed] ${oneLine(e.title)}`);
+    if (e.description) lines.push(block(e.description));
+    for (const f of Array.isArray(e.fields) ? e.fields : []) lines.push(block(`${oneLine(f.name)}: ${clean(f.value)}`));
+    if (e.footer) lines.push(`${INDENT}${oneLine(e.footer)}`);
+    if (lines.length) body.push(lines.join('\n'));
+  }
+  for (const a of attachments) {
+    const href = safeUrl(a.url, { httpsOnly: true });
+    body.push(`${INDENT}Attachment: ${[oneLine(a.name || 'file'), formatBytes(a.size), a.type ? oneLine(a.type) : '', href ? `${href} (link may expire)` : ''].filter(Boolean).join(' | ')}`);
+  }
+  for (const s of stickers) body.push(`${INDENT}Sticker: ${oneLine(s)}`);
+
+  const hasBody = content || r.system || embeds.length || attachments.length || stickers.length;
+  if (!hasBody && !textVisible && !author.bot) body.push(`${INDENT}[content unavailable]`);
+  return [head, ...body].join('\n');
+}
+
+function textShell({ guildName, channelName, channelId, generated, count, notes }) {
+  const meta = [
+    oneLine(guildName) ? `Server: ${oneLine(guildName)}` : '',
+    `Channel: #${oneLine(channelName)}${channelId ? ` (${oneLine(channelId)})` : ''}`,
+    `Saved ${utc(generated)}`,
+    `${count} message${count === 1 ? '' : 's'}`,
+  ].filter(Boolean).join(' | ');
+  return [`Transcript of #${oneLine(channelName) || 'channel'}`, meta, ...notes.map((n) => `NOTE: ${n}`), '='.repeat(60), '', ''].join('\n');
+}
+
 /** The parts of the document around the messages. `notes` lists the notices to show; `count` is the message count. */
 function shell({ guildName, channelName, channelId, generated, count, notes }) {
   const title = `Transcript of #${oneLine(channelName) || 'channel'}`;
@@ -124,12 +178,15 @@ function shell({ guildName, channelName, channelId, generated, count, notes }) {
 }
 
 /**
- * @param {{guildName?: string, channelName?: string, channelId?: string, textVisible?: boolean, maxBytes?: number,
+ * @param {{guildName?: string, channelName?: string, channelId?: string, textVisible?: boolean, text?: boolean, maxBytes?: number,
  *          maxMessages?: number, now?: Date}} [opts]
  *   textVisible: false when the bot may not read other people's message text (no Message Content intent).
- * @returns {{add: (records: object[]) => boolean, finish: () => {buffer: Buffer, name: string, messages: number, bytes: number, truncated: boolean, reason: string}}}
+ *   text: also build a plain .txt copy of the same messages. `maxBytes` then covers both files together.
+ * @returns {{add: (records: object[]) => boolean, finish: () => {buffer: Buffer, name: string, messages: number, bytes: number, truncated: boolean,
+ *          reason: string, text: null | {buffer: Buffer, name: string, bytes: number}, totalBytes: number}}}
+ *   `buffer`/`name`/`bytes` are the .html file; `text` is the .txt file (null unless asked for).
  */
-export function createTranscript({ guildName = '', channelName = '', channelId = '', textVisible = true, maxBytes = TRANSCRIPT_MAX_BYTES, maxMessages = Infinity, now = new Date() } = {}) {
+export function createTranscript({ guildName = '', channelName = '', channelId = '', textVisible = true, text: withText = false, maxBytes = TRANSCRIPT_MAX_BYTES, maxMessages = Infinity, now = new Date() } = {}) {
   const NOTICE_TEXT = 'Message text is not included: the bot does not have the Message Content permission, so Discord hides what other people wrote. Only who wrote when (and the bot\'s own messages) is listed.';
   const noticeFor = (reason) => (reason === 'size'
     ? 'This transcript stops here: the file reached its size limit. Earlier messages are shown, later ones are missing.'
@@ -137,9 +194,11 @@ export function createTranscript({ guildName = '', channelName = '', channelId =
   const base = { guildName, channelName, channelId, generated: now };
   // Reserve room for the document around the messages, measured with the longest notices, so the final file never exceeds maxBytes.
   const worst = shell({ ...base, count: 9999999999, notes: [NOTICE_TEXT, noticeFor('size')] });
-  const budget = maxBytes - Buffer.byteLength(worst.before) - Buffer.byteLength(worst.after) - 64;
+  const worstText = withText ? textShell({ ...base, count: 9999999999, notes: [NOTICE_TEXT, noticeFor('size')] }) : '';
+  const budget = maxBytes - Buffer.byteLength(worst.before) - Buffer.byteLength(worst.after) - Buffer.byteLength(worstText) - 128;
 
   const parts = [];
+  const textParts = [];
   let used = 0;
   let count = 0;
   let stopped = false;
@@ -151,9 +210,11 @@ export function createTranscript({ guildName = '', channelName = '', channelId =
         if (stopped) return false;
         if (count >= maxMessages) { stopped = true; reason = 'messages'; return false; }
         const html = renderMessage(r, textVisible);
-        const size = Buffer.byteLength(html);
+        const plain = withText ? renderText(r, textVisible) : '';
+        const size = Buffer.byteLength(html) + (withText ? Buffer.byteLength(plain) + 2 : 0); // + the blank line between messages
         if (used + size > budget) { stopped = true; reason = 'size'; return false; }
         parts.push(html);
+        if (withText) textParts.push(plain);
         used += size;
         count += 1;
       }
@@ -166,7 +227,12 @@ export function createTranscript({ guildName = '', channelName = '', channelId =
       const { before, after } = shell({ ...base, count, notes });
       const body = count ? parts.join('') : '<p class="empty">There are no messages in this channel.</p>';
       const buffer = Buffer.from(before + body + after, 'utf8');
-      return { buffer, name: transcriptFileName(channelName, now), messages: count, bytes: buffer.length, truncated: stopped, reason };
+      let text = null;
+      if (withText) {
+        const plain = Buffer.from(textShell({ ...base, count, notes }) + (count ? `${textParts.join('\n\n')}\n` : 'There are no messages in this channel.\n'), 'utf8');
+        text = { buffer: plain, name: transcriptFileName(channelName, now, 'txt'), bytes: plain.length };
+      }
+      return { buffer, name: transcriptFileName(channelName, now), messages: count, bytes: buffer.length, truncated: stopped, reason, text, totalBytes: buffer.length + (text?.bytes ?? 0) };
     },
   };
 }

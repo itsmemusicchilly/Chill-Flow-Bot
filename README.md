@@ -29,8 +29,8 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (415 unit/integration tests plus a
-> 79-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (431 unit/integration tests plus a
+> 80-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it.
 
 ## Quick start
@@ -98,7 +98,7 @@ loop iterations, steps per run and as long a wait as you like. On a private bot 
 `.env.example` contains a commented **public-host preset** with sensible caps.
 
 **What cannot be unlimited** — these are physical or Discord's own rules, not ours: 25 buttons / menu options / embed fields
-per message, 25 options per slash command, 5 form inputs, 2000 characters per message, 8 MB per ticket transcript file (Discord's upload limit), 100 slash commands per server,
+per message, 25 options per slash command, 5 form inputs, 2000 characters per message, 8 MB per ticket transcript (its `.html` and `.txt` together; Discord's upload limit), 100 slash commands per server,
 memory and CPU, `setTimeout`'s maximum (~24.8 days), the form wait (10 min: Discord's interaction tokens expire), and the
 login/API/public-site rate limits that protect the site itself (10 form submissions per minute per visitor, 60 per IP, 600 page views
 per IP; a form answer is at most 10 000 characters and a public request 256 KB; an uploaded picture is at most 32 MB and 64 megapixels
@@ -153,8 +153,10 @@ in the node and fill **Button ID** (for example `open_ticket`), then add a **But
 ### Ticket transcripts
 
 The **Save Transcript** node records everything said in a channel — the person, the time, the text, embeds, attachments (as
-links), stickers, replies — and saves it as an `.html` file. It posts the file in a **log channel** you choose and can also
-**DM a copy** to someone (in a ticket: `{{original.user.id}}`, the person who opened it). The *Support tickets* and
+links), stickers, replies — and saves it as an `.html` file **and a plain `.txt` copy** of the same messages. It posts both files in
+one message in a **log channel** you choose and can also **DM a copy** to someone (in a ticket: `{{original.user.id}}`, the person
+who opened it). Tick **Leave out the plain-text (.txt) copy** on the node if you only want the `.html`; flows saved before the `.txt`
+existed get it too. The *Support tickets* and
 *Ticket panel* templates run it when **Close** is pressed; pick the log channel in that node.
 
 * **The ticket only closes if the transcript was saved.** If the log channel is missing or Discord refuses the post, the flow
@@ -163,10 +165,13 @@ links), stickers, replies — and saves it as an `.html` file. It posts the file
   (`{{transcript.dm}}` is `sent`, `failed` or `skipped`).
 * **Message Content intent.** Without `ENABLE_MESSAGE_CONTENT_INTENT` Discord returns *empty text* for other people's messages.
   The node still works, but the file says so in a banner and the editor shows a warning on the node.
-* **What the file is:** one self-contained page — no scripts, no pictures, everything escaped — so it is safe to open. Discord does
-  not preview `.html`; download it and open it in a browser. Attachment links are Discord's own and **expire** (and vanish with
+* **What the files are:** the `.html` is one self-contained page — no scripts, no pictures, everything escaped — so it is safe to
+  open; Discord does not preview it, so download it and open it in a browser. The `.txt` is plain text (UTF-8): a heading, then one
+  entry per message — `[2026-09-30 14:03:22 UTC] mia (222…)` followed by the message, indented — easy to search, copy, diff or read on
+  a phone. Every line of a message is indented, so nobody can type a line that passes for a different person's message. Attachment links are Discord's own and **expire** (and vanish with
   the channel), so the transcript records that a file was shared, not its content.
-* **Size:** transcripts stop at 8 MB (Discord's upload limit) or at `LIMIT_TRANSCRIPT_MESSAGES`, keep the *start* of the
+* **Size:** transcripts stop at 8 MB (Discord's upload limit) **for the two files together** — both stop at the same message, so a
+  `.txt` costs a little room in very long conversations — or at `LIMIT_TRANSCRIPT_MESSAGES`. They keep the *start* of the
   conversation, and say where they stop (`{{transcript.truncated}}`). Long channels are read 100 messages at a time.
 
 ### Server boosts
@@ -194,7 +199,7 @@ server (both need `ENABLE_MEMBERS_INTENT`). Handy for a thank-you message: *"Tha
 | `input.<id>`, `select.value`, `original.*` | forms, menus, the message that a button belongs to |
 | `button.id`, `button.label`, `toggle.action` | the button that was pressed (*Button Clicked*), and whether *Toggle Role* added or removed the role |
 | `boost.since`, `boost.days` | *Member Boosted / Stopped Boosting*: when they started, and for how many days they boosted |
-| `transcript.messages .name .bytes .truncated .dm` | after *Save Transcript* |
+| `transcript.messages .name .textName .bytes .truncated .dm` | after *Save Transcript* (`name` is the `.html` file, `textName` the `.txt`, blank if left out) |
 | `var.<name>` | run variable (or something saved by *Save … as variable*) |
 | `user.vars.<name>`, `guild.vars.<name>` | remembered per-user / per-server variables |
 | `loop.index .item`, `error.message`, `cooldown.remaining`, `now.iso .date .time .timestamp` | misc |
@@ -353,7 +358,7 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 ## Development
 
 ```bash
-npm test          # 415 unit + API + event + button/transcript + public-page + upload + draft/live + access + maths + counter tests (fake Discord objects, in-memory SQLite)
+npm test          # 431 unit + API + event + button/transcript + public-page + upload + draft/live + access + maths + counter tests (fake Discord objects, in-memory SQLite)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
@@ -379,8 +384,9 @@ Not yet automated — please run through this once on a test server:
 - [ ] Button role panel: ▶ Run posts the panel; each button toggles its own role (press three times: added, removed, added).
 - [ ] Ticket panel: ▶ Run posts the panel; pressing **Open a ticket** twice quickly gives one private channel, one private
       reply and one “please wait” message; **Close ticket** mentions the person who opened it and deletes the channel.
-- [ ] Transcript: with a log channel picked, **Close** posts an `.html` file there and DMs the opener; open it in a browser (with
-      `ENABLE_MESSAGE_CONTENT_INTENT` on it shows the text; off, it says the text is hidden). With the opener's DMs closed the ticket still
+- [ ] Transcript: with a log channel picked, **Close** posts an `.html` and a `.txt` file there and DMs the opener both; open the `.html` in a browser and the `.txt` in a text editor
+      (with `ENABLE_MESSAGE_CONTENT_INTENT` on they show the text; off, they say the text is hidden). Check the `.txt` on a phone too, and
+      that Discord accepts both files in the DM. With the opener's DMs closed the ticket still
       closes; with no log channel the ticket stays open and says why.
 - [ ] Boosts: boost the server with a test account → *Member Boosted Server* fires once (not again for a second boost); remove the boost
       → *Member Stopped Boosting* fires. Check it still fires for a member who was not cached (restart the bot first).

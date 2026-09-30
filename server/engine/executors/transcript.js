@@ -51,7 +51,7 @@ export const transcriptExecutors = {
       if (!textVisible) log('warn', `The Message Content intent is off, so the transcript of #${source.name} shows who wrote when, but not what.`);
 
       const doc = createTranscript({
-        guildName: ctx.guild.name, channelName: source.name, channelId: source.id, textVisible,
+        guildName: ctx.guild.name, channelName: source.name, channelId: source.id, textVisible, text: !d.skipText,
         maxMessages: isCapped(LIMITS.transcriptMessages) ? LIMITS.transcriptMessages : Infinity,
       });
       // Oldest first: ask for the messages after the newest one seen so far. Sorting by id makes the order of each page irrelevant.
@@ -67,10 +67,11 @@ export const transcriptExecutors = {
         await yieldToEventLoop();
       }
       const result = doc.finish();
-      const file = () => new AttachmentBuilder(result.buffer, { name: result.name });
+      // The .html first (it is what people open), then the plain-text copy. Both go out in ONE message; their combined size is already capped.
+      const files = () => [new AttachmentBuilder(result.buffer, { name: result.name }), ...(result.text ? [new AttachmentBuilder(result.text.buffer, { name: result.text.name })] : [])];
 
       // The log channel is the record of truth: if this fails the node fails and (in the templates) the ticket stays open.
-      await target.send({ content: text(d.channelMessage) || undefined, files: [file()], allowedMentions: { parse: [] } });
+      await target.send({ content: text(d.channelMessage) || undefined, files: files(), allowedMentions: { parse: [] } });
 
       // The person's copy is a courtesy: never fail the node because of it.
       let dm = 'skipped';
@@ -81,7 +82,7 @@ export const transcriptExecutors = {
           if (!allowed) {
             log('warn', `Did not send the transcript to ${member.displayName ?? member.id}: they can no longer see #${source.name}.`);
           } else {
-            await member.send({ content: text(d.dmMessage) || undefined, files: [file()], allowedMentions: { parse: [] } });
+            await member.send({ content: text(d.dmMessage) || undefined, files: files(), allowedMentions: { parse: [] } });
             dm = 'sent';
           }
         } catch (err) {
@@ -89,7 +90,7 @@ export const transcriptExecutors = {
           log('warn', `Could not send the transcript by direct message: ${friendlyError(err)}`);
         }
       }
-      ctx.data.transcript = { messages: result.messages, name: result.name, bytes: result.bytes, truncated: result.truncated, dm };
+      ctx.data.transcript = { messages: result.messages, name: result.name, textName: result.text?.name ?? '', bytes: result.bytes, truncated: result.truncated, dm };
     } finally {
       running.delete(key);
     }

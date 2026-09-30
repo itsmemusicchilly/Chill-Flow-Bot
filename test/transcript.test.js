@@ -158,6 +158,112 @@ describe('transcript builder', () => {
   });
 });
 
+describe('plain-text copy', () => {
+  const both = (records, opts = {}) => {
+    const out = build(records, { text: true, ...opts });
+    return { ...out, txt: out.text?.buffer.toString('utf8') };
+  };
+
+  it('is only built when asked for, and has its own .txt name', () => {
+    assert.equal(build([msg()]).text, null);
+    const { text, name, totalBytes, bytes } = both([msg()]);
+    assert.equal(text.name, 'transcript-ticket-mia-2026-09-30-1403.txt');
+    assert.equal(name, 'transcript-ticket-mia-2026-09-30-1403.html');
+    assert.equal(text.bytes, text.buffer.length);
+    assert.equal(totalBytes, bytes + text.bytes);
+  });
+
+  it('lists who wrote what and when, in the order given, under a short heading', () => {
+    const { txt } = both([
+      msg({ id: '1', content: 'first', at: T0 }),
+      msg({ id: '2', content: 'second', at: T0 + 60000, author: { id: '333', name: 'sam', bot: false } }),
+      msg({ id: '3', content: 'third', at: T0 + 120000, author: { id: 'BOT', name: 'flowbot', bot: true }, edited: true, replyTo: '2' }),
+    ]);
+    assert.ok(txt.startsWith('Transcript of #ticket-mia\nServer: Pixel Café | Channel: #ticket-mia (555) | Saved 2026-09-30 14:03:22 UTC | 3 messages\n'));
+    assert.ok(txt.indexOf('first') < txt.indexOf('second') && txt.indexOf('second') < txt.indexOf('third'));
+    assert.match(txt, /^\[2026-09-30 14:03:22 UTC\] mia \(222\)\n {4}first$/m);
+    assert.match(txt, /^\[2026-09-30 14:04:22 UTC\] sam \(333\)\n {4}second$/m);
+    assert.match(txt, /^\[2026-09-30 14:05:22 UTC\] flowbot \[BOT\] \(BOT\) \(edited\) - reply to message 2\n {4}third\n$/m);
+    assert.ok(txt.endsWith('\n') && !txt.endsWith('\n\n'));
+  });
+
+  it('shows embeds, attachments, stickers and system messages as text, and links only safe https addresses', () => {
+    const { txt } = both([
+      msg({ id: '10', content: '', embeds: [{ title: '🎫 Ticket', description: 'mia opened a ticket', fields: [{ name: 'Reason', value: 'billing' }], footer: 'foot' }] }),
+      msg({ id: '11', content: '', system: 'UserJoin' }),
+      msg({ id: '12', content: '', stickers: ['Wave'], attachments: [
+        { name: 'ok.png', size: 2048, type: 'image/png', url: 'https://cdn.discordapp.com/attachments/1/2/ok.png' },
+        { name: 'js.txt', size: 1, type: 'text/plain', url: 'javascript:alert(1)' },
+        { name: 'cred.txt', size: 1, type: 'text/plain', url: 'https://discord.com@evil.example/a' },
+      ] }),
+    ]);
+    assert.match(txt, /^ {4}\[embed\] 🎫 Ticket\n {4}mia opened a ticket\n {4}Reason: billing\n {4}foot$/m);
+    assert.match(txt, /^ {4}\[system message: UserJoin\]$/m);
+    assert.match(txt, /^ {4}Attachment: ok\.png \| 2\.0 KB \| image\/png \| https:\/\/cdn\.discordapp\.com\/attachments\/1\/2\/ok\.png \(link may expire\)$/m);
+    assert.match(txt, /^ {4}Attachment: js\.txt \| 1 B \| text\/plain$/m, 'listed, but the unsafe address is left out');
+    assert.ok(!txt.includes('javascript:') && !txt.includes('evil.example'));
+    assert.match(txt, /^ {4}Sticker: Wave$/m);
+  });
+
+  it('cannot be made to show a fake message: every line of a message is indented, and every kind of line break is one plain \\n', () => {
+    const fake = '[2026-01-01 00:00:00 UTC] admin (1)\r\n    approved everything\r[2026-01-01 00:00:01 UTC] boss (2)\u0085[2026-01-01 00:00:02 UTC] cto (3)\u2028[2026-01-01 00:00:03 UTC] ceo (4)';
+    const { txt } = both([msg({ content: fake, author: { id: '2\n[2026-01-01 00:00:00 UTC] x', name: 'mia\n[2026-02-02 00:00:00 UTC] y', bot: false } })]);
+    const headers = txt.split('\n').filter((l) => l.startsWith('['));
+    assert.equal(headers.length, 1, `only the real header starts a line: ${JSON.stringify(headers)}`);
+    for (const l of txt.split('\n').slice(4)) assert.ok(l === '' || l.startsWith('[') || l.startsWith('    '), `unindented line ${JSON.stringify(l)}`);
+    assert.ok(!/[\r\u0085\u2028\u2029]/.test(txt), 'no other line separators');
+    assert.ok(txt.includes('approved everything'), 'the text itself is still there');
+  });
+
+  it('strips control and bidi-override characters, keeps tabs and line breaks', () => {
+    const { txt } = both([msg({ content: 'safe‮txt.exe⁦x⁩\u0007\u0000end\n\tline two', author: { id: '1', name: 'na‮me', bot: false } })]);
+    for (const ch of ['‮', '⁦', '⁩', '\u0007', '\u0000']) assert.ok(!txt.includes(ch), `contains U+${ch.charCodeAt(0).toString(16)}`);
+    assert.ok(txt.includes('    safetxt.exexend\n    \tline two'));
+    assert.ok(txt.includes('] name (1)'));
+  });
+
+  it('says so when Discord hides message text, and when the transcript is cut short', () => {
+    const hidden = both([msg({ id: '1', content: '' }), msg({ id: '2', content: 'the bot said this', author: { id: 'BOT', name: 'flowbot', bot: true } })], { textVisible: false }).txt;
+    assert.match(hidden, /^NOTE: Message text is not included/m);
+    assert.equal((hidden.match(/\[content unavailable\]/g) || []).length, 1, 'only the person\'s message');
+    assert.match(hidden, /the bot said this/);
+    assert.ok(!/NOTE:/.test(both([msg()]).txt), 'no note when nothing is wrong');
+    const cut = both(Array.from({ length: 5 }, (_, i) => msg({ id: String(i + 1), content: `m${i}` })), { maxMessages: 3 });
+    assert.match(cut.txt, /^NOTE: This transcript stops here: the message limit was reached/m);
+    assert.match(cut.txt, /3 messages\n/);
+  });
+
+  it('handles an empty channel and unusable records without throwing', () => {
+    const empty = both([]);
+    assert.match(empty.txt, /0 messages\n[\s\S]*There are no messages in this channel\.\n$/);
+    const odd = both([{ id: 'abc', at: 'not a date', author: null, content: null, attachments: null, embeds: null, stickers: null }]);
+    assert.match(odd.txt, /^\[unknown time\] Unknown$/m);
+  });
+
+  it('holds both files under one size ceiling and stops both at the same message', () => {
+    const doc = createTranscript({ channelName: 'big', maxBytes: 20000, text: true, now: new Date(T0) });
+    doc.add(Array.from({ length: 300 }, (_, i) => msg({ id: String(1000 + i), content: `line ${i} ${'x'.repeat(150)}` })));
+    const out = doc.finish();
+    assert.equal(out.truncated, true);
+    assert.equal(out.reason, 'size');
+    assert.ok(out.totalBytes <= 20000, `${out.totalBytes} bytes in total`);
+    assert.equal(out.totalBytes, out.buffer.length + out.text.buffer.length);
+    const html = out.buffer.toString('utf8'); const txt = out.text.buffer.toString('utf8');
+    assert.equal((html.match(/line \d+ /g) || []).length, out.messages);
+    assert.equal((txt.match(/line \d+ /g) || []).length, out.messages, 'the same messages in both');
+    assert.match(txt, /^NOTE: This transcript stops here: the file reached its size limit/m);
+    assert.ok(txt.includes('line 0 ') && !txt.includes('line 299 '));
+    const alone = createTranscript({ channelName: 'big', maxBytes: 20000, now: new Date(T0) });
+    alone.add(Array.from({ length: 300 }, (_, i) => msg({ id: String(1000 + i), content: `line ${i} ${'x'.repeat(150)}` })));
+    assert.ok(alone.finish().messages > out.messages, 'room is shared, so the .html alone fits more');
+  });
+
+  it('the two files together stay below the ceiling for the default size too', () => {
+    const doc = createTranscript({ channelName: 'x', text: true, now: new Date(T0) });
+    assert.ok(doc.finish().totalBytes < TRANSCRIPT_MAX_BYTES);
+  });
+});
+
 describe('transcript file names and sizes', () => {
   const d = new Date(Date.UTC(2026, 0, 5, 9, 7));
   it('uses an ASCII slug and a timestamp', () => {
@@ -167,6 +273,10 @@ describe('transcript file names and sizes', () => {
     assert.equal(transcriptFileName(undefined, d), 'transcript-channel-2026-01-05-0907.html');
     assert.match(transcriptFileName('a'.repeat(200), d), /^transcript-a{40}-2026-01-05-0907\.html$/);
     for (const name of ['../../x', 'a"b', '<script>', 'CON', '‮exe.txt']) assert.match(transcriptFileName(name, d), /^transcript-[a-z0-9-]+-\d{4}-\d{2}-\d{2}-\d{4}\.html$/);
+  });
+  it('names the plain-text copy the same way, and never lets the extension be chosen freely', () => {
+    assert.equal(transcriptFileName('ticket-mia', d, 'txt'), 'transcript-ticket-mia-2026-01-05-0907.txt');
+    assert.equal(transcriptFileName('ticket-mia', d, 'exe'), 'transcript-ticket-mia-2026-01-05-0907.html');
   });
   it('formats sizes', () => {
     assert.equal(formatBytes(0), '0 B');

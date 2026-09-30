@@ -46,8 +46,8 @@ export const TEMPLATES = [
         n('d1', 'action.channel.delete', 2240, 200, { reason: 'Ticket closed' }),
         n('ts1', 'action.channel.transcript', 1280, 200, {
           sendUserId: '{{original.user.id}}',
-          channelMessage: '📄 Transcript of #{{channel.name}} — opened by {{original.user.mention}}, closed by {{user.mention}}. Download the file and open it in a browser.',
-          dmMessage: 'Here is a copy of your conversation in {{guild.name}}. Download the file and open it in your browser.',
+          channelMessage: '📄 Transcript of #{{channel.name}} — opened by {{original.user.mention}}, closed by {{user.mention}}. Open the .html file in a browser, or the .txt one in any text editor.',
+          dmMessage: 'Here is a copy of your conversation in {{guild.name}}. Download the files: open the .html one in your browser, or the .txt one in any text editor.',
         }),
         n('ke1', 'action.message.send', 1600, 460, { target: 'reply', ephemeral: true, content: 'The transcript could not be saved, so this ticket was **not** closed: {{error.message}}' }),
       ],
@@ -87,8 +87,8 @@ export const TEMPLATES = [
         n('d1', 'action.channel.delete', 2560, 540, { reason: 'Ticket closed' }),
         n('ts1', 'action.channel.transcript', 1600, 540, {
           sendUserId: '{{original.user.id}}',
-          channelMessage: '📄 Transcript of #{{channel.name}} — opened by {{original.user.mention}}, closed by {{user.mention}}. Download the file and open it in a browser.',
-          dmMessage: 'Here is a copy of your conversation in {{guild.name}}. Download the file and open it in your browser.',
+          channelMessage: '📄 Transcript of #{{channel.name}} — opened by {{original.user.mention}}, closed by {{user.mention}}. Open the .html file in a browser, or the .txt one in any text editor.',
+          dmMessage: 'Here is a copy of your conversation in {{guild.name}}. Download the files: open the .html one in your browser, or the .txt one in any text editor.',
         }),
         n('ke1', 'action.message.send', 1920, 800, { target: 'reply', ephemeral: true, content: 'The transcript could not be saved, so this ticket was **not** closed: {{error.message}}' }),
       ],

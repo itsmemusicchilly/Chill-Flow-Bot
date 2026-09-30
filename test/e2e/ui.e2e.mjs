@@ -89,6 +89,10 @@ try {
   await page.waitForTimeout(300);
   ok((await page.locator('.out.button').count()) === buttonsBefore + 1, 'adding a button in the inspector adds an output on the node');
 
+  await page.locator('.fnode', { hasText: 'Save Transcript' }).click();
+  const leaveOutText = page.getByLabel('Leave out the plain-text (.txt) copy');
+  ok((await leaveOutText.count()) === 1 && !(await leaveOutText.isChecked()), 'Save Transcript attaches a .txt copy by default (the "leave out" box is unticked)');
+
   // ---- palette ----------------------------------------------------------------------------------------
   await page.getByRole('tab', { name: 'Nodes' }).click();
   await page.getByRole('button', { name: /Give Role/ }).click();
