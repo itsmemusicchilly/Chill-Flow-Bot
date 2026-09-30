@@ -229,6 +229,27 @@ export const TEMPLATES = [
     }),
   },
   {
+    id: 'panel-comes-back',
+    name: 'Panel that comes back if it is deleted',
+    description: 'Pick a channel in the Manual trigger and press ▶ Run once: the bot posts an info panel and remembers its message ID for that channel (a channel variable). If anyone deletes the panel, “Message Deleted” notices, posts it again and remembers the new one. Change the text in both “Send Message” nodes (keep them the same) and add buttons there if you like.',
+    build: () => {
+      const panel = { target: 'current_channel', useEmbed: true, embedTitle: '📌 Info', embedColor: '#5865f2', embedDescription: 'Edit this text, then press ▶ Run on the Manual trigger.', outputVar: 'panel' };
+      const remember = { scope: 'channel', name: 'panel', operation: 'set', value: '{{var.panel}}' };
+      return {
+        nodes: [
+          n('t1', 'trigger.manual', 0, 60),
+          n('m1', 'action.message.send', 340, 20, panel),
+          n('v1', 'data.variable.set', 700, 40, remember),
+          n('t2', 'trigger.message.deleted', 0, 340),
+          n('c1', 'logic.condition', 340, 320, { match: 'all', conditions: [{ left: '{{message.id}}', op: 'equals', right: '{{channel.vars.panel}}', roleId: '', memberId: '' }] }),
+          n('m2', 'action.message.send', 700, 280, panel),
+          n('v2', 'data.variable.set', 1060, 300, remember),
+        ],
+        edges: [e('t1', 'm1'), e('m1', 'v1'), e('t2', 'c1'), e('c1', 'm2', 'true'), e('m2', 'v2')],
+      };
+    },
+  },
+  {
     id: 'mod-log',
     name: 'Ban log',
     description: 'Posts an embed in a log channel whenever someone is banned.',

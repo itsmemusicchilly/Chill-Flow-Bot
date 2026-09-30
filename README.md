@@ -34,8 +34,8 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (707 unit/integration tests plus a
-> 159-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (712 unit/integration tests plus a
+> 162-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it. The alert triggers (feeds, YouTube, Twitch, webhooks) were tested against a pretend network and fake accounts,
 > not the real platforms; the same checklist covers them.
 
@@ -187,6 +187,11 @@ Pick what to do:
 * **Limits.** The button modes work only on the bot's **own** messages, and nothing here works on “only visible to you” replies. Discord allows **5 rows of 5 buttons**, and a select menu takes a whole row;
   if there is no room the node follows its **On error** output. It will not remove the last button of a message that has no text or embed (Discord refuses an empty message).
   Naming a button that is not there is not an error — the log says nothing matched.
+
+**Recipe: a panel that comes back if it is deleted** (the *Panel that comes back if it is deleted* template). Pick a channel in the **Manual** trigger and press ▶ Run once:
+the bot posts the panel and stores its message ID in the channel variable `panel`. A second branch starts with **Message Deleted** and checks
+`{{message.id}}` equals `{{channel.vars.panel}}`; when it does, it posts the panel again and stores the new ID. Any other deleted message is ignored, and it keeps working after a restart.
+Change the text in both *Send Message* nodes (keep them the same), and add buttons there if you like.
 
 ### Ticket transcripts
 
@@ -595,6 +600,8 @@ Not yet automated — please run through this once on a test server:
 - [ ] Change Buttons on a real message: post a panel with *Send Message* (save its ID), then run a flow with *Change Buttons* — *Add* a button with a Button ID and press it (a
       *Button Clicked* flow answers), *Add* one without an ID wired to an output and press it, *Disable* one (it greys out and cannot be pressed), *Enable* it again, *Remove* it by label,
       *Remove all buttons* (text stays), *Delete the message* (also on a message someone else posted, with *Manage Messages*). Check a message with a select menu keeps its menu, and that with **This message** a pressed button can change or delete its own message, while **A previous message** with a stored ID reaches an earlier one (and an empty ID is refused).
+- [ ] *Panel that comes back if it is deleted* template: pick a channel in the Manual trigger, switch on, ▶ Run → the panel appears; delete it → it reappears within a second or two;
+      restart the bot, delete it again → it still reappears; delete some other message → nothing happens.
 - [ ] Channel variables: with *Set Variable* (scope *Channel*) count something in two channels — each counts on its own; delete one channel and its variables disappear from the
       *Remembered variables* dialog.
 - [ ] Counters: switch on the *Member counter* template, pick a channel, then have several people join/leave within a few minutes —

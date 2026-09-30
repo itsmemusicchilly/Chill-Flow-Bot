@@ -693,6 +693,18 @@ try {
   ok((await cbNode.getByText('delete message {{var.msg}}').count()) === 1 && (await cbNode.locator('.badge.bad').count()) === 0, 'deleting “a previous message” by ID shows which one, and is accepted');
   await shot('41-delete-by-id');
 
+  await page.getByRole('tab', { name: 'Flows' }).click();
+  await page.getByRole('button', { name: '+ New flow' }).click();
+  await page.getByRole('button', { name: /Panel that comes back/ }).click();
+  await page.locator('.fnode', { hasText: 'Message Deleted' }).waitFor();
+  await page.waitForTimeout(600);
+  ok((await page.locator('.fnode').count()) === 7 && (await page.locator('.react-flow__edge').count()) === 5, 'the “Panel that comes back” template is two branches: Manual → post → remember, and Message Deleted → check → post → remember');
+  ok((await page.locator('.fnode', { hasText: 'Send Message' }).count()) === 2 && (await page.locator('.fnode', { hasText: 'Condition' }).count()) === 1, 'it has two Send Message nodes and one Condition');
+  await page.locator('.fnode', { hasText: 'Condition' }).click();
+  await page.getByText(/message\.id/).first().waitFor();
+  ok(true, 'the Condition compares the deleted message’s ID with the one remembered for the channel');
+  await shot('42-panel-comes-back');
+
   await page.getByRole('tab', { name: 'Nodes' }).click();
   await page.getByRole('button', { name: /Set Variable/ }).click();
   const setVar = page.getByRole('complementary', { name: 'Node settings' });
