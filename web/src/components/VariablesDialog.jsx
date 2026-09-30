@@ -29,10 +29,10 @@ export default function VariablesDialog({ gid, onClose }) {
 
   return (
     <Modal title="Remembered variables" onClose={onClose} wide>
-      <p className="muted">Variables saved by <b>Set Variable</b> nodes with the “Server” or “Per user” scope. Only this server can see them.</p>
+      <p className="muted">Variables saved by <b>Set Variable</b> nodes with the “Server”, “Channel” or “Per user” scope. Only this server can see them.</p>
       {rows === null ? <p>Loading…</p> : rows.length === 0 ? <p className="muted">Nothing stored yet.</p> : (
         <table className="vars-table">
-          <thead><tr><th>Scope</th><th>User</th><th>Name</th><th>Value</th><th /></tr></thead>
+          <thead><tr><th>Scope</th><th>User / channel</th><th>Name</th><th>Value</th><th /></tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={`${r.scope}|${r.scopeId}|${r.name}`}>
@@ -46,9 +46,12 @@ export default function VariablesDialog({ gid, onClose }) {
       )}
       <form className="var-form" onSubmit={add}>
         <select aria-label="Scope" value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value })}>
-          <option value="guild">Server</option><option value="user">Per user</option>
+          <option value="guild">Server</option><option value="channel">Channel</option><option value="user">Per user</option>
         </select>
-        {form.scope === 'user' && <input aria-label="User ID" placeholder="User ID" value={form.scopeId} onChange={(e) => setForm({ ...form, scopeId: e.target.value })} required />}
+        {form.scope !== 'guild' && (() => {
+          const label = form.scope === 'channel' ? 'Channel ID' : 'User ID';
+          return <input aria-label={label} placeholder={label} value={form.scopeId} onChange={(e) => setForm({ ...form, scopeId: e.target.value })} required />;
+        })()}
         <input aria-label="Variable name" placeholder="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
         <input aria-label="Value" placeholder="value (text, number or JSON)" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} required />
         <button className="btn" type="submit">Set</button>

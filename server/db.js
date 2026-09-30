@@ -196,14 +196,14 @@ export class Database {
     for (const r of rows) if (!keep.has(`${r.flow_id}|${r.node_id}`)) this.#stmt('DELETE FROM watch_state WHERE guild_id=? AND flow_id=? AND node_id=?').run(guildId, r.flow_id, r.node_id);
   }
 
-  // ---- variables (scopes: guild, user — never global) -----------------------------------------
+  // ---- variables (scopes: guild, channel, user — never global) ---------------------------------
   getVar(guildId, scope, scopeId, name) {
     const r = this.#stmt('SELECT value FROM vars WHERE guild_id=? AND scope=? AND scope_id=? AND name=?').get(guildId, scope, scopeId, name);
     return r ? JSON.parse(r.value) : undefined;
   }
 
   setVar(guildId, scope, scopeId, name, value) {
-    if (scope !== 'guild' && scope !== 'user') throw new FlowError(`Unknown variable scope “${scope}”.`);
+    if (scope !== 'guild' && scope !== 'channel' && scope !== 'user') throw new FlowError(`Unknown variable scope “${scope}”.`);
     if (!VAR_NAME.test(String(name))) throw new FlowError(`“${name}” is not a valid variable name.`);
     const json = JSON.stringify(value);
     if (json === undefined) throw new FlowError('That value cannot be stored.');
@@ -218,6 +218,11 @@ export class Database {
 
   deleteVar(guildId, scope, scopeId, name) {
     return this.#stmt('DELETE FROM vars WHERE guild_id=? AND scope=? AND scope_id=? AND name=?').run(guildId, scope, scopeId, name).changes > 0;
+  }
+
+  /** Forgets everything remembered for one channel or user (e.g. the channel was deleted). */
+  deleteVarsForScope(guildId, scope, scopeId) {
+    return this.#stmt('DELETE FROM vars WHERE guild_id=? AND scope=? AND scope_id=?').run(guildId, scope, scopeId).changes;
   }
 
   countVars(guildId) { return this.#stmt('SELECT COUNT(*) AS n FROM vars WHERE guild_id = ?').get(guildId).n; }

@@ -255,6 +255,22 @@ describe('cleaning up what buttons remembered', () => {
     assert.ok(runtime.services.components.get(guild.id, 'm5'), 'untouched messages keep their state');
   });
 
+  it('forgets what was remembered for a channel when it is deleted, and only for that channel', async () => {
+    db.setVar(guild.id, 'channel', 'c2', 'panel', 'gone soon');
+    db.setVar(guild.id, 'channel', 'c3', 'panel', 'stays');
+    db.setVar(guild.id, 'user', 'c2', 'panel', 'a user variable is another thing');
+    db.setVar(guild.id, 'guild', '', 'panel', 'so is a server one');
+    db.setVar('999999', 'channel', 'c2', 'panel', 'and another server');
+
+    client.emit(Events.ChannelDelete, { id: 'c2', guild, type: ChannelType.GuildText });
+    await tick(30);
+    assert.equal(db.getVar(guild.id, 'channel', 'c2', 'panel'), undefined);
+    assert.equal(db.getVar(guild.id, 'channel', 'c3', 'panel'), 'stays');
+    assert.equal(db.getVar(guild.id, 'user', 'c2', 'panel'), 'a user variable is another thing');
+    assert.equal(db.getVar(guild.id, 'guild', '', 'panel'), 'so is a server one');
+    assert.equal(db.getVar('999999', 'channel', 'c2', 'panel'), 'and another server');
+  });
+
   it('a message deleted in another server does not touch this one', async () => {
     remember('m1', 'c1');
     client.emit(Events.MessageDelete, { id: 'm1', guildId: '999999', guild: { id: '999999' } });

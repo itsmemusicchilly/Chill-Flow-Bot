@@ -16,6 +16,11 @@ function scopeTarget(ctx, d) {
     if (!id || !SNOWFLAKE.test(id)) throw new FlowError('No user for this per-user variable — fill in the User field.');
     return { scope: 'user', id };
   }
+  if (d.scope === 'channel') {
+    const id = cleanId(d.targetChannelId) || ctx.channel?.id;
+    if (!id || !SNOWFLAKE.test(id)) throw new FlowError('No channel for this per-channel variable — fill in the Channel field, or use a trigger that happens in a channel.');
+    return { scope: 'channel', id };
+  }
   return { scope: 'run', id: '' };
 }
 
@@ -82,8 +87,8 @@ export const dataExecutors = {
     if (places !== undefined) result = Math.round(result * 10 ** places) / 10 ** places;
     result = Number(result.toPrecision(12)); // 0.1 + 0.2 is 0.3, not 0.30000000000000004
     ctx.vars[d.saveAs] = result;
-    if (d.remember === 'guild' || d.remember === 'user') {
-      const { scope, id } = scopeTarget(ctx, { scope: d.remember, targetId: d.targetId });
+    if (d.remember === 'guild' || d.remember === 'user' || d.remember === 'channel') {
+      const { scope, id } = scopeTarget(ctx, { scope: d.remember, targetId: d.targetId, targetChannelId: d.targetChannelId });
       ctx.services.db.setVar(ctx.guild.id, scope, id, d.saveAs, result);
     }
   },

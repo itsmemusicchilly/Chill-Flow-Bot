@@ -6,7 +6,7 @@ const AUDIT_WINDOW_MS = 15000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function wireEvents({ client, runtime, logger, sync, auditDelayMs = 1000 }) {
-  const { selfActions, components } = runtime.services;
+  const { selfActions, components, db } = runtime.services;
   const warned = new Map();
   const has = (guild, type) => runtime.hasTrigger(guild.id, type);
   const safe = (label, fn) => async (...args) => {
@@ -151,6 +151,7 @@ export function wireEvents({ client, runtime, logger, sync, auditDelayMs = 1000 
   client.on(Events.ChannelDelete, safe('channelDelete', async (ch) => {
     if (!ch.guild) return;
     components.forgetChannel(ch.guild.id, ch.id); // e.g. a closed ticket: its messages are gone too
+    db.deleteVarsForScope(ch.guild.id, 'channel', ch.id); // …and so is what was remembered for the channel
     runtime.fire('trigger.channel.deleted', { guild: ch.guild, channel: ch, info: { byBot: selfActions.consume(`channelDelete:${ch.id}`) } });
   }));
   client.on(Events.ChannelUpdate, safe('channelUpdate', async (o, n) => {

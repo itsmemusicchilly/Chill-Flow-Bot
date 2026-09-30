@@ -287,8 +287,8 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
   guildRouter.get('/variables', (req, res) => res.json(db.listVars(req.params.gid)));
   guildRouter.put('/variables', (req, res) => {
     const { scope, scopeId = '', name, value } = req.body ?? {};
-    if (scope !== 'guild' && scope !== 'user') throw new HttpError(400, 'Scope must be guild or user.');
-    if (scope === 'user' && !SNOWFLAKE.test(String(scopeId))) throw new HttpError(400, 'A user variable needs a user ID.');
+    if (scope !== 'guild' && scope !== 'channel' && scope !== 'user') throw new HttpError(400, 'Scope must be guild, channel or user.');
+    if (scope !== 'guild' && !SNOWFLAKE.test(String(scopeId))) throw new HttpError(400, `A ${scope} variable needs a ${scope} ID.`);
     db.setVar(req.params.gid, scope, scope === 'guild' ? '' : String(scopeId), String(name), value);
     res.json({ ok: true });
   });

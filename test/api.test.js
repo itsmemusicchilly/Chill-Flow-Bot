@@ -154,6 +154,21 @@ describe('authorisation and tenant isolation', () => {
     assert.deepEqual((await call('GET', `/api/guilds/${B}/logs`)).json.map((l) => l.message), ['B-log']);
   });
 
+  it('channel variables can be listed, set and removed, and need a real channel ID', async () => {
+    const put = (body) => call('PUT', `/api/guilds/${A}/variables`, { body });
+    assert.equal((await put({ scope: 'channel', scopeId: '500001', name: 'panel', value: '123456789012345678' })).status, 200);
+    assert.equal(db.getVar(A, 'channel', '500001', 'panel'), '123456789012345678');
+    const channelRows = async () => (await call('GET', `/api/guilds/${A}/variables`)).json.filter((v) => v.scope === 'channel');
+    assert.deepEqual(await channelRows(), [{ scope: 'channel', scopeId: '500001', name: 'panel', value: '123456789012345678' }]);
+    assert.equal((await put({ scope: 'channel', name: 'panel', value: 1 })).status, 400, 'a channel variable needs a channel');
+    assert.equal((await put({ scope: 'channel', scopeId: 'general', name: 'panel', value: 1 })).status, 400);
+    assert.equal((await put({ scope: 'global', name: 'panel', value: 1 })).status, 400);
+    assert.deepEqual((await call('GET', `/api/guilds/${B}/variables`)).json.filter((v) => v.scope === 'channel'), [], 'another server sees nothing');
+    const gone = await call('DELETE', `/api/guilds/${A}/variables?${new URLSearchParams({ scope: 'channel', scopeId: '500001', name: 'panel' })}`);
+    assert.equal(gone.status, 200);
+    assert.deepEqual(await channelRows(), []);
+  });
+
   it('rejects cross-site and header-less state-changing requests', async () => {
     const body = { name: 'x', graph: graph() };
     assert.equal((await call('POST', `/api/guilds/${A}/flows`, { body, origin: 'https://evil.example' })).status, 403);

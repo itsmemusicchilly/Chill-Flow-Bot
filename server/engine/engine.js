@@ -50,6 +50,9 @@ export function buildScope(ctx) {
   if (ctx.data.user) {
     scope.user = lazyProp({ ...ctx.data.user }, 'vars', () => db.varsFor(gid, 'user', ctx.data.user.id));
   }
+  if (ctx.data.channel) {
+    scope.channel = lazyProp({ ...ctx.data.channel }, 'vars', () => db.varsFor(gid, 'channel', ctx.data.channel.id));
+  }
   return scope;
 }
 
