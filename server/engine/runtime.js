@@ -5,7 +5,10 @@ import { getOutputs, isTriggerType, NODE_TYPES } from '../../shared/catalog.js';
 import { cronMatches, scheduleOf, zonedParts } from '../../shared/cron.js';
 import { LIMITS } from '../../shared/limits.js';
 import { normalizeGraph, validateFlow } from '../../shared/validate.js';
+import { integrationFlags } from '../../shared/platforms.js';
 import { feedAdapter } from '../feeds/adapter.js';
+import { createTwitchAdapter } from '../feeds/twitch.js';
+import { youtubeAdapter } from '../feeds/youtube.js';
 import { safeFetch } from '../net/safe-fetch.js';
 import { uid } from '../../shared/util.js';
 import { ChannelEdits } from './channel-edits.js';
@@ -30,10 +33,10 @@ export class Runtime {
   /**
    * @param {{db: import('../db.js').Database, logger: import('../logger.js').Logger, intents?: {members: boolean, messageContent: boolean}, uploads?: {publicUrl: (guildId: string, ref: string) => string},
    *          clock?: {now?: () => number, setTimer?: (fn: () => void, ms: number) => any, clearTimer?: (timer: any) => void},
-   *          fetcher?: Function, feedMinMinutes?: number}} deps
+   *          fetcher?: Function, feedMinMinutes?: number, integrations?: {youtube?: string, twitch?: {clientId: string, clientSecret: string}}}} deps
    *   `clock` is for tests: schedules read the time and set their timer through it. `fetcher` is the guarded fetcher the feed watchers use (a pretend one in tests).
    */
-  constructor({ db, logger, intents = { members: false, messageContent: false }, uploads = null, clock = {}, fetcher = safeFetch, feedMinMinutes = 5 }) {
+  constructor({ db, logger, intents = { members: false, messageContent: false }, uploads = null, clock = {}, fetcher = safeFetch, feedMinMinutes = 5, integrations = {} }) {
     this.db = db;
     this.logger = logger;
     this.intents = intents;
@@ -54,7 +57,8 @@ export class Runtime {
     this.schedules = new Map(); // "guild|flow|node" -> what one Schedule trigger needs to know between ticks
     this.ticker = null; // the one timer that wakes up at the start of each minute while any schedule exists
     this.lastMinute = null; // the last minute whose schedules were looked at
-    this.watchers = new Watchers({ runtime: this, db, logger, adapters: [feedAdapter], fetch: fetcher, minMinutes: feedMinMinutes });
+    this.integrationFlags = integrationFlags(integrations);
+    this.watchers = new Watchers({ runtime: this, db, logger, adapters: [feedAdapter, youtubeAdapter, createTwitchAdapter()], fetch: fetcher, minMinutes: feedMinMinutes, keys: integrations });
     this.deferAfterMs = DEFER_AFTER_MS;
   }
 
@@ -67,7 +71,7 @@ export class Runtime {
     for (const flow of this.db.listEnabledFlows(guildId)) {
       const graph = normalizeGraph(flow.graph);
       const active = { ...flow, graph };
-      const issues = validateFlow(graph, { intents: this.intents });
+      const issues = validateFlow(graph, { intents: this.intents, integrations: this.integrationFlags });
       entry.flows.set(flow.id, active);
       this.flowsById.set(flow.id, active);
       for (const node of graph.nodes) {

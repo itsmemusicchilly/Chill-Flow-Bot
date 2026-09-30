@@ -344,7 +344,7 @@ describe('New Feed Item', () => {
       install({}, { name: 'First' });
       install({ url: 'https://second.example/feed' }, { name: 'Second' });
       assert.equal(runtime.watchers.size, 1);
-      assert.ok(logs().some((l) => /^warn: “Second” is not watching anything: this server reached its limit of 1 watched feeds/.test(l)), logs().join('\n'));
+      assert.ok(logs().some((l) => /^warn: “Second” is not watching anything: this server reached its limit of 1 watched sources/.test(l)), logs().join('\n'));
       resetLimits();
     });
   });

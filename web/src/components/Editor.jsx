@@ -195,7 +195,7 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
               <p className="tiny muted">{flows.length}{me.meta.limits.flowsPerGuild ? `/${me.meta.limits.flowsPerGuild}` : ''} {flows.length === 1 ? 'flow' : 'flows'}</p>
             </div>
           ) : (
-            <Palette intents={me.meta.intents} onAdd={(type) => { apiRef.current?.addNode(type); setNavOpen(false); }} />
+            <Palette intents={me.meta.intents} integrations={me.meta.integrations} onAdd={(type) => { apiRef.current?.addNode(type); setNavOpen(false); }} />
           )}
         </aside>
 

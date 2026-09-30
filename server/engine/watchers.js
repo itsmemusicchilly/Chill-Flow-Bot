@@ -1,7 +1,7 @@
-// Watches things outside Discord (feeds, and later platform APIs) and starts flows when something new appears.
+// Watches things outside Discord (feeds, YouTube, Twitch) and starts flows when something new appears.
 //
-// One `target` per thing to look at (a feed address), however many servers watch it: it is fetched once per round and every watching flow gets
-// its own turn to see what is new. Each flow keeps its own memory of what it has already announced (in SQLite), so a restart never repeats a post
+// One `target` per thing to look at (a feed address, a channel), however many servers watch it: it is looked at once per round and every watching
+// flow gets its own turn to see what is new. An adapter may look at many targets in ONE request (`fetchMany`: up to 100 Twitch channels at once). Each flow keeps its own memory of what it has already announced (in SQLite), so a restart never repeats a post
 // and a freshly switched-on flow does not announce the back catalogue. The runtime's minute ticker calls `tick`; nothing here blocks it.
 import { FeedSettingError } from '../../shared/feeds.js';
 import { isCapped, LIMITS } from '../../shared/limits.js';
@@ -12,15 +12,16 @@ const errorText = (err) => String(err?.message ?? err).slice(0, 200);
 
 export class Watchers {
   /**
-   * @param {{runtime: object, db: object, logger: object, adapters: object[], fetch: Function, minMinutes?: number, maxParallel?: number}} deps
-   *   `fetch(url, options)` is the guarded fetcher (server/net/safe-fetch.js), or a pretend one in tests.
+   * @param {{runtime: object, db: object, logger: object, adapters: object[], fetch: Function, minMinutes?: number, maxParallel?: number, keys?: object}} deps
+   *   `fetch(url, options)` is the guarded fetcher (server/net/safe-fetch.js), or a pretend one in tests; `keys` are the operator's API keys.
    */
-  constructor({ runtime, db, logger, adapters, fetch, minMinutes = 5, maxParallel = 4 }) {
+  constructor({ runtime, db, logger, adapters, fetch, minMinutes = 5, maxParallel = 4, keys = {} }) {
     this.runtime = runtime;
     this.db = db;
     this.logger = logger;
     this.adapters = new Map(adapters.map((a) => [a.type, a]));
     this.fetch = fetch;
+    this.keys = keys;
     this.minMinutes = minMinutes;
     this.maxParallel = maxParallel;
     this.subs = new Map(); // "guild|flow|node" → one flow's interest in one target
@@ -46,19 +47,19 @@ export class Watchers {
       for (const { flow, node } of this.runtime.index.get(guildId)?.triggers.get(type) ?? []) {
         const key = `${guildId}|${flow.id}|${node.id}`;
         let plan;
-        try { plan = adapter.prepare(node.data, { minMinutes: this.minMinutes }); } catch (err) {
+        try { plan = adapter.prepare(node.data, { minMinutes: this.minMinutes, keys: this.keys }); } catch (err) {
           if (err instanceof FeedSettingError) continue; // already shown as a problem on the node, and the trigger is not active
           throw err;
         }
         count += 1;
         const known = this.subs.get(key);
         if (isCapped(LIMITS.feedsPerGuild) && count > LIMITS.feedsPerGuild && !known) {
-          this.logger.log(guildId, 'warn', `“${flow.name}” is not watching anything: this server reached its limit of ${LIMITS.feedsPerGuild} watched feeds.`, { flowId: flow.id, flowName: flow.name, nodeId: node.id });
+          this.logger.log(guildId, 'warn', `“${flow.name}” is not watching anything: this server reached its limit of ${LIMITS.feedsPerGuild} watched sources (feeds and channels).`, { flowId: flow.id, flowName: flow.name, nodeId: node.id });
           continue;
         }
         keepSubs.add(key);
         const targetKey = `${type}|${plan.key}`;
-        if (known && known.targetKey === targetKey) { Object.assign(known, { flow, node, everyMs: plan.everyMs, label: plan.label }); continue; }
+        if (known && known.targetKey === targetKey) { Object.assign(known, { flow, node, plan, everyMs: plan.everyMs, label: plan.label }); continue; } // `plan` too: a changed step or setting applies at once
         if (known) this.#unsubscribe(known);
         const saved = this.db.getWatch(guildId, flow.id, node.id);
         const sub = { key, guildId, flow, node, adapter, type, targetKey, plan, everyMs: plan.everyMs, label: plan.label, state: saved, keyOf: plan.key };
@@ -100,28 +101,44 @@ export class Watchers {
     if (this.pass) return this.pass;
     const due = [...this.targets.values()].filter((t) => t.subs.size && t.nextAt <= now);
     if (!due.length) return Promise.resolve();
+    // one job per target — except adapters that can look at many at once, which get one job for all of theirs
+    const jobs = [];
+    const batched = new Map();
+    for (const target of due) {
+      const adapter = this.adapters.get(target.type);
+      if (adapter.fetchMany) { if (!batched.has(adapter)) batched.set(adapter, []); batched.get(adapter).push(target); } else jobs.push(() => this.#lookOne(target, now));
+    }
+    for (const [adapter, targets] of batched) jobs.push(() => this.#lookMany(adapter, targets, now));
     const worker = async () => {
-      for (let target = due.shift(); target; target = due.shift()) {
-        try { await this.#look(target, now); } catch (err) { this.logger.log(null, 'error', `Watcher failed unexpectedly: ${err?.stack || err}`); }
+      for (let job = jobs.shift(); job; job = jobs.shift()) {
+        try { await job(); } catch (err) { this.logger.log(null, 'error', `Watcher failed unexpectedly: ${err?.stack || err}`); }
       }
     };
-    this.pass = Promise.all(Array.from({ length: Math.min(this.maxParallel, due.length) }, worker)).finally(() => { this.pass = null; });
+    this.pass = Promise.all(Array.from({ length: Math.min(this.maxParallel, jobs.length) }, worker)).finally(() => { this.pass = null; });
     return this.pass;
   }
 
   /** Resolves when no round is running (for tests and for a clean shutdown). */
   async idle() { while (this.pass) await this.pass; }
 
-  async #look(target, now) {
-    const adapter = this.adapters.get(target.type);
+  #context(now) { return { fetch: this.fetch, now, keys: this.keys }; }
+
+  async #lookOne(target, now) {
     let result;
-    try {
-      result = await adapter.fetch(target, { fetch: this.fetch, now });
-    } catch (err) {
-      if (!this.stopped) this.#failed(target, err, now);
-      return;
-    }
+    try { result = await this.adapters.get(target.type).fetch(target, this.#context(now)); } catch (err) { result = err instanceof Error ? err : new Error(String(err)); }
+    await this.#settle(target, result, now);
+  }
+
+  async #lookMany(adapter, targets, now) {
+    let results;
+    try { results = await adapter.fetchMany(targets, this.#context(now)); } catch (err) { results = new Map(targets.map((t) => [t.key, err instanceof Error ? err : new Error(String(err))])); }
+    for (const target of targets) await this.#settle(target, results.get(target.key) ?? new Error('No answer.'), now);
+  }
+
+  /** What was found (or the Error that stopped it) for one target: schedule the next look, and let each watching flow see what is new. */
+  async #settle(target, result, now) {
     if (this.stopped) return;
+    if (result instanceof Error) { this.#failed(target, result, now); return; }
     this.#succeeded(target, now);
     if (result?.unchanged) return;
     for (const key of [...target.subs]) {
@@ -156,7 +173,7 @@ export class Watchers {
   async #deliver(sub, result) {
     // while the bot is not connected to this server nothing is announced AND nothing is marked as seen, so nothing is lost
     if (!this.runtime.client?.guilds.cache.has(sub.guildId)) return;
-    const { state, fire, log } = sub.adapter.evaluate(sub.state, result, { key: sub.keyOf, label: sub.label });
+    const { state, fire, log } = sub.adapter.evaluate(sub.state, result, { key: sub.keyOf, label: sub.label, plan: sub.plan });
     for (const line of log) this.#log(sub, line.level, line.message);
     if (state !== sub.state) {
       sub.state = state;

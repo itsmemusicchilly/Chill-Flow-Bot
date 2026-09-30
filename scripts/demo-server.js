@@ -24,11 +24,15 @@ const config = {
   token: 'demo', clientId: '1', clientSecret: 'demo', baseUrl, port, host: '127.0.0.1', trustProxy: false, dataDir,
   intents: { members: true, messageContent: true }, minPermission: 'Administrator', sessionTtlMs: 8 * 3600e3,
   publicRate: { views: 100000, visitor: 1000, ip: 100000 },
+  // the demo pretends YouTube is set up and Twitch is not, so the editor shows both cases
+  integrations: { youtube: 'demo-key', twitch: { clientId: '', clientSecret: '' } }, feedMinMinutes: 5,
 };
 const db = new Database(':memory:');
 const logger = new Logger({ console: false });
 const uploads = createUploads({ config, db, logger });
-const runtime = new Runtime({ db, logger, intents: config.intents, uploads });
+// the demo never goes on the internet: whatever a feed trigger wants to read simply cannot be read
+const offline = async () => { throw new Error('The demo has no internet connection.'); };
+const runtime = new Runtime({ db, logger, intents: config.intents, uploads, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes, fetcher: offline });
 
 const guilds = new Map();
 function makeGuild(id, name) {

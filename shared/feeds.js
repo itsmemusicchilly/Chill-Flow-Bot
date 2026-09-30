@@ -27,11 +27,13 @@ export function parsePublicHttpsUrl(input) {
   return url;
 }
 
-const youtubeUrl = (v) => {
-  const id = /(?:channel\/|channel_id=)?(UC[\w-]{22})\b/.exec(v)?.[1];
+/** The `UC…` id inside what a person typed (the id itself, or a channel link). Throws a FeedSettingError when there is none. */
+export function youtubeChannelId(v) {
+  const id = /(?:channel\/|channel_id=)?(UC[\w-]{22})\b/.exec(String(v ?? ''))?.[1];
   if (!id) throw new FeedSettingError('A YouTube channel ID starts with UC and has 24 characters (in YouTube: your channel → About → Share → Copy channel ID).');
-  return `https://www.youtube.com/feeds/videos.xml?channel_id=${id}`;
-};
+  return id;
+}
+const youtubeUrl = (v) => `https://www.youtube.com/feeds/videos.xml?channel_id=${youtubeChannelId(v)}`;
 const redditUrl = (v) => {
   const sub = /^(?:https?:\/\/(?:www\.)?reddit\.com)?\/?(?:r\/)?([A-Za-z0-9_]{2,21})\/?$/.exec(v)?.[1];
   if (!sub) throw new FeedSettingError('Enter a subreddit name such as gaming (or r/gaming).');

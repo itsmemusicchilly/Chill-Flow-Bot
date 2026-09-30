@@ -2,6 +2,7 @@
 // this file; the server uses it to validate graphs, compute handles and activate triggers.
 import { CronError, nextRuns, scheduleOf, timeZoneNames, WEEKDAYS } from './cron.js';
 import { DEFAULT_FEED_MINUTES, FEED_SOURCES, FeedSettingError, MIN_FEED_MINUTES, feedUrlOf, parsePublicHttpsUrl } from './feeds.js';
+import { DEFAULT_TWITCH_MINUTES, DEFAULT_YOUTUBE_MINUTES, MIN_TWITCH_MINUTES, MIN_YOUTUBE_MINUTES, twitchSettings, youtubeSettings } from './platforms.js';
 import { area, bool, color, idField, image, isVisible, list, multi, num, select, text, VAR_NAME_RE, when, whenNot } from './fields.js';
 import { uid } from './util.js';
 
@@ -329,6 +330,43 @@ trigger('trigger.webhook', {
     ['webhook.query.name', 'One ?name=value from the address (replace “name”)'], ['webhook.method', 'The request method (always POST)'], ['webhook.contentType', 'The kind of data that was sent'],
   ],
   summary: () => 'secret web address',
+});
+trigger('trigger.youtube.subscribers', {
+  label: 'YouTube Subscribers', icon: '▶️', needs: 'youtube',
+  description: 'Runs each time a YouTube channel’s subscriber count passes the next round number (every 100, every 1,000 …). YouTube rounds public counts to three significant figures and a channel can hide its count, so pick a step much bigger than the rounding. Needs the bot operator’s YouTube API key.',
+  fields: [
+    text('channel', 'YouTube channel ID', { required: true, placeholder: 'UC…', help: 'It starts with UC and has 24 characters. In YouTube: your channel → About → Share → Copy channel ID. (A link with /channel/UC… in it works too.)' }),
+    num('step', 'Announce every … subscribers', { default: 1000, min: 1, required: true, help: 'A milestone is announced once, the first time the count reaches it. When you switch the flow on, the current count is only noted.' }),
+    num('minutes', 'Check every (minutes)', { default: DEFAULT_YOUTUBE_MINUTES, min: MIN_YOUTUBE_MINUTES, required: true, help: `At least ${MIN_YOUTUBE_MINUTES}: YouTube gives the bot a daily allowance that every server shares.` }),
+    idField('channelId', 'Channel for context (optional)', 'channel'),
+  ],
+  provides: () => [
+    ...GUILD, ...CHANNEL,
+    ['youtube.subscribers', 'Subscribers now'], ['youtube.milestone', 'The milestone that was reached (e.g. 10000)'], ['youtube.previous', 'Subscribers at the last check'],
+    ['youtube.channelTitle', 'Channel name'], ['youtube.channelId', 'Channel ID'], ['youtube.url', 'Link to the channel'],
+  ],
+  summary: (d) => (d.channel ? `${String(d.channel).slice(-24)} · every ${d.step || '?'}` : 'choose a channel'),
+  check: (d) => {
+    try { youtubeSettings(d); return []; } catch (e) { if (e instanceof FeedSettingError) return [e.message]; throw e; }
+  },
+});
+trigger('trigger.twitch.live', {
+  label: 'Twitch Channel Live', icon: '🟣', needs: 'twitch',
+  description: 'Runs when a Twitch channel starts a new broadcast. A broadcast that is already running when you switch the flow on is not announced. (Followers cannot be watched from outside — use the Webhook trigger with StreamElements, Streamlabs or Zapier.) Needs the bot operator’s Twitch application.',
+  fields: [
+    text('login', 'Twitch channel', { required: true, placeholder: 'shroud', help: 'The channel name, or a twitch.tv link.' }),
+    num('minutes', 'Check every (minutes)', { default: DEFAULT_TWITCH_MINUTES, min: MIN_TWITCH_MINUTES, required: true }),
+    idField('channelId', 'Channel for context (optional)', 'channel'),
+  ],
+  provides: () => [
+    ...GUILD, ...CHANNEL,
+    ['twitch.user', 'Streamer name'], ['twitch.login', 'Channel name (lowercase)'], ['twitch.title', 'Stream title'], ['twitch.game', 'Game or category'], ['twitch.viewers', 'Viewers right now'],
+    ['twitch.url', 'Link to the channel'], ['twitch.thumbnail', 'Preview picture address (https)'], ['twitch.started', 'When the broadcast started (ISO date)'], ['twitch.id', 'Broadcast id'],
+  ],
+  summary: (d) => (d.login ? String(d.login).replace(/^@/, '').slice(0, 40) : 'choose a channel'),
+  check: (d) => {
+    try { twitchSettings(d); return []; } catch (e) { if (e instanceof FeedSettingError) return [e.message]; throw e; }
+  },
 });
 trigger('trigger.manual', {
   label: 'Manual (Run button)', icon: '▶️',

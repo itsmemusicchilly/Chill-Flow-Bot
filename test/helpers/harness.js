@@ -29,7 +29,7 @@ export async function startHarness({ config: over = {} } = {}) {
   const db = new Database(':memory:');
   const logger = new Logger({ console: false });
   const uploads = createUploads({ config, db, logger });
-  const runtime = new Runtime({ db, logger, intents: config.intents, uploads });
+  const runtime = new Runtime({ db, logger, intents: config.intents, uploads, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes, ...(over.fetcher ? { fetcher: over.fetcher } : {}) });
   const guilds = { [A]: fakeGuild({ id: A, name: 'Pixel Café' }), [B]: fakeGuild({ id: B, name: 'Dev Sandbox' }) };
   guilds[A].name = 'Pixel Café';
   guilds[B].name = 'Dev Sandbox';

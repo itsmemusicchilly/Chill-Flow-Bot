@@ -305,6 +305,61 @@ tell nodes apart; it is never sent to Discord.
 
 **Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
+### 📰 New Feed Item
+
+`trigger.feed.item` — Runs when a feed gets a new post: a YouTube channel’s new video, a subreddit, a Bluesky or Mastodon account, a blog, GitHub releases. The bot looks every few minutes; posts that are already there when you switch the flow on are not announced.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Where | select | options: Any feed address, YouTube channel, Reddit subreddit, Bluesky account |
+| Feed address | text | shown when `source` is `url`; A public https address of an RSS, Atom or JSON feed. Mastodon: https://server/@name.rss · GitHub releases: https://github.com/owner/repo/releases.atom · most blogs: /feed or /rss.xml |
+| YouTube channel ID | text | shown when `source` is `youtube`; It starts with UC and has 24 characters. In YouTube: your channel → About → Share → Copy channel ID. (A link with /channel/UC… in it works too.) |
+| Subreddit | text | shown when `source` is `reddit`; The name, without r/. |
+| Bluesky handle | text | shown when `source` is `bluesky` |
+| Check every (minutes) | number | required; range 5–…; At least 5. The bot operator may set a longer minimum. |
+| Channel for context (optional) | channel |  |
+
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{feed.title}}`, `{{feed.link}}`, `{{feed.author}}`, `{{feed.summary}}`, `{{feed.published}}`, `{{feed.image}}`, `{{feed.id}}`, `{{feed.name}}`
+
+### 🔔 Webhook Received
+
+`trigger.webhook` — Runs when something calls this trigger’s secret web address. Tools like Zapier, IFTTT, Make, StreamElements or GitHub can call it — that is how to react to a new X, TikTok or Instagram post, or a Twitch follower. Save the flow to get the address.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Channel for context (optional) | channel |  |
+
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{webhook.text}}`, `{{webhook.body.name}}`, `{{webhook.query.name}}`, `{{webhook.method}}`, `{{webhook.contentType}}`
+
+### ▶️ YouTube Subscribers
+
+`trigger.youtube.subscribers` — Runs each time a YouTube channel’s subscriber count passes the next round number (every 100, every 1,000 …). YouTube rounds public counts to three significant figures and a channel can hide its count, so pick a step much bigger than the rounding. Needs the bot operator’s YouTube API key.
+
+> Needs a YouTube API key (YOUTUBE_API_KEY) — the bot operator must set it up (see `.env.example`).
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| YouTube channel ID | text | required; It starts with UC and has 24 characters. In YouTube: your channel → About → Share → Copy channel ID. (A link with /channel/UC… in it works too.) |
+| Announce every … subscribers | number | required; range 1–…; A milestone is announced once, the first time the count reaches it. When you switch the flow on, the current count is only noted. |
+| Check every (minutes) | number | required; range 15–…; At least 15: YouTube gives the bot a daily allowance that every server shares. |
+| Channel for context (optional) | channel |  |
+
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{youtube.subscribers}}`, `{{youtube.milestone}}`, `{{youtube.previous}}`, `{{youtube.channelTitle}}`, `{{youtube.channelId}}`, `{{youtube.url}}`
+
+### 🟣 Twitch Channel Live
+
+`trigger.twitch.live` — Runs when a Twitch channel starts a new broadcast. A broadcast that is already running when you switch the flow on is not announced. (Followers cannot be watched from outside — use the Webhook trigger with StreamElements, Streamlabs or Zapier.) Needs the bot operator’s Twitch application.
+
+> Needs a Twitch application (TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET) — the bot operator must set it up (see `.env.example`).
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Twitch channel | text | required; The channel name, or a twitch.tv link. |
+| Check every (minutes) | number | required; range 1–… |
+| Channel for context (optional) | channel |  |
+
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{twitch.user}}`, `{{twitch.login}}`, `{{twitch.title}}`, `{{twitch.game}}`, `{{twitch.viewers}}`, `{{twitch.url}}`, `{{twitch.thumbnail}}`, `{{twitch.started}}`, `{{twitch.id}}`
+
 ### ▶️ Manual (Run button)
 
 `trigger.manual` — Runs when you press ▶ Run in the editor. Great for posting a button panel once.

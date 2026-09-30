@@ -3,6 +3,7 @@ import { NODE_TYPES, TITLE_KEY, getOutputs, isTriggerType, nodeTitle } from './c
 import { connectionKey } from './connections.js';
 import { checkFields } from './fields.js';
 import { isCapped, LIMITS } from './limits.js';
+import { INTEGRATIONS } from './platforms.js';
 
 export const ID_RE = /^[A-Za-z0-9_-]{1,12}$/;
 
@@ -39,7 +40,7 @@ export function normalizeGraph(input) {
  * @returns {{nodeId: string|null, level: 'error'|'warning', kind: 'structure'|'config'|'intent'|'graph', message: string}[]}
  * `kind: 'structure'` issues make a graph unsavable; the rest are shown as warnings but can be saved.
  */
-export function validateFlow(graph, { intents } = {}) {
+export function validateFlow(graph, { intents, integrations } = {}) {
   const issues = [];
   const add = (nodeId, level, kind, message) => issues.push({ nodeId, level, kind, message });
   const { nodes, edges } = graph;
@@ -92,6 +93,10 @@ export function validateFlow(graph, { intents } = {}) {
     for (const m of d.check?.(n.data) || []) push(m);
     if (d.requires && intents && !intents[d.requires]) {
       add(n.id, 'error', 'intent', `This trigger needs the ${d.requires === 'members' ? 'Server Members' : 'Message Content'} intent, which the bot operator has not enabled — it will not run.`);
+    }
+    // `needs` = something the bot operator must have set up (an API key); without it the trigger cannot work.
+    if (d.needs && integrations && !integrations[d.needs]) {
+      add(n.id, 'error', 'intent', `This trigger needs ${INTEGRATIONS[d.needs]}, which the bot operator has not set up — it will not run.`);
     }
     // `wants` = works better with an intent but does not need it: warn, never block.
     if (d.wants && intents && !intents[d.wants]) {

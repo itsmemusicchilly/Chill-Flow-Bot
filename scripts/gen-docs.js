@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BLOCK_LIST, PREVIEW_FIELDS, THEME_FIELDS } from '../shared/blocks.js';
 import { CATEGORIES, defaultsFor, getOutputs, NODE_LIST } from '../shared/catalog.js';
+import { INTEGRATIONS } from '../shared/platforms.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const esc = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
@@ -48,6 +49,7 @@ for (const [key, cat] of Object.entries(CATEGORIES)) {
   for (const n of nodes) {
     out.push(`### ${n.icon} ${n.label}`, '', `\`${n.type}\` — ${n.description}`, '');
     if (n.requires) out.push(`> Needs the **${n.requires === 'members' ? 'Server Members' : 'Message Content'}** privileged intent (the bot operator must enable it).`, '');
+    if (n.needs) out.push(`> Needs ${INTEGRATIONS[n.needs]} — the bot operator must set it up (see \`.env.example\`).`, '');
     if (n.wants) out.push(`> Works best with the **${n.wants === 'members' ? 'Server Members' : 'Message Content'}** privileged intent${n.wantsNote ? ` — ${n.wantsNote}` : ''}`, '');
     const rows = fieldRows(n.fields);
     if (rows.length) out.push('| Field | Type | Notes |', '| --- | --- | --- |', ...rows, '');

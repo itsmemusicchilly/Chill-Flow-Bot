@@ -24,7 +24,7 @@ const logger = new Logger();
 const db = new Database(path.join(config.dataDir, 'flowbot.sqlite'));
 const uploads = createUploads({ config, db, logger });
 warmUp(); // load the image library now, so the first upload is not slow (and a missing binary shows up in the log at start)
-const runtime = new Runtime({ db, logger, intents: config.intents, uploads });
+const runtime = new Runtime({ db, logger, intents: config.intents, uploads, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes });
 const sync = new CommandSync({ db, runtime, logger, config });
 const bot = new BotManager({ config, runtime, logger, sync });
 const app = createApp({ config, db, runtime, bot, sync, logger, uploads });

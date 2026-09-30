@@ -82,7 +82,7 @@ export default function FlowWorkspace({ gid, flow, meta, guildData, flash, apiRe
   }, [dirtyRef]);
 
   // ---- validation (same rules as the server) ---------------------------------------------------
-  const issues = useMemo(() => validateFlow(normalizeGraph(graph), { intents: meta.intents }), [graph, meta.intents]);
+  const issues = useMemo(() => validateFlow(normalizeGraph(graph), { intents: meta.intents, integrations: meta.integrations }), [graph, meta.intents, meta.integrations]);
   const issuesByNode = useMemo(() => {
     const map = {};
     for (const i of issues) if (i.nodeId) (map[i.nodeId] ||= []).push(i);

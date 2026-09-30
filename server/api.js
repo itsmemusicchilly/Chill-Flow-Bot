@@ -3,6 +3,7 @@ import { isCapped, LIMITS, limitsToJSON } from '../shared/limits.js';
 import { BLOCK_ID_RE, formsOf, hasPageStructureErrors, hasUnpublishedChanges, normalizePage, validatePage } from '../shared/blocks.js';
 import { PAGE_TEMPLATES } from '../shared/page-templates.js';
 import { TEMPLATES } from '../shared/templates.js';
+import { integrationFlags } from '../shared/platforms.js';
 import { hasStructureErrors, normalizeGraph, validateFlow } from '../shared/validate.js';
 import { toCsv } from './csv.js';
 import { livePage, SlugTakenError } from './db.js';
@@ -20,6 +21,7 @@ const iconUrl = (g) => (g.icon ? `https://cdn.discordapp.com/icons/${g.id}/${g.i
 
 export function createApi({ config, db, runtime, bot, sync, logger, auth, uploads }) {
   const router = express.Router();
+  const flags = integrationFlags(config.integrations);
   const perUser = new RateLimiter(300, 60_000);
   const streams = new Map();
 
@@ -34,7 +36,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
         id: g.id, name: g.name, icon: iconUrl(g), botPresent: bot.hasGuild(g.id), inviteUrl: bot.hasGuild(g.id) ? null : bot.inviteUrl(g.id),
       })),
       meta: {
-        intents: config.intents, limits: limitsToJSON(), minPermission: config.minPermission,
+        intents: config.intents, integrations: flags, limits: limitsToJSON(), minPermission: config.minPermission,
         uploads: { available: imagesAvailable(), publicBase: uploads.publicBase, maxBytes: Math.min(IMAGE_LIMITS.maxInputBytes, isCapped(LIMITS.uploadBytes) ? LIMITS.uploadBytes : Infinity) },
         templates: TEMPLATES.map((t) => ({ id: t.id, name: t.name, description: t.description })),
       },
@@ -55,15 +57,15 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
 
   const summary = (f) => ({
     id: f.id, name: f.name, enabled: f.enabled, updatedAt: f.updatedAt, updatedBy: f.updatedBy,
-    nodes: f.graph.nodes.length, issues: validateFlow(f.graph, { intents: config.intents }).filter((i) => i.level === 'error').length,
+    nodes: f.graph.nodes.length, issues: validateFlow(f.graph, { intents: config.intents, integrations: flags }).filter((i) => i.level === 'error').length,
   });
-  const full = (f) => ({ ...summary(f), createdAt: f.createdAt, graph: f.graph, issues: validateFlow(f.graph, { intents: config.intents }) });
+  const full = (f) => ({ ...summary(f), createdAt: f.createdAt, graph: f.graph, issues: validateFlow(f.graph, { intents: config.intents, integrations: flags }) });
 
   function checkedGraph(input) {
     if (!input || typeof input !== 'object') throw new HttpError(400, 'Missing flow graph.');
     const graph = normalizeGraph(input);
     if (isCapped(LIMITS.graphBytes) && JSON.stringify(graph).length > LIMITS.graphBytes) throw new HttpError(413, 'This flow is too large.');
-    const issues = validateFlow(graph, { intents: config.intents });
+    const issues = validateFlow(graph, { intents: config.intents, integrations: flags });
     if (hasStructureErrors(issues)) throw new HttpError(400, 'The flow has structural problems and was not saved.', { issues: issues.filter((i) => i.kind === 'structure') });
     return graph;
   }

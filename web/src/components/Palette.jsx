@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { CATEGORIES, NODE_LIST } from '@shared/catalog.js';
+import { INTEGRATIONS } from '@shared/platforms.js';
 
-export default function Palette({ onAdd, intents }) {
+export default function Palette({ onAdd, intents, integrations = {} }) {
   const [query, setQuery] = useState('');
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -20,12 +21,14 @@ export default function Palette({ onAdd, intents }) {
           <h3 style={{ '--cat': cat.color }}>{cat.label}<span>{cat.blurb}</span></h3>
           <div className="palette-list">
             {nodes.map((d) => {
-              const blocked = d.requires && !intents[d.requires];
+              const missing = d.needs && !integrations[d.needs];
+              const blocked = (d.requires && !intents[d.requires]) || missing;
+              const why = missing ? `needs ${INTEGRATIONS[d.needs]}` : `needs the ${d.requires === 'members' ? 'Server Members' : 'Message Content'} intent`;
               return (
                 <button
                   key={d.type} type="button" className={`palette-item ${blocked ? 'blocked' : ''}`} style={{ '--cat': cat.color }}
                   draggable onDragStart={(e) => { e.dataTransfer.setData('application/flowbot-node', d.type); e.dataTransfer.effectAllowed = 'move'; }}
-                  onClick={() => onAdd(d.type)} title={blocked ? `${d.description}\n\nDisabled by the bot operator (needs the ${d.requires === 'members' ? 'Server Members' : 'Message Content'} intent).` : d.description}
+                  onClick={() => onAdd(d.type)} title={blocked ? `${d.description}\n\nNot available yet: the bot operator has not set this up (${why}).` : d.description}
                 >
                   <span className="pi-ico" aria-hidden="true">{d.icon}</span>
                   <span className="pi-label">{d.label}</span>

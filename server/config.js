@@ -77,6 +77,11 @@ export function loadConfig(env = process.env) {
     limits,
     requestBytes,
     feedMinMinutes,
+    // keys for the triggers that use a platform's own API; never sent to the browser (the editor only learns whether each is set)
+    integrations: {
+      youtube: String(env.YOUTUBE_API_KEY ?? '').trim(),
+      twitch: { clientId: String(env.TWITCH_CLIENT_ID ?? '').trim(), clientSecret: String(env.TWITCH_CLIENT_SECRET ?? '').trim() },
+    },
     sessionTtlMs: 7 * 24 * 3600 * 1000,
   };
 }
