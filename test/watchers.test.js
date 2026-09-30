@@ -6,37 +6,12 @@ import { Database } from '../server/db.js';
 import { Runtime } from '../server/engine/runtime.js';
 import { Logger } from '../server/logger.js';
 import { SafeFetchError } from '../server/net/safe-fetch.js';
+import { fakeClock } from './helpers/clock.js';
 import { edge, fakeGuild, node } from './helpers/fakes.js';
 
 const MIN = 60_000;
 const utc = (y, mo, d, h = 0, mi = 0, s = 0) => Date.UTC(y, mo - 1, d, h, mi, s);
 const settle = (ms = 25) => new Promise((r) => setTimeout(r, ms));
-
-function fakeClock(start) {
-  let t = start;
-  const timers = [];
-  const live = () => timers.filter((x) => !x.off && !x.done);
-  return {
-    clock: {
-      now: () => t,
-      setTimer: (fn, ms) => { const timer = { fn, at: t + ms, off: false, done: false, unref() {} }; timers.push(timer); return timer; },
-      clearTimer: (timer) => { timer.off = true; },
-    },
-    now: () => t,
-    waiting: () => live().length,
-    async advance(ms) {
-      const end = t + ms;
-      for (;;) {
-        const next = live().sort((a, b) => a.at - b.at)[0];
-        if (!next || next.at > end) break;
-        t = Math.max(t, next.at); next.done = true;
-        await next.fn();
-      }
-      t = end;
-    },
-  };
-}
-
 const post = (id, title, at, extra = '') => `<item><guid>${id}</guid><title>${title}</title><link>https://blog.example/${id}</link><dc:creator>Sam</dc:creator><pubDate>${new Date(at).toUTCString()}</pubDate><description>Text of ${id}</description>${extra}</item>`;
 const rss = (...items) => `<?xml version="1.0"?><rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/"><channel><title>Sam’s Blog</title>${items.join('')}</channel></rss>`;
 const FEED = 'https://blog.example/feed.xml';

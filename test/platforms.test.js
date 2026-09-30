@@ -10,6 +10,7 @@ import { validateFlow } from '../shared/validate.js';
 import { Database } from '../server/db.js';
 import { Runtime } from '../server/engine/runtime.js';
 import { Logger } from '../server/logger.js';
+import { fakeClock } from './helpers/clock.js';
 import { edge, fakeGuild, node } from './helpers/fakes.js';
 import { A, startHarness } from './helpers/harness.js';
 
@@ -17,31 +18,6 @@ const MIN = 60_000;
 const utc = (y, mo, d, h = 0, mi = 0, s = 0) => Date.UTC(y, mo - 1, d, h, mi, s);
 const settle = (ms = 25) => new Promise((r) => setTimeout(r, ms));
 const problem = (fn) => { try { fn(); return ''; } catch (e) { assert.ok(e instanceof FeedSettingError, `not a FeedSettingError: ${e?.stack}`); return e.message; } };
-
-function fakeClock(start) {
-  let t = start;
-  const timers = [];
-  const live = () => timers.filter((x) => !x.off && !x.done);
-  return {
-    clock: {
-      now: () => t,
-      setTimer: (fn, ms) => { const timer = { fn, at: t + ms, off: false, done: false, unref() {} }; timers.push(timer); return timer; },
-      clearTimer: (timer) => { timer.off = true; },
-    },
-    now: () => t,
-    async advance(ms) {
-      const end = t + ms;
-      for (;;) {
-        const next = live().sort((a, b) => a.at - b.at)[0];
-        if (!next || next.at > end) break;
-        t = Math.max(t, next.at); next.done = true;
-        await next.fn();
-      }
-      t = end;
-    },
-  };
-}
-
 const UC_A = `UC${'a'.repeat(22)}`;
 const UC_B = `UC${'b'.repeat(22)}`;
 const KEYS = { youtube: 'SECRET-YT-KEY', twitch: { clientId: 'twitch-id', clientSecret: 'SECRET-TWITCH-SECRET' } };

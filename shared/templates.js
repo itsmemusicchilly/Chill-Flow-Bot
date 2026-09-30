@@ -160,6 +160,75 @@ export const TEMPLATES = [
     }),
   },
   {
+    id: 'youtube-upload',
+    name: 'YouTube upload announcer',
+    description: 'Posts a link in a channel whenever a YouTube channel uploads a video (Discord shows the video player). Paste the YouTube channel ID (starts with UC…) in the trigger and pick the channel in the last node. Videos that are already up are not announced.',
+    build: () => ({
+      nodes: [
+        n('t1', 'trigger.feed.item', 0, 60, { source: 'youtube', minutes: 15 }),
+        n('m1', 'action.message.send', 340, 40, { target: 'channel', content: '📺 **{{feed.name}}** uploaded a new video!\n{{feed.link}}' }),
+      ],
+      edges: [e('t1', 'm1')],
+    }),
+  },
+  {
+    id: 'post-announcer',
+    name: 'Post announcer (Reddit, Bluesky, Mastodon, blogs)',
+    description: 'Posts an embed for each new post of a subreddit, a Bluesky account or any blog/feed. Choose where to look in the trigger (Mastodon: “Any feed address” with https://server/@name.rss) and pick the channel in the last node.',
+    build: () => ({
+      nodes: [
+        n('t1', 'trigger.feed.item', 0, 60, { source: 'reddit', minutes: 15 }),
+        n('m1', 'action.message.send', 340, 40, {
+          target: 'channel', useEmbed: true, embedTitle: '{{feed.title}}', embedColor: '#5865f2', embedImage: '{{feed.image}}',
+          embedDescription: '{{feed.summary}}\n\n[Open the post]({{feed.link}})', embedFooter: '{{feed.name}}', embedTimestamp: true,
+        }),
+      ],
+      edges: [e('t1', 'm1')],
+    }),
+  },
+  {
+    id: 'twitch-live',
+    name: 'Twitch live alert',
+    description: 'Announces when a Twitch channel goes live, with the title and game. Type the channel name in the trigger and pick the channel in the last node. Needs the bot operator to have set up a Twitch application.',
+    build: () => ({
+      nodes: [
+        n('t1', 'trigger.twitch.live', 0, 60, { minutes: 2 }),
+        n('m1', 'action.message.send', 340, 40, { target: 'channel', content: '🔴 **{{twitch.user}}** is live: **{{twitch.title}}**\nPlaying {{twitch.game | default:something fun}}\n{{twitch.url}}' }),
+      ],
+      edges: [e('t1', 'm1')],
+    }),
+  },
+  {
+    id: 'youtube-milestone',
+    name: 'YouTube subscriber milestone',
+    description: 'Celebrates each time a YouTube channel passes the next round number of subscribers (every 1,000 by default). YouTube rounds public counts, so keep the step large. Needs the bot operator to have a YouTube API key.',
+    build: () => ({
+      nodes: [
+        n('t1', 'trigger.youtube.subscribers', 0, 60, { step: 1000, minutes: 60 }),
+        n('m1', 'action.message.send', 340, 40, {
+          target: 'channel', useEmbed: true, embedTitle: '🎉 {{youtube.milestone | commas}} subscribers!', embedColor: '#ff0000',
+          embedDescription: '**{{youtube.channelTitle}}** just passed **{{youtube.milestone | commas}}** subscribers. Thank you all!\n{{youtube.url}}',
+        }),
+      ],
+      edges: [e('t1', 'm1')],
+    }),
+  },
+  {
+    id: 'webhook-alert',
+    name: 'Webhook alert (Zapier, IFTTT, StreamElements…)',
+    description: 'Posts whatever another tool sends: a new X / TikTok / Instagram post, a Twitch follower, a sale. Save the flow, copy the secret address from the trigger into the tool, and have it send JSON like {"title":"…","message":"…","url":"…"}. Pick the channel in the last node.',
+    build: () => ({
+      nodes: [
+        n('t1', 'trigger.webhook', 0, 60),
+        n('m1', 'action.message.send', 340, 40, {
+          target: 'channel', useEmbed: true, embedTitle: '{{webhook.body.title | default:New alert}}', embedColor: '#f59e0b',
+          embedDescription: '{{webhook.body.message}}\n{{webhook.body.url}}', embedTimestamp: true,
+        }),
+      ],
+      edges: [e('t1', 'm1')],
+    }),
+  },
+  {
     id: 'mod-log',
     name: 'Ban log',
     description: 'Posts an embed in a log channel whenever someone is banned.',
