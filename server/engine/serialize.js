@@ -26,7 +26,14 @@ export function memberData(m) {
   };
 }
 
-export const guildData = (g) => ({ id: g.id, name: g.name ?? '', memberCount: g.memberCount ?? 0, boostCount: g.premiumSubscriptionCount ?? 0, boostTier: Number(g.premiumTier) || 0 });
+export const guildData = (g) => ({
+  id: g.id,
+  name: g.name ?? '',
+  icon: g.iconURL?.({ size: 256 }) ?? '',
+  memberCount: g.memberCount ?? 0,
+  boostCount: g.premiumSubscriptionCount ?? 0,
+  boostTier: Number(g.premiumTier) || 0,
+});
 
 export function channelData(c) {
   if (!c) return undefined;

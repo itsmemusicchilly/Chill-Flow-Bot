@@ -34,7 +34,7 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (773 unit/integration tests plus a
+> **Status:** the engine, API, security rules and editor are covered by automated tests (776 unit/integration tests plus a
 > 185-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it. The alert triggers (feeds, YouTube, Twitch, webhooks) were tested against a pretend network and fake accounts,
 > not the real platforms; the same checklist covers them.
@@ -368,7 +368,7 @@ Five starter flows are in **New flow → from template**: *YouTube upload announ
 | --- | --- |
 | `user.id .name .displayName .mention .tag .avatar .isBot` | who triggered the flow (or who the event is about) |
 | `member.nickname .joinedAt .roleIds .permissions .boostingSince` | their server membership |
-| `guild.id .name .memberCount .boostCount .boostTier` | the server |
+| `guild.id .name .icon .memberCount .boostCount .boostTier` | the server (`.icon` is the picture's address, blank if it has none, so it works in an embed's author icon, footer icon, thumbnail or image) |
 | `channel.id .name .mention .type`, `message.id .content .url .after`, `role.*`, `emoji.*` | event details |
 | `option.<name>` | slash-command options |
 | `input.<id>`, `select.value`, `original.*` | forms, menus, the message that a button belongs to |

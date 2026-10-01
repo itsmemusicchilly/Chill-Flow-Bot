@@ -62,7 +62,7 @@ const ACTION_OUTS = [OUT, ERR];
 
 const USER = [['user.id', 'User ID'], ['user.name', 'Username'], ['user.displayName', 'Display name'], ['user.mention', 'Mention'], ['user.tag', 'Tag'], ['user.avatar', 'Avatar URL'], ['user.isBot', 'Is a bot']];
 const MEMBER = [['member.nickname', 'Nickname'], ['member.joinedAt', 'Joined at'], ['member.roleIds', 'Role IDs'], ['member.permissions', 'Permissions'], ['member.boostingSince', 'Boosting since (ISO, blank if not boosting)']];
-const GUILD = [['guild.id', 'Server ID'], ['guild.name', 'Server name'], ['guild.memberCount', 'Member count'], ['guild.boostCount', 'Server boosts'], ['guild.boostTier', 'Server boost level (0-3)']];
+const GUILD = [['guild.id', 'Server ID'], ['guild.name', 'Server name'], ['guild.icon', 'Server icon URL (blank if none)'], ['guild.memberCount', 'Member count'], ['guild.boostCount', 'Server boosts'], ['guild.boostTier', 'Server boost level (0-3)']];
 const CHANNEL = [['channel.id', 'Channel ID'], ['channel.name', 'Channel name'], ['channel.mention', 'Channel mention'], ['channel.type', 'Channel type'], ['channel.parentId', 'Category ID']];
 const MESSAGE = [['message.id', 'Message ID'], ['message.content', 'Message text'], ['message.url', 'Message link'], ['message.authorId', 'Author ID']];
 const ROLE = [['role.id', 'Role ID'], ['role.name', 'Role name'], ['role.mention', 'Role mention'], ['role.color', 'Role color']];

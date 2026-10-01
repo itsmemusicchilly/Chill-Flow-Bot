@@ -345,6 +345,12 @@ describe('boost triggers and transcripts (catalog)', () => {
     assert.deepEqual([bare.boostCount, bare.boostTier], [0, 0]);
   });
 
+  it('exposes the server icon as an address, blank when there is none', () => {
+    assert.equal(guildData({ id: '1', iconURL: ({ size }) => `https://cdn.example/icons/1/a.png?size=${size}` }).icon, 'https://cdn.example/icons/1/a.png?size=256');
+    assert.equal(guildData({ id: '1', iconURL: () => null }).icon, '');
+    assert.equal(guildData({ id: '1' }).icon, '', 'a guild object without iconURL (as in tests) must not throw');
+  });
+
   it('the two boost triggers are ordinary triggers that offer who, when and the server\'s boosts', () => {
     for (const type of ['trigger.user.boostserver', 'trigger.user.unboostserver']) {
       const d = NODE_TYPES[type];

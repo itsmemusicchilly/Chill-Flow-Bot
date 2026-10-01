@@ -153,6 +153,32 @@ describe('Send Message with several embeds, running', () => {
     assert.deepEqual(embeds[1].fields, [{ name: 'Who', value: 'mia', inline: false }]);
   });
 
+  it('{{guild.icon}} puts the server picture in the author icon, footer icon, thumbnail and image', async () => {
+    guild.iconURL = ({ size }) => `https://cdn.example/icons/111111/abc.png?size=${size}`;
+    const icon = 'https://cdn.example/icons/111111/abc.png?size=256';
+    const i = await run(commandFlow([node('m', 'action.message.send', {
+      target: 'reply',
+      embeds: [embed({ authorName: '{{guild.name}}', authorIcon: '{{guild.icon}}', footer: 'F', footerIcon: '{{guild.icon}}', thumbnail: '{{guild.icon}}', image: '{{guild.icon}}' })],
+    })], [edge('t', 'm')]));
+    const [e] = i.calls[0][1].embeds.map((x) => x.data);
+    assert.equal(e.author.icon_url, icon);
+    assert.equal(e.footer.icon_url, icon);
+    assert.equal(e.thumbnail.url, icon);
+    assert.equal(e.image.url, icon);
+  });
+
+  it('a server without an icon leaves the picture out instead of failing the message', async () => {
+    guild.iconURL = () => null;
+    const i = await run(commandFlow([node('m', 'action.message.send', {
+      target: 'reply',
+      embeds: [embed({ title: 'Hi', authorName: '{{guild.name}}', authorIcon: '{{guild.icon}}', thumbnail: '{{guild.icon}}' })],
+    })], [edge('t', 'm')]));
+    const [e] = i.calls[0][1].embeds.map((x) => x.data);
+    assert.equal(e.author.name, 'Guild 111111');
+    assert.equal(e.author.icon_url, undefined);
+    assert.equal(e.thumbnail, undefined);
+  });
+
   it('follows the error output, with the reason, when a link is bad', async () => {
     const i = await run(commandFlow([
       node('m', 'action.message.send', { target: 'reply', embeds: [embed({ title: 'T', url: 'ftp://nope' })] }),

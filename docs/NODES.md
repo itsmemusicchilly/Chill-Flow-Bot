@@ -27,7 +27,7 @@ tell nodes apart; it is never sent to Discord.
 | Who can use it | select | options: Everyone, Administrators, Manage Server, Manage Roles, Manage Channels, Manage Messages, Kick Members, Ban Members, Timeout Members; Discord's default permission for the command. Server admins can still change it in Integrations. |
 | Make the "thinking…" reply private | boolean | Used when a flow takes longer than ~2 s to answer. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
 ### 🔘 Button Clicked
 
@@ -37,7 +37,7 @@ tell nodes apart; it is never sent to Discord.
 | --- | --- | --- |
 | Button ID | text | required; Give a button in a Send Message node the same “Button ID”. Letters, numbers, - _ and . (max 64). Use each ID in only one flow. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{button.id}}`, `{{button.label}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{button.id}}`, `{{button.label}}`
 
 ### 💬 Message Received
 
@@ -53,7 +53,7 @@ tell nodes apart; it is never sent to Discord.
 | Only in channel (optional) | channel |  |
 | Ignore bots | boolean |  |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{message.after}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{message.after}}`
 
 ### 🗑️ Message Deleted
 
@@ -63,7 +63,7 @@ tell nodes apart; it is never sent to Discord.
 | --- | --- | --- |
 | Only in channel (optional) | channel |  |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`
 
 ### 👋 Member Joined
 
@@ -75,7 +75,7 @@ tell nodes apart; it is never sent to Discord.
 | --- | --- | --- |
 | Ignore bots | boolean |  |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`
 
 ### 🚪 Member Left
 
@@ -88,7 +88,7 @@ tell nodes apart; it is never sent to Discord.
 | Ignore bots | boolean |  |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`
 
 ### 🥾 Member Kicked
 
@@ -101,7 +101,7 @@ tell nodes apart; it is never sent to Discord.
 | Ignore bots | boolean |  |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
 
 ### 🔨 Member Banned
 
@@ -112,7 +112,7 @@ tell nodes apart; it is never sent to Discord.
 | Ignore bots | boolean |  |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
 
 ### 🕊️ Member Unbanned
 
@@ -123,7 +123,7 @@ tell nodes apart; it is never sent to Discord.
 | Ignore bots | boolean |  |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
 
 ### ⏳ Member Timed Out
 
@@ -136,7 +136,7 @@ tell nodes apart; it is never sent to Discord.
 | Ignore bots | boolean |  |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{timeout.until}}`, `{{timeout.minutes}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{timeout.until}}`, `{{timeout.minutes}}`, `{{executor.id}}`, `{{executor.name}}`, `{{executor.mention}}`, `{{reason}}`
 
 ### 🎖️ Role Given to Member
 
@@ -150,7 +150,7 @@ tell nodes apart; it is never sent to Discord.
 | Only for role (optional) | role |  |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
 
 ### 📤 Role Removed from Member
 
@@ -164,7 +164,7 @@ tell nodes apart; it is never sent to Discord.
 | Only for role (optional) | role |  |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
 
 ### 🚀 Member Boosted Server
 
@@ -172,7 +172,7 @@ tell nodes apart; it is never sent to Discord.
 
 > Needs the **Server Members** privileged intent (the bot operator must enable it).
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{boost.since}}`, `{{boost.days}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{boost.since}}`, `{{boost.days}}`
 
 ### 💔 Member Stopped Boosting
 
@@ -180,7 +180,7 @@ tell nodes apart; it is never sent to Discord.
 
 > Needs the **Server Members** privileged intent (the bot operator must enable it).
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{boost.since}}`, `{{boost.days}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{boost.since}}`, `{{boost.days}}`
 
 ### 🎭 Role Created
 
@@ -190,7 +190,7 @@ tell nodes apart; it is never sent to Discord.
 | --- | --- | --- |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
 
 ### #️⃣ Channel Created
 
@@ -200,7 +200,7 @@ tell nodes apart; it is never sent to Discord.
 | --- | --- | --- |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
 ### 🎭 Role Deleted
 
@@ -210,7 +210,7 @@ tell nodes apart; it is never sent to Discord.
 | --- | --- | --- |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`
 
 ### #️⃣ Channel Deleted
 
@@ -220,7 +220,7 @@ tell nodes apart; it is never sent to Discord.
 | --- | --- | --- |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
 ### 🎭 Role Updated
 
@@ -230,7 +230,7 @@ tell nodes apart; it is never sent to Discord.
 | --- | --- | --- |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`, `{{oldRole.name}}`, `{{oldRole.color}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{role.id}}`, `{{role.name}}`, `{{role.mention}}`, `{{role.color}}`, `{{oldRole.name}}`, `{{oldRole.color}}`
 
 ### #️⃣ Channel Updated
 
@@ -240,7 +240,7 @@ tell nodes apart; it is never sent to Discord.
 | --- | --- | --- |
 | Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{oldChannel.name}}`, `{{oldChannel.topic}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{oldChannel.name}}`, `{{oldChannel.topic}}`
 
 ### 😀 Reaction Added
 
@@ -252,7 +252,7 @@ tell nodes apart; it is never sent to Discord.
 | Only for emoji (optional) | text |  |
 | Ignore bots | boolean |  |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{emoji.name}}`, `{{emoji.id}}`, `{{emoji.display}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{emoji.name}}`, `{{emoji.id}}`, `{{emoji.display}}`
 
 ### 😶 Reaction Removed
 
@@ -264,7 +264,7 @@ tell nodes apart; it is never sent to Discord.
 | Only for emoji (optional) | text |  |
 | Ignore bots | boolean |  |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{emoji.name}}`, `{{emoji.id}}`, `{{emoji.display}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{emoji.name}}`, `{{emoji.id}}`, `{{emoji.display}}`
 
 ### 🎙️ Voice Joined
 
@@ -275,7 +275,7 @@ tell nodes apart; it is never sent to Discord.
 | Only channel (optional) | channel |  |
 | Ignore bots | boolean |  |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
 ### 🎙️ Voice Left
 
@@ -286,7 +286,7 @@ tell nodes apart; it is never sent to Discord.
 | Only channel (optional) | channel |  |
 | Ignore bots | boolean |  |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
 ### ⏰ Schedule
 
@@ -303,7 +303,7 @@ tell nodes apart; it is never sent to Discord.
 | Time zone | select | shown when `mode` is `time` / `cron`; options: a long list, chosen from the drop-down; The clock the time above is read on. Runs missed while the bot was off are not made up. |
 | Channel for context (optional) | channel |  |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
 ### 📰 New Feed Item
 
@@ -319,7 +319,7 @@ tell nodes apart; it is never sent to Discord.
 | Check every (minutes) | number | required; range 5–…; At least 5. The bot operator may set a longer minimum. |
 | Channel for context (optional) | channel |  |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{feed.title}}`, `{{feed.link}}`, `{{feed.author}}`, `{{feed.summary}}`, `{{feed.published}}`, `{{feed.image}}`, `{{feed.id}}`, `{{feed.name}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{feed.title}}`, `{{feed.link}}`, `{{feed.author}}`, `{{feed.summary}}`, `{{feed.published}}`, `{{feed.image}}`, `{{feed.id}}`, `{{feed.name}}`
 
 ### 🔔 Webhook Received
 
@@ -329,7 +329,7 @@ tell nodes apart; it is never sent to Discord.
 | --- | --- | --- |
 | Channel for context (optional) | channel |  |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{webhook.text}}`, `{{webhook.body.name}}`, `{{webhook.query.name}}`, `{{webhook.method}}`, `{{webhook.contentType}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{webhook.text}}`, `{{webhook.body.name}}`, `{{webhook.query.name}}`, `{{webhook.method}}`, `{{webhook.contentType}}`
 
 ### ▶️ YouTube Subscribers
 
@@ -344,7 +344,7 @@ tell nodes apart; it is never sent to Discord.
 | Check every (minutes) | number | required; range 15–…; At least 15: YouTube gives the bot a daily allowance that every server shares. |
 | Channel for context (optional) | channel |  |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{youtube.subscribers}}`, `{{youtube.milestone}}`, `{{youtube.previous}}`, `{{youtube.channelTitle}}`, `{{youtube.channelId}}`, `{{youtube.url}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{youtube.subscribers}}`, `{{youtube.milestone}}`, `{{youtube.previous}}`, `{{youtube.channelTitle}}`, `{{youtube.channelId}}`, `{{youtube.url}}`
 
 ### 🟣 Twitch Channel Live
 
@@ -358,7 +358,7 @@ tell nodes apart; it is never sent to Discord.
 | Check every (minutes) | number | required; range 1–… |
 | Channel for context (optional) | channel |  |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{twitch.user}}`, `{{twitch.login}}`, `{{twitch.title}}`, `{{twitch.game}}`, `{{twitch.viewers}}`, `{{twitch.url}}`, `{{twitch.thumbnail}}`, `{{twitch.started}}`, `{{twitch.id}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{twitch.user}}`, `{{twitch.login}}`, `{{twitch.title}}`, `{{twitch.game}}`, `{{twitch.viewers}}`, `{{twitch.url}}`, `{{twitch.thumbnail}}`, `{{twitch.started}}`, `{{twitch.id}}`
 
 ### ▶️ Manual (Run button)
 
@@ -368,7 +368,7 @@ tell nodes apart; it is never sent to Discord.
 | --- | --- | --- |
 | Channel for context (optional) | channel | Becomes the “current channel” for the flow. |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
 
 ### 🧾 Form Submitted
 
@@ -378,7 +378,7 @@ tell nodes apart; it is never sent to Discord.
 | --- | --- | --- |
 | Form | form | required; Only forms on pages of this server are listed. |
 
-**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{form.title}}`, `{{form.summary}}`, `{{response.id}}`, `{{page.title}}`, `{{page.url}}`
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{form.title}}`, `{{form.summary}}`, `{{response.id}}`, `{{page.title}}`, `{{page.url}}`
 
 ## Messages
 
