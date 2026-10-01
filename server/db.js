@@ -47,6 +47,11 @@ CREATE TABLE IF NOT EXISTS uploads (
   UNIQUE (guild_id, sha256)
 );
 CREATE INDEX IF NOT EXISTS uploads_guild ON uploads(guild_id, created_at);
+CREATE TABLE IF NOT EXISTS transcripts (
+  id TEXT PRIMARY KEY, guild_id TEXT NOT NULL, name TEXT NOT NULL, messages INTEGER NOT NULL, bytes INTEGER NOT NULL,
+  truncated INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS transcripts_created ON transcripts(created_at);
 CREATE TABLE IF NOT EXISTS webhooks (
   token TEXT PRIMARY KEY, guild_id TEXT NOT NULL, flow_id TEXT NOT NULL, node_id TEXT NOT NULL, created_at INTEGER NOT NULL, last_at INTEGER,
   UNIQUE (guild_id, flow_id, node_id)
@@ -81,6 +86,7 @@ const toUpload = (r) => (r ? {
   id: r.id, guildId: r.guild_id, name: r.name, bytes: r.bytes, width: r.width, height: r.height, animated: Boolean(r.animated),
   sha256: r.sha256, createdAt: r.created_at, createdBy: r.created_by ? JSON.parse(r.created_by) : null,
 } : null);
+const toTranscript = (r) => (r ? { id: r.id, guildId: r.guild_id, name: r.name, messages: r.messages, bytes: r.bytes, truncated: Boolean(r.truncated), createdAt: r.created_at } : null);
 const toResponse = (r) => ({ id: r.id, pageId: r.page_id, blockId: r.block_id, userId: r.user_id, userName: r.user_name, answers: JSON.parse(r.answers), createdAt: r.created_at });
 
 export class Database {
@@ -364,6 +370,19 @@ export class Database {
   }
 
   deleteUpload(guildId, id) { return this.#stmt('DELETE FROM uploads WHERE id = ? AND guild_id = ?').run(id, guildId).changes > 0; }
+
+  // ---- saved transcripts (metadata; the pages live in DATA_DIR/transcripts). The id is the secret in the public link, so it is looked up on its own. ----
+  getTranscript(id) { return toTranscript(this.#stmt('SELECT * FROM transcripts WHERE id = ?').get(id)); }
+  transcriptsBefore(cutoff) { return this.#stmt('SELECT * FROM transcripts WHERE created_at < ? ORDER BY created_at, id').all(cutoff).map(toTranscript); }
+
+  addTranscript({ guildId, name, messages, bytes, truncated, now = Date.now() }) {
+    const id = uid(32);
+    this.#stmt('INSERT INTO transcripts (id, guild_id, name, messages, bytes, truncated, created_at) VALUES (?,?,?,?,?,?,?)')
+      .run(id, guildId, name, messages, bytes, truncated ? 1 : 0, now);
+    return this.getTranscript(id);
+  }
+
+  deleteTranscript(id) { return this.#stmt('DELETE FROM transcripts WHERE id = ?').run(id).changes > 0; }
 
   /**
    * Where each uploaded image is used in this server: Map(uploadId → { pages: [{id, title}], flows: [{id, name}] }).

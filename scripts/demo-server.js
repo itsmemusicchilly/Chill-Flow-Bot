@@ -12,6 +12,7 @@ import { createApp } from '../server/app.js';
 import { Database } from '../server/db.js';
 import { Runtime } from '../server/engine/runtime.js';
 import { Logger } from '../server/logger.js';
+import { createTranscripts } from '../server/transcripts.js';
 import { createUploads } from '../server/uploads.js';
 import { fakeGuild, fakeUser } from '../test/helpers/fakes.js';
 
@@ -30,9 +31,10 @@ const config = {
 const db = new Database(':memory:');
 const logger = new Logger({ console: false });
 const uploads = createUploads({ config, db, logger });
+const transcripts = createTranscripts({ config, db, logger });
 // the demo never goes on the internet: whatever a feed trigger wants to read simply cannot be read
 const offline = async () => { throw new Error('The demo has no internet connection.'); };
-const runtime = new Runtime({ db, logger, intents: config.intents, uploads, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes, fetcher: offline });
+const runtime = new Runtime({ db, logger, intents: config.intents, uploads, transcripts, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes, fetcher: offline });
 
 const guilds = new Map();
 function makeGuild(id, name) {
@@ -78,7 +80,7 @@ const bot = {
 };
 const sync = { status: new Map(), sync: async (gid) => { const n = runtime.commandsFor(gid).length; const r = { ok: true, count: n, at: Date.now() }; sync.status.set(gid, r); logger.log(gid, 'info', `Slash commands updated (${n}). [demo]`); return r; } };
 
-const inner = createApp({ config, db, runtime, bot, sync, logger, uploads, distDir: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist') });
+const inner = createApp({ config, db, runtime, bot, sync, logger, uploads, transcripts, distDir: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist') });
 const app = express();
 app.get('/demo-login', (_req, res) => {
   const sid = db.createSession('42', {

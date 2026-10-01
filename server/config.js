@@ -63,6 +63,10 @@ export function loadConfig(env = process.env) {
   const { limits, requestBytes } = readLimits(env);
   const feedMinMinutes = env.FEED_MIN_INTERVAL_MINUTES === undefined || env.FEED_MIN_INTERVAL_MINUTES === '' ? 5 : Number(env.FEED_MIN_INTERVAL_MINUTES);
   if (!Number.isInteger(feedMinMinutes) || feedMinMinutes < 1) throw new ConfigError('FEED_MIN_INTERVAL_MINUTES must be a whole number of minutes, 1 or more (default 5).');
+  const transcriptRetentionDays = env.TRANSCRIPT_RETENTION_DAYS === undefined || String(env.TRANSCRIPT_RETENTION_DAYS).trim() === '' ? 0 : Number(env.TRANSCRIPT_RETENTION_DAYS);
+  if (!Number.isInteger(transcriptRetentionDays) || transcriptRetentionDays < 0 || transcriptRetentionDays > 3650) {
+    throw new ConfigError('TRANSCRIPT_RETENTION_DAYS must be a whole number of days from 0 to 3650 (0 keeps saved transcripts forever, which is the default).');
+  }
   return {
     token: env.DISCORD_TOKEN,
     clientId: env.DISCORD_CLIENT_ID,
@@ -77,6 +81,7 @@ export function loadConfig(env = process.env) {
     limits,
     requestBytes,
     feedMinMinutes,
+    transcriptRetentionDays,
     // keys for the triggers that use a platform's own API; never sent to the browser (the editor only learns whether each is set)
     integrations: {
       youtube: String(env.YOUTUBE_API_KEY ?? '').trim(),

@@ -5,6 +5,7 @@ import { Database } from './db.js';
 import { Runtime } from './engine/runtime.js';
 import { warmUp } from './images.js';
 import { Logger } from './logger.js';
+import { createTranscripts } from './transcripts.js';
 import { createUploads } from './uploads.js';
 import { createApp } from './app.js';
 import { CommandSync } from './bot/commands.js';
@@ -23,11 +24,12 @@ applyLimits(config.limits);
 const logger = new Logger();
 const db = new Database(path.join(config.dataDir, 'flowbot.sqlite'));
 const uploads = createUploads({ config, db, logger });
+const transcripts = createTranscripts({ config, db, logger });
 warmUp(); // load the image library now, so the first upload is not slow (and a missing binary shows up in the log at start)
-const runtime = new Runtime({ db, logger, intents: config.intents, uploads, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes });
+const runtime = new Runtime({ db, logger, intents: config.intents, uploads, transcripts, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes });
 const sync = new CommandSync({ db, runtime, logger, config });
 const bot = new BotManager({ config, runtime, logger, sync });
-const app = createApp({ config, db, runtime, bot, sync, logger, uploads });
+const app = createApp({ config, db, runtime, bot, sync, logger, uploads, transcripts });
 
 const server = app.listen(config.port, config.host, () => {
   console.log(`Dashboard: ${config.baseUrl}  (listening on ${config.host}:${config.port})`);
@@ -41,7 +43,11 @@ bot.start().catch((err) => {
   process.exit(1);
 });
 
-const housekeeping = () => { db.pruneSessions(); db.pruneComponentState(); };
+const housekeeping = () => {
+  db.pruneSessions();
+  db.pruneComponentState();
+  try { transcripts.prune(); } catch (err) { logger.log(null, 'error', `Clearing out old saved transcripts failed: ${err?.message || err}`); }
+};
 housekeeping();
 setInterval(housekeeping, 3600_000).unref();
 

@@ -7,6 +7,7 @@ import { createApp } from '../../server/app.js';
 import { Database } from '../../server/db.js';
 import { Runtime } from '../../server/engine/runtime.js';
 import { Logger } from '../../server/logger.js';
+import { createTranscripts } from '../../server/transcripts.js';
 import { createUploads } from '../../server/uploads.js';
 import { fakeGuild, fakeUser } from './fakes.js';
 
@@ -16,7 +17,7 @@ export const B = '222222';
 export const STAFF = '333333'; // a role every test server has
 export const MEMBERS = '444444'; // and another one
 
-export async function startHarness({ config: over = {} } = {}) {
+export async function startHarness({ config: over = {}, distDir = '/nonexistent' } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowbot-test-')); // uploaded images go here, never into the repo
   const config = {
     token: 't', clientId: 'cid', clientSecret: 'secret', baseUrl: ORIGIN, port: 0, host: '127.0.0.1', dataDir,
@@ -29,7 +30,8 @@ export async function startHarness({ config: over = {} } = {}) {
   const db = new Database(':memory:');
   const logger = new Logger({ console: false });
   const uploads = createUploads({ config, db, logger });
-  const runtime = new Runtime({ db, logger, intents: config.intents, uploads, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes, ...(over.fetcher ? { fetcher: over.fetcher } : {}) });
+  const transcripts = createTranscripts({ config, db, logger });
+  const runtime = new Runtime({ db, logger, intents: config.intents, uploads, transcripts, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes, ...(over.fetcher ? { fetcher: over.fetcher } : {}) });
   const guilds = { [A]: fakeGuild({ id: A, name: 'Pixel Café' }), [B]: fakeGuild({ id: B, name: 'Dev Sandbox' }) };
   guilds[A].name = 'Pixel Café';
   guilds[B].name = 'Dev Sandbox';
@@ -62,7 +64,7 @@ export async function startHarness({ config: over = {} } = {}) {
     return { ok: false, status: 404, json: async () => ({}) };
   };
 
-  const app = createApp({ config, db, runtime, bot, sync, logger, fetchImpl, uploads, distDir: '/nonexistent' });
+  const app = createApp({ config, db, runtime, bot, sync, logger, fetchImpl, uploads, transcripts, distDir });
   const server = http.createServer(app);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -96,5 +98,5 @@ export async function startHarness({ config: over = {} } = {}) {
     return m;
   };
   const close = async () => { server.close(); db.close(); fs.rmSync(dataDir, { recursive: true, force: true }); };
-  return { config, state, db, logger, runtime, guilds, bot, base, call, session, visitorSession, uploads, dataDir, setRoles, close };
+  return { config, state, db, logger, runtime, guilds, bot, base, call, session, visitorSession, uploads, transcripts, dataDir, setRoles, close };
 }

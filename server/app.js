@@ -6,12 +6,13 @@ import { createApi, HttpError } from './api.js';
 import { createHooks } from './hooks.js';
 import { createAuth } from './auth.js';
 import { createPublic } from './public.js';
+import { createTranscripts } from './transcripts.js';
 import { createUploads } from './uploads.js';
 import { FlowError } from './engine/errors.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-export function createApp({ config, db, runtime, bot, sync, logger, fetchImpl, uploads = createUploads({ config, db, logger }), distDir = path.join(ROOT, 'dist') }) {
+export function createApp({ config, db, runtime, bot, sync, logger, fetchImpl, uploads = createUploads({ config, db, logger }), transcripts = createTranscripts({ config, db, logger }), distDir = path.join(ROOT, 'dist') }) {
   const app = express();
   app.disable('x-powered-by');
   if (config.trustProxy) app.set('trust proxy', config.trustProxy);
@@ -33,13 +34,14 @@ export function createApp({ config, db, runtime, bot, sync, logger, fetchImpl, u
   app.get('/healthz', (_req, res) => res.json({ ok: true, botReady: Boolean(bot.ready) }));
   app.use('/s', createPublic({ config, db, runtime, bot, logger, auth }).router); // public pages: no dashboard session, own CSP
   app.use('/i', uploads.files); // uploaded pictures: public, read-only, no session
+  app.use('/t', transcripts.files); // saved transcripts: public to anyone with the link, read-only, no session
   app.use('/api', createApi({ config, db, runtime, bot, sync, logger, auth, uploads }));
 
   const indexHtml = path.join(distDir, 'index.html');
   if (fs.existsSync(indexHtml)) {
     app.use(express.static(distDir, { index: false, maxAge: '1h' }));
     app.use((req, res, next) => {
-      if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/s/') || req.path.startsWith('/i/') || req.path.startsWith('/hooks/')) return next();
+      if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/s/') || req.path.startsWith('/i/') || req.path.startsWith('/t/') || req.path.startsWith('/hooks/')) return next();
       res.set('Cache-Control', 'no-cache');
       return res.sendFile(indexHtml);
     });

@@ -32,17 +32,18 @@ const EPHEMERAL = MessageFlags.Ephemeral;
 export class Runtime {
   /**
    * @param {{db: import('../db.js').Database, logger: import('../logger.js').Logger, intents?: {members: boolean, messageContent: boolean}, uploads?: {publicUrl: (guildId: string, ref: string) => string},
+   *          transcripts?: {save: Function, remove: Function, publicBase: boolean},
    *          clock?: {now?: () => number, setTimer?: (fn: () => void, ms: number) => any, clearTimer?: (timer: any) => void},
    *          fetcher?: Function, feedMinMinutes?: number, integrations?: {youtube?: string, twitch?: {clientId: string, clientSecret: string}}}} deps
    *   `clock` is for tests: schedules read the time and set their timer through it. `fetcher` is the guarded fetcher the feed watchers use (a pretend one in tests).
    */
-  constructor({ db, logger, intents = { members: false, messageContent: false }, uploads = null, clock = {}, fetcher = safeFetch, feedMinMinutes = 5, integrations = {} }) {
+  constructor({ db, logger, intents = { members: false, messageContent: false }, uploads = null, transcripts = null, clock = {}, fetcher = safeFetch, feedMinMinutes = 5, integrations = {} }) {
     this.db = db;
     this.logger = logger;
     this.intents = intents;
     this.client = null;
     this.services = {
-      db, logger, uploads, intents,
+      db, logger, uploads, transcripts, intents,
       selfActions: new SelfActions(),
       channelEdits: new ChannelEdits(),
       cooldowns: new Map(),

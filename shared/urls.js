@@ -27,6 +27,11 @@ export const uploadIdOf = (value) => (typeof value === 'string' ? UPLOAD_REF_RE.
 export const looksLikeUpload = (value) => typeof value === 'string' && /^upload:/i.test(value.trim());
 export const uploadPath = (guildId, id) => `/i/${guildId}/${id}.webp`;
 
+// ---- saved transcripts ---------------------------------------------------------------------------------------------------
+// The id is the only secret in a transcript's public link: 32 random characters (about 165 bits), so it cannot be guessed.
+export const TRANSCRIPT_ID_RE = /^[a-z0-9]{32}$/;
+export const transcriptPath = (id) => `/t/${id}`;
+
 /**
  * The address to use in an <img> or CSS url() for an image field: an uploaded picture (a same-origin path, prefixed with `base`
  * when it must be absolute) or an https link. Anything else gives null. (Whether the picture belongs to this server is decided
