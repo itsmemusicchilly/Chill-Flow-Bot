@@ -1,4 +1,4 @@
-import { AttachmentBuilder, MessageType, PermissionFlagsBits } from 'discord.js';
+import { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, MessageType, PermissionFlagsBits } from 'discord.js';
 import { isCapped, LIMITS } from '../../../shared/limits.js';
 import { createTranscript } from '../../transcript.js';
 import { FlowAbort, FlowError, friendlyError } from '../errors.js';
@@ -34,10 +34,19 @@ function toRecord(m) {
 }
 
 const text = (s) => String(s ?? '').slice(0, 2000);
+const linkRow = (url) => new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Open transcript').setURL(url));
 
 export const transcriptExecutors = {
   async 'action.channel.transcript'({ ctx, d }) {
     if (!cleanId(d.sendChannelId)) throw new FlowError('Choose the channel to post the transcript in.'); // blank would mean "here", i.e. the channel about to be deleted
+    // A node saved before there was a choice always attached the files.
+    const delivery = d.delivery ?? 'files';
+    if (!['link', 'files', 'both'].includes(delivery)) throw new FlowError(`Unknown way to send the transcript: “${delivery}”.`);
+    const store = ctx.services.transcripts ?? null;
+    if (delivery === 'link') { // nothing else would be delivered, so refuse before reading the whole channel
+      if (!store) throw new FlowError('Transcript links are not available here.');
+      store.assertPublic();
+    }
     const source = await resolveChannel(ctx, d.channelId, { textBased: true });
     const target = await resolveChannel(ctx, d.sendChannelId, { textBased: true });
     if (target.id === source.id) throw new FlowError('Post the transcript in a different channel than the one being recorded — that channel is usually deleted afterwards.');
@@ -70,8 +79,32 @@ export const transcriptExecutors = {
       // The .html first (it is what people open), then the plain-text copy. Both go out in ONE message; their combined size is already capped.
       const files = () => [new AttachmentBuilder(result.buffer, { name: result.name }), ...(result.text ? [new AttachmentBuilder(result.text.buffer, { name: result.text.name })] : [])];
 
+      // The page for the link. "Both" still has the files to fall back on, so a page that cannot be made only costs the link there.
+      let saved = null;
+      if (delivery !== 'files') {
+        try {
+          if (!store) throw new FlowError('Transcript links are not available here.');
+          saved = store.save(ctx.guild.id, result);
+        } catch (err) {
+          if (delivery === 'link') throw err;
+          log('warn', `The transcript has no link, so only the files were attached: ${friendlyError(err)}`);
+        }
+      }
+      const withFiles = delivery !== 'link';
+      const message = (words) => ({
+        content: text(words) || undefined,
+        ...(withFiles ? { files: files() } : {}),
+        ...(saved ? { components: [linkRow(saved.url)] } : {}),
+        allowedMentions: { parse: [] },
+      });
+
       // The log channel is the record of truth: if this fails the node fails and (in the templates) the ticket stays open.
-      await target.send({ content: text(d.channelMessage) || undefined, files: files(), allowedMentions: { parse: [] } });
+      try {
+        await target.send(message(d.channelMessage));
+      } catch (err) {
+        if (saved) store.remove(saved.id); // the link was never delivered, so the page would only be an orphan
+        throw err;
+      }
 
       // The person's copy is a courtesy: never fail the node because of it.
       let dm = 'skipped';
@@ -82,7 +115,7 @@ export const transcriptExecutors = {
           if (!allowed) {
             log('warn', `Did not send the transcript to ${member.displayName ?? member.id}: they can no longer see #${source.name}.`);
           } else {
-            await member.send({ content: text(d.dmMessage) || undefined, files: files(), allowedMentions: { parse: [] } });
+            await member.send(message(d.dmMessage));
             dm = 'sent';
           }
         } catch (err) {
@@ -90,7 +123,10 @@ export const transcriptExecutors = {
           log('warn', `Could not send the transcript by direct message: ${friendlyError(err)}`);
         }
       }
-      ctx.data.transcript = { messages: result.messages, name: result.name, textName: result.text?.name ?? '', bytes: result.bytes, truncated: result.truncated, dm };
+      ctx.data.transcript = {
+        messages: result.messages, name: result.name, textName: result.text?.name ?? '', bytes: result.bytes, truncated: result.truncated, dm,
+        url: saved?.url ?? '', expires: saved?.expiresAt ?? '',
+      };
     } finally {
       running.delete(key);
     }

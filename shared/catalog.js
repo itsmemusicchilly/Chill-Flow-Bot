@@ -728,22 +728,30 @@ def('action.channel.update', {
 });
 def('action.channel.transcript', {
   category: 'channel', label: 'Save Transcript', icon: '📄',
-  description: 'Record everything said in a channel (for example a ticket that is being closed) as an .html file (plus a plain .txt copy), post it in a log channel and optionally send it to someone by direct message. If it cannot be saved, follow On error and keep the channel.',
+  description: 'Record everything said in a channel (for example a ticket that is being closed), post it in a log channel and optionally send it to someone by direct message — as a link to a web page the bot\'s server keeps, as an .html file (plus a plain .txt copy), or both. If it cannot be saved, follow On error and keep the channel.',
   fields: [
     idField('channelId', 'Channel to record', 'channel', { placeholder: 'blank = current channel' }),
     idField('sendChannelId', 'Post the transcript in', 'channel', {
-      required: true, help: 'For example your staff log. The bot needs Send Messages and Attach Files there. Do not use the channel being recorded.',
+      required: true, help: 'For example your staff log. The bot needs Send Messages (and Attach Files, if the files are sent) there. Do not use the channel being recorded.',
     }),
-    area('channelMessage', 'Message with the file (log channel)', { default: '📄 Transcript of #{{channel.name}}', rows: 2 }),
+    select('delivery', 'How to send the transcript', [
+      ['link', 'A link to a web page (kept on the bot\'s server)'],
+      ['files', 'Files attached to the message (.html and .txt)'],
+      ['both', 'Both: the link and the files'],
+    ], {
+      help: 'A link opens the transcript as a web page for anyone who has it, until the server deletes it (TRANSCRIPT_RETENTION_DAYS in the .env file; by default it is kept forever). It is sent as an “Open transcript” button and needs a public BASE_URL. “Both” sends just the files when the server has no public address.',
+    }),
+    area('channelMessage', 'Message with the transcript (log channel)', { default: '📄 Transcript of #{{channel.name}}', rows: 2 }),
     idField('sendUserId', 'Also send it to (direct message)', 'user', {
       placeholder: '{{original.user.id}} = whoever opened the ticket',
       help: 'Optional. If their DMs are closed, or they can no longer see the channel, the DM is skipped and the flow carries on.',
     }),
-    area('dmMessage', 'Message with the file (direct message)', {
+    area('dmMessage', 'Message with the transcript (direct message)', {
       showIf: whenNot('sendUserId', ''), rows: 2,
-      default: 'Here is a copy of your conversation in {{guild.name}}. Download the files: open the .html one in your browser, or the .txt one in any text editor.',
+      default: 'Here is a copy of your conversation in {{guild.name}}.',
     }),
     bool('skipText', 'Leave out the plain-text (.txt) copy', {
+      showIf: whenNot('delivery', 'link'),
       help: 'By default a .txt file with the same messages is attached next to the .html one, in the log channel and in the direct message. It is easy to search, copy and read on a phone.',
     }),
   ],
@@ -751,10 +759,13 @@ def('action.channel.transcript', {
   provides: () => [
     ['transcript.messages', 'Messages in the transcript'], ['transcript.name', 'Transcript file name (.html)'], ['transcript.textName', 'Plain-text file name (.txt, blank if left out)'], ['transcript.bytes', 'File size (bytes, .html)'],
     ['transcript.truncated', 'true if the transcript was cut short'], ['transcript.dm', 'Direct message: sent, failed or skipped'],
+    ['transcript.url', 'Link to the transcript page (blank if no link was made)'], ['transcript.expires', 'When the link stops working (ISO time; blank = never, or no link)'],
   ],
   wants: 'messageContent',
   wantsNote: 'without the Message Content intent Discord hides other people\'s message text, so the transcript can only show who wrote when (plus the bot\'s own messages). Ask the bot operator to enable it.',
-  summary: (d) => (d.sendChannelId ? `→ ${d.sendChannelId}${d.sendUserId ? ' + DM' : ''}` : 'choose a log channel'),
+  summary: (d) => (d.sendChannelId
+    ? `→ ${d.sendChannelId}${d.sendUserId ? ' + DM' : ''}${d.delivery === 'link' ? ' · link' : d.delivery === 'both' ? ' · link + files' : ''}`
+    : 'choose a log channel'),
 });
 
 // ---- roles --------------------------------------------------------------------------------------

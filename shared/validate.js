@@ -1,7 +1,7 @@
 // Graph normalisation + validation, shared by the editor (live warnings) and the server (authoritative).
 import { NODE_TYPES, TITLE_KEY, getOutputs, isTriggerType, nodeTitle } from './catalog.js';
 import { connectionKey } from './connections.js';
-import { upgradeMessageData } from './embeds.js';
+import { upgradeNodeData } from './upgrade.js';
 import { checkFields } from './fields.js';
 import { isCapped, LIMITS } from './limits.js';
 import { INTEGRATIONS } from './platforms.js';
@@ -22,7 +22,7 @@ export function normalizeGraph(input) {
     id: String(n?.id ?? ''),
     type: String(n?.type ?? ''),
     position: { x: Math.round(Number(n?.position?.x) || 0), y: Math.round(Number(n?.position?.y) || 0) },
-    data: withCleanTitle(upgradeMessageData(String(n?.type ?? ''), n?.data && typeof n.data === 'object' && !Array.isArray(n.data) ? n.data : {})),
+    data: withCleanTitle(upgradeNodeData(String(n?.type ?? ''), n?.data && typeof n.data === 'object' && !Array.isArray(n.data) ? n.data : {})),
   }));
   const edges = (Array.isArray(input?.edges) ? input.edges : []).map((e) => {
     const sourceHandle = e?.sourceHandle || 'out';

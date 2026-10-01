@@ -560,7 +560,7 @@ describe('Save Transcript', () => {
   let logCh;
   const human = (id = '222222', username = 'mia') => ({ id, username, bot: false });
   const saved = (over = {}) => install(commandFlow([
-    node('ts', 'action.channel.transcript', { sendChannelId: logCh.id, ...over }),
+    node('ts', 'action.channel.transcript', { sendChannelId: logCh.id, delivery: 'files', ...over }),
     node('ok', 'action.message.send', { target: 'reply', content: 'saved={{transcript.messages}} dm={{transcript.dm}} cut={{transcript.truncated}} name={{transcript.name}}' }),
     node('bad', 'action.message.send', { target: 'reply', content: 'FAILED {{error.message}}' }),
   ], [edge('t', 'ts'), edge('ts', 'ok'), edge('ts', 'bad', 'error')]));
@@ -607,7 +607,7 @@ describe('Save Transcript', () => {
 
   it('gives the plain-text name to later nodes as {{transcript.textName}}', async () => {
     install(commandFlow([
-      node('ts', 'action.channel.transcript', { sendChannelId: logCh.id }),
+      node('ts', 'action.channel.transcript', { sendChannelId: logCh.id, delivery: 'files' }),
       node('ok', 'action.message.send', { target: 'reply', content: 'html={{transcript.name}} txt={{transcript.textName}}' }),
     ], [edge('t', 'ts'), edge('ts', 'ok')]));
     const said2 = said(await run(slash()));
@@ -630,7 +630,7 @@ describe('Save Transcript', () => {
   it('“Leave out the plain-text copy” sends the .html alone and leaves {{transcript.textName}} blank', async () => {
     channel.addMessage({ content: 'hello', author: human() });
     install(commandFlow([
-      node('ts', 'action.channel.transcript', { sendChannelId: logCh.id, skipText: true }),
+      node('ts', 'action.channel.transcript', { sendChannelId: logCh.id, delivery: 'files', skipText: true }),
       node('ok', 'action.message.send', { target: 'reply', content: 'txt=[{{transcript.textName}}]' }),
     ], [edge('t', 'ts'), edge('ts', 'ok')]));
     assert.equal(said(await run(slash())), 'txt=[]');

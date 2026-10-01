@@ -49,12 +49,14 @@ export function createTranscripts({ config, db, logger, now = () => Date.now() }
   const expired = (row) => retentionMs > 0 && row.createdAt < now() - retentionMs;
   const expiresAt = (row) => (retentionMs > 0 ? new Date(row.createdAt + retentionMs).toISOString() : '');
 
-  /**
-   * Stores the finished transcript (`doc` is what createTranscript().finish() returns) and gives back its public address.
-   * Fails with a message the flow's author can act on when Discord users could not open the link anyway.
-   */
-  function save(guildId, doc) {
+  /** Fails with a message the flow's author can act on when people outside this machine could not open a link anyway. */
+  function assertPublic() {
     if (!publicBase) throw new FlowError('A transcript link needs BASE_URL to be a public address (for example https://bot.example.com): people outside this machine could not open it.');
+  }
+
+  /** Stores the finished transcript (`doc` is what createTranscript().finish() returns) and gives back its public address. */
+  function save(guildId, doc) {
+    assertPublic();
     const tmp = path.join(tmpDir, `${uid(16)}.html`);
     fs.mkdirSync(tmpDir, { recursive: true });
     let row;
@@ -124,5 +126,5 @@ export function createTranscripts({ config, db, logger, now = () => Date.now() }
   });
   files.use((_req, res) => missing(res)); // anything else under /t (a bare folder, another method, …) is the same page
 
-  return { files, save, remove, prune, publicBase, retentionDays, root, fileFor };
+  return { files, save, remove, prune, assertPublic, publicBase, retentionDays, root, fileFor };
 }
