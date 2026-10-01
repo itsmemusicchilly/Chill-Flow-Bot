@@ -34,8 +34,8 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (776 unit/integration tests plus a
-> 185-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (824 unit/integration tests plus a
+> 190-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it. The alert triggers (feeds, YouTube, Twitch, webhooks) were tested against a pretend network and fake accounts,
 > not the real platforms; the same checklist covers them.
 
@@ -70,10 +70,11 @@ real dashboard and API against a fake in-memory Discord — useful for developme
 | --- | --- | --- |
 | `DISCORD_TOKEN` | — | Bot token (required) |
 | `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | — | OAuth application (required) |
-| `BASE_URL` | `http://localhost:PORT` | Public URL of the dashboard. Also used for the redirect URI and the CSRF `Origin` check |
+| `BASE_URL` | `http://localhost:PORT` | Public URL of the dashboard. Also used for the redirect URI and the CSRF `Origin` check, and as the address in ticket-transcript links (those need a public address) |
 | `PORT` / `HOST` | `3000` / `127.0.0.1` | Listen address. Use `HOST=0.0.0.0` only behind HTTPS |
 | `TRUST_PROXY` | off | Number of reverse proxies in front (or `true`) so client IPs and `https` are detected correctly |
-| `DATA_DIR` | `data` | Where `flowbot.sqlite` and the `uploads/` folder (uploaded pictures) live. Back both up |
+| `DATA_DIR` | `data` | Where `flowbot.sqlite`, the `uploads/` folder (uploaded pictures) and the `transcripts/` folder (saved ticket transcripts) live. Back them up |
+| `TRANSCRIPT_RETENTION_DAYS` | `0` | How many days a transcript saved for a web link is kept (whole days, 0–3650). `0` keeps them forever; otherwise older ones are deleted (checked every hour) and their links stop working. Counted from when it was saved, so changing it applies to transcripts already stored |
 | `DASHBOARD_MIN_PERMISSION` | `Administrator` | Or `ManageGuild`. Flows run with the **bot's** permissions, so the default is the safe one |
 | `ENABLE_MEMBERS_INTENT` | `false` | Needed by *Member Joined / Left / Kicked / Timed Out*, *Member Boosted Server / Stopped Boosting* and *Role Given/Removed* triggers |
 | `ENABLE_MESSAGE_CONTENT_INTENT` | `false` | Needed by the *Message Received* trigger. Optional for *Save Transcript*: without it Discord hides what other people wrote, so a transcript lists who wrote when, but not what |
@@ -219,24 +220,35 @@ Change the text in both *Send Message* nodes (keep them the same), and add butto
 ### Ticket transcripts
 
 The **Save Transcript** node records everything said in a channel — the person, the time, the text, embeds, attachments (as
-links), stickers, replies — and saves it as an `.html` file **and a plain `.txt` copy** of the same messages. It posts both files in
-one message in a **log channel** you choose and can also **DM a copy** to someone (in a ticket: `{{original.user.id}}`, the person
-who opened it). Tick **Leave out the plain-text (.txt) copy** on the node if you only want the `.html`; flows saved before the `.txt`
-existed get it too. The *Support tickets* and
-*Ticket panel* templates run it when **Close** is pressed; pick the log channel in that node.
+links), stickers, replies — and sends it as **a link to a web page** the bot's server keeps, as **files** (an `.html` page **and a plain
+`.txt` copy** of the same messages), or **both**: pick one under *How to send the transcript*. It posts to a **log channel** you choose
+and can also **DM a copy** to someone (in a ticket: `{{original.user.id}}`, the person who opened it). The *Support tickets* and
+*Ticket panel* templates run it when **Close** is pressed and send both; pick the log channel in that node. Flows saved before the choice
+existed keep sending files, exactly as before.
 
 * **The ticket only closes if the transcript was saved.** If the log channel is missing or Discord refuses the post, the flow
   follows **On error** (the templates say why and leave the ticket open). A DM that cannot be delivered — closed DMs, or the
   person can no longer see the channel — never blocks anything; it is skipped with a warning in the logs
   (`{{transcript.dm}}` is `sent`, `failed` or `skipped`).
+* **The link.** The transcript is saved on your server and opened at `BASE_URL/t/<random id>`. It goes out as an **Open transcript**
+  button under the message (so Discord shows no link preview), in the log channel and in the DM. **Anyone who has the link can read it** — there is
+  no login; the id is 32 random characters, so it cannot be guessed, and the page is `noindex` and never cached — so treat the link like the
+  conversation itself. A wrong, deleted or expired link all show the same “This transcript isn't available” page. It needs a **public**
+  `BASE_URL` (not `localhost`): with *a link* alone the node fails (follows **On error**), with *both* it sends just the files and says why in
+  the logs. Later nodes get `{{transcript.url}}` and `{{transcript.expires}}`.
+* **How long it is kept.** `TRANSCRIPT_RETENTION_DAYS` (default `0` = forever). It counts from when the transcript was saved; an hourly
+  clean-up deletes older ones (file and record), and a link past its time stops working at once, even before the clean-up runs. Changing the
+  setting applies to transcripts that are already stored. Deleting the Discord message does not delete the page. With the default the
+  `transcripts/` folder only grows, so for ticket logs set a number you are comfortable with (30–90 is common).
 * **Message Content intent.** Without `ENABLE_MESSAGE_CONTENT_INTENT` Discord returns *empty text* for other people's messages.
   The node still works, but the file says so in a banner and the editor shows a warning on the node.
-* **What the files are:** the `.html` is one self-contained page — no scripts, no pictures, everything escaped — so it is safe to
-  open; Discord does not preview it, so download it and open it in a browser. The `.txt` is plain text (UTF-8): a heading, then one
+* **What the page and the files are:** the `.html` is one self-contained page — no scripts, no pictures, everything escaped — so it is safe to
+  open; the link shows exactly this page. As a file Discord does not preview it, so download it and open it in a browser. The `.txt` (only with
+  *files* or *both*; tick **Leave out the plain-text (.txt) copy** to skip it) is plain text (UTF-8): a heading, then one
   entry per message — `[2026-09-30 14:03:22 UTC] mia (222…)` followed by the message, indented — easy to search, copy, diff or read on
   a phone. Every line of a message is indented, so nobody can type a line that passes for a different person's message. Attachment links are Discord's own and **expire** (and vanish with
   the channel), so the transcript records that a file was shared, not its content.
-* **Size:** transcripts stop at 8 MB (Discord's upload limit) **for the two files together** — both stop at the same message, so a
+* **Size:** transcripts stop at 8 MB (Discord's upload limit; the saved page uses the same ceiling) **for the two files together** — both stop at the same message, so a
   `.txt` costs a little room in very long conversations — or at `LIMIT_TRANSCRIPT_MESSAGES`. They keep the *start* of the
   conversation, and say where they stop (`{{transcript.truncated}}`). Long channels are read 100 messages at a time.
 
@@ -374,7 +386,7 @@ Five starter flows are in **New flow → from template**: *YouTube upload announ
 | `input.<id>`, `select.value`, `original.*` | forms, menus, the message that a button belongs to |
 | `button.id`, `button.label`, `toggle.action` | the button that was pressed (*Button Clicked*), and whether *Toggle Role* added or removed the role |
 | `boost.since`, `boost.days` | *Member Boosted / Stopped Boosting*: when they started, and for how many days they boosted |
-| `transcript.messages .name .textName .bytes .truncated .dm` | after *Save Transcript* (`name` is the `.html` file, `textName` the `.txt`, blank if left out) |
+| `transcript.messages .name .textName .bytes .truncated .dm .url .expires` | after *Save Transcript* (`name` is the `.html` file, `textName` the `.txt`, blank if left out; `url` is the web page's address and `expires` when it stops working, both blank if no link was made or it is kept forever) |
 | `var.<name>` | run variable (or something saved by *Save … as variable*) |
 | `user.vars.<name>`, `channel.vars.<name>`, `guild.vars.<name>` | remembered per-user / per-channel / per-server variables (`channel` is where the run happened) |
 | `loop.index .item`, `error.message`, `cooldown.remaining`, `now.iso .date .time .timestamp` | misc |
@@ -549,6 +561,9 @@ This is a multi-tenant service: many servers share one bot process, so isolation
   at once. Files are named by random id, never by the uploaded name; paths are built only from validated ids; each picture is looked up
   by `(id, server)`, so another server's id is a 404. Served with `nosniff`, a sandboxing CSP and no cookies. Caps are race-free.
   As with any host that lets people upload images: you are the operator, so cap uploads (`LIMIT_*`) if you host for strangers.
+* **Saved transcripts** (`/t/<id>`): public to whoever holds the link — a random 32-character id is the only secret. Wrong, deleted and expired ids are
+  the same page; served with a no-script sandbox CSP, `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `noindex` and `no-store`, rate-limited
+  per IP, with no cookies. The page is the transcript builder's own escaped output, and it is deleted after `TRANSCRIPT_RETENTION_DAYS` (default: never — that is the operator's call).
 * **Safe defaults**: `@everyone`/role pings are off unless a node opts in; audit-log reasons say `[Flow name]`;
   user-supplied regexes run under a hard timeout (a catastrophic pattern cannot freeze the bot).
 * **Limits**: none by default — see [Limits](#limits) for the caps you can turn on (recommended when hosting for others).
@@ -567,13 +582,13 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 
 * Put HTTPS in front (Caddy/nginx), set `BASE_URL=https://…` and `TRUST_PROXY=1`. Cookies become `Secure` automatically.
 * One process, no sharding — fine up to a couple of thousand servers. The bot caches everything discord.js caches by default.
-* Back up `DATA_DIR/flowbot.sqlite` **and** `DATA_DIR/uploads/` together (a database row without its file shows a missing picture).
+* Back up `DATA_DIR/flowbot.sqlite`, `DATA_DIR/uploads/` **and** `DATA_DIR/transcripts/` together (a database row without its file shows a missing picture, or a transcript page that “isn't available”).
   Deleting a server's flows/variables is up to you (data is kept if the bot is removed).
 
 ## Development
 
 ```bash
-npm test          # 657 unit + API + event + button/transcript + public-page + upload + draft/live + access + maths + counter + cron/schedule + role-check/title + guarded-fetch/feed/webhook/platform-alert tests (fake Discord objects, in-memory SQLite, a fake clock, a pretend network)
+npm test          # 824 unit + API + event + button/transcript + saved-transcript-link + public-page + upload + draft/live + access + maths + counter + cron/schedule + role-check/title + guarded-fetch/feed/webhook/platform-alert tests (fake Discord objects, in-memory SQLite, a fake clock, a pretend network)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
@@ -599,7 +614,11 @@ Not yet automated — please run through this once on a test server:
 - [ ] Button role panel: ▶ Run posts the panel; each button toggles its own role (press three times: added, removed, added).
 - [ ] Ticket panel: ▶ Run posts the panel; pressing **Open a ticket** twice quickly gives one private channel, one private
       reply and one “please wait” message; **Close ticket** mentions the person who opened it and deletes the channel.
-- [ ] Transcript: with a log channel picked, **Close** posts an `.html` and a `.txt` file there and DMs the opener both; open the `.html` in a browser and the `.txt` in a text editor
+- [ ] Transcript link: on your real domain, with a log channel picked and *a link* or *both* chosen, **Close** posts an **Open transcript** button there and DMs the opener the same; the button opens the page in a
+      browser **without logging in** (try a private window), and shows the conversation. Check how Discord shows the button on a phone too.
+- [ ] Transcript retention: with `TRANSCRIPT_RETENTION_DAYS` set, a transcript older than that shows “This transcript isn't available” (it goes within the hour even if the clean-up has not run), its file is gone from
+      `DATA_DIR/transcripts/` after the next hourly clean-up, and newer ones still open. With it unset (`0`), nothing is deleted.
+- [ ] Transcript files: with *files* or *both*, **Close** posts an `.html` and a `.txt` file there and DMs the opener both; open the `.html` in a browser and the `.txt` in a text editor
       (with `ENABLE_MESSAGE_CONTENT_INTENT` on they show the text; off, they say the text is hidden). Check the `.txt` on a phone too, and
       that Discord accepts both files in the DM. With the opener's DMs closed the ticket still
       closes; with no log channel the ticket stays open and says why.
@@ -646,7 +665,7 @@ Not yet automated — please run through this once on a test server:
 - [ ] A form with “redirect to another address” lands on that address; the response and its CSV appear in the dashboard.
 - [ ] Pictures: upload a photo taken with a phone (it comes out upright, without location data); pick it for a page and open the
       public page in a private window; on your real domain, use an uploaded picture in a *Send Message* embed and check Discord shows it.
-- [ ] `DATA_DIR/uploads/` is part of your backup; restoring the database and the folder together brings the pictures back.
+- [ ] `DATA_DIR/uploads/` and `DATA_DIR/transcripts/` are part of your backup; restoring the database and the folders together brings the pictures and the transcript links back.
 - [ ] Bot restarts: an old button still works and still knows who opened its ticket (`{{original.user.mention}}`); slash commands are not re-registered needlessly.
 - [ ] Build a flow that loops forever (two Log nodes pointing at each other), run it, confirm other commands still answer,
       then switch the flow Off and confirm it stops.

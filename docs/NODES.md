@@ -691,22 +691,23 @@ tell nodes apart; it is never sent to Discord.
 
 ### 📄 Save Transcript
 
-`action.channel.transcript` — Record everything said in a channel (for example a ticket that is being closed) as an .html file (plus a plain .txt copy), post it in a log channel and optionally send it to someone by direct message. If it cannot be saved, follow On error and keep the channel.
+`action.channel.transcript` — Record everything said in a channel (for example a ticket that is being closed), post it in a log channel and optionally send it to someone by direct message — as a link to a web page the bot's server keeps, as an .html file (plus a plain .txt copy), or both. If it cannot be saved, follow On error and keep the channel.
 
 > Works best with the **Message Content** privileged intent — without the Message Content intent Discord hides other people's message text, so the transcript can only show who wrote when (plus the bot's own messages). Ask the bot operator to enable it.
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | Channel to record | channel |  |
-| Post the transcript in | channel | required; For example your staff log. The bot needs Send Messages and Attach Files there. Do not use the channel being recorded. |
-| Message with the file (log channel) | textarea |  |
+| Post the transcript in | channel | required; For example your staff log. The bot needs Send Messages (and Attach Files, if the files are sent) there. Do not use the channel being recorded. |
+| How to send the transcript | select | options: A link to a web page (kept on the bot's server), Files attached to the message (.html and .txt), Both: the link and the files; A link opens the transcript as a web page for anyone who has it, until the server deletes it (TRANSCRIPT_RETENTION_DAYS in the .env file; by default it is kept forever). It is sent as an “Open transcript” button and needs a public BASE_URL. “Both” sends just the files when the server has no public address. |
+| Message with the transcript (log channel) | textarea |  |
 | Also send it to (direct message) | user | Optional. If their DMs are closed, or they can no longer see the channel, the DM is skipped and the flow carries on. |
-| Message with the file (direct message) | textarea | shown when `sendUserId` is not `` |
-| Leave out the plain-text (.txt) copy | boolean | By default a .txt file with the same messages is attached next to the .html one, in the log channel and in the direct message. It is easy to search, copy and read on a phone. |
+| Message with the transcript (direct message) | textarea | shown when `sendUserId` is not `` |
+| Leave out the plain-text (.txt) copy | boolean | shown when `delivery` is not `link`; By default a .txt file with the same messages is attached next to the .html one, in the log channel and in the direct message. It is easy to search, copy and read on a phone. |
 
 **Outputs:** Next, On error
 
-**Adds variables:** `{{transcript.messages}}`, `{{transcript.name}}`, `{{transcript.textName}}`, `{{transcript.bytes}}`, `{{transcript.truncated}}`, `{{transcript.dm}}`
+**Adds variables:** `{{transcript.messages}}`, `{{transcript.name}}`, `{{transcript.textName}}`, `{{transcript.bytes}}`, `{{transcript.truncated}}`, `{{transcript.dm}}`, `{{transcript.url}}`, `{{transcript.expires}}`
 
 ## Roles
 

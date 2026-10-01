@@ -92,6 +92,18 @@ try {
   await page.locator('.fnode', { hasText: 'Save Transcript' }).click();
   const leaveOutText = page.getByLabel('Leave out the plain-text (.txt) copy');
   ok((await leaveOutText.count()) === 1 && !(await leaveOutText.isChecked()), 'Save Transcript attaches a .txt copy by default (the "leave out" box is unticked)');
+  const delivery = page.locator('#f-delivery');
+  ok((await delivery.inputValue()) === 'both', 'the ticket template sends the transcript as a link and files, so it works with or without a public address');
+  ok((await delivery.locator('option').allTextContents()).join('|') === 'A link to a web page (kept on the bot\'s server)|Files attached to the message (.html and .txt)|Both: the link and the files', 'Save Transcript offers a link, files, or both');
+  await delivery.selectOption('link');
+  await page.waitForTimeout(250);
+  ok((await leaveOutText.count()) === 0, 'sending only a link hides “Leave out the plain-text copy” — there are no files to leave a copy out of');
+  await delivery.selectOption('files');
+  await page.waitForTimeout(250);
+  ok((await leaveOutText.count()) === 1, 'sending files brings that option back');
+  await delivery.selectOption('both');
+  await page.waitForTimeout(250);
+  ok((await page.getByLabel('Message with the transcript (log channel)').count()) === 1, 'the message field no longer talks about “the file”');
 
   // ---- palette ----------------------------------------------------------------------------------------
   await page.getByRole('tab', { name: 'Nodes' }).click();
