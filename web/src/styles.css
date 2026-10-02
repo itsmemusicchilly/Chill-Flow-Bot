@@ -49,6 +49,8 @@ input[type=color] { width: 38px; height: 32px; padding: 2px; border: 1px solid v
 .login-card { width: min(460px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 32px 28px; display: grid; gap: 14px; text-align: center; box-shadow: var(--shadow); }
 .login-logo { font-size: 46px; } .login-card h1 { font-size: 24px; }
 .login-points { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; text-align: left; color: var(--muted); }
+.app-credit { text-align: center; font-size: 12px; color: var(--muted); padding: 12px 0 0; }
+.login { position: relative; } .login .app-credit { position: absolute; left: 0; right: 0; bottom: 14px; padding: 0; }
 .picker { max-width: 900px; margin: 0 auto; padding: 28px 20px 60px; display: grid; gap: 16px; align-content: start; }
 .picker section { display: grid; gap: 12px; } .picker h2 { margin-top: 10px; }
 .picker-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }

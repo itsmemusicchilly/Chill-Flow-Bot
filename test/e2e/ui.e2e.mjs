@@ -51,11 +51,13 @@ try {
   // ---- login + picker ------------------------------------------------------------------------
   await page.goto(`${BASE}/`);
   await page.getByRole('link', { name: 'Log in with Discord' }).waitFor();
+  ok(await page.getByText('made by itsmemusicchilly').isVisible(), 'the login screen carries the credit line');
   await shot('01-login');
   await page.goto(`${BASE}/demo-login`);
   await page.getByRole('heading', { name: 'Choose a server' }).waitFor();
   ok(await page.getByText('Pixel Café').isVisible(), 'picker lists the server the bot is in');
   ok((await page.getByRole('link', { name: /Add bot/ }).count()) === 1, 'server without the bot shows "Add bot"');
+  ok(await page.getByText('made by itsmemusicchilly').isVisible(), 'the server picker carries the credit line');
   await shot('02-picker');
 
   await page.getByRole('button', { name: /Pixel Café/ }).click();

@@ -5,6 +5,7 @@
 // safeUrl() or assetSrc() (an https link, or the same-origin path of a picture uploaded to this server); there is no script,
 // no inline event handler and no CSS url(). The server also sends a CSP that forbids script.
 import { BLOCK_TYPES, THEME_DEFAULTS } from './blocks.js';
+import { CREDIT } from './credit.js';
 import { parseOptions } from './forms.js';
 import { pageMeta } from './page-meta.js';
 import { assetSrc, safeUrl } from './urls.js';
@@ -181,7 +182,7 @@ function shell({ title, theme = THEME_DEFAULTS, guild, body, robots, refreshTo, 
   const vars = `${THEMES[t.mode] || THEMES.dark};--accent:${accent};--on:${onAccent(accent)};--w:${WIDTHS[t.width] || WIDTHS.normal}`;
   const icon = guild?.icon && /^https:\/\/cdn\.discordapp\.com\//.test(guild.icon) ? `<img src="${esc(guild.icon)}" alt="" referrerpolicy="no-referrer">` : `<span class="ico" aria-hidden="true">${esc(String(guild?.name ?? '?').trim().slice(0, 1).toUpperCase())}</span>`;
   const brand = guild ? `<div class="brand">${icon}<span>${esc(guild.name)}</span></div>` : '';
-  const foot = guild ? `<footer class="site-foot">This page was made by the admins of ${esc(guild.name)}. It is not made or endorsed by Discord. Never type your password, token or login codes into a web form.</footer>` : '';
+  const foot = guild ? `<footer class="site-foot">This page was made by the admins of ${esc(guild.name)}. It is not made or endorsed by Discord. Never type your password, token or login codes into a web form.<br>${esc(CREDIT)}</footer>` : '';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="same-origin">${robots ? `<meta name="robots" content="${esc(robots)}">` : ''}${meta ? linkPreviewTags(meta) : ''}${refreshTo ? `<meta http-equiv="refresh" content="0;url=${esc(refreshTo)}">` : ''}<title>${esc(title)}</title><style>:root{${vars}}${CSS}</style></head><body><main class="wrap">${brand}${body}${foot}</main></body></html>`;
 }
 

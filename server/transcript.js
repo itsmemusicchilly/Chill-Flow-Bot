@@ -9,6 +9,7 @@
 //   - the file name is an ASCII slug;
 //   - in the .txt every line of message text is indented, so a member cannot type a line that looks like a message header (who wrote
 //     what, when), and line-break characters other than \n are removed.
+import { CREDIT } from '../shared/credit.js';
 import { esc } from '../shared/render-page.js';
 import { safeUrl } from '../shared/urls.js';
 
@@ -61,6 +62,7 @@ h1{font-size:22px;margin:0 0 4px;color:#fff}
 .embed b{color:#fff}
 .embed .f{margin-top:4px}
 .empty{color:#949ba4}
+.credit{margin:32px 0 0;font-size:12px;color:#949ba4;text-align:center}
 a{color:#00a8fc}
 `.replace(/\n/g, '');
 
@@ -173,7 +175,7 @@ function shell({ guildName, channelName, channelId, generated, count, notes }) {
     + `<h1>${esc(title)}</h1>`
     + `<p class="meta">${line(guildName) ? `Server: ${line(guildName)} · ` : ''}Channel: #${line(channelName)}${channelId ? ` (${line(channelId)})` : ''} · Saved ${esc(utc(generated))} · ${esc(String(count))} message${count === 1 ? '' : 's'}</p>`
     + notes.map((n) => `<div class="notice">${esc(n)}</div>`).join('');
-  const after = '</main></body></html>';
+  const after = `<p class="credit">${esc(CREDIT)}</p></main></body></html>`;
   return { before, after };
 }
 

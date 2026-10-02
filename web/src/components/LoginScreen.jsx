@@ -1,3 +1,5 @@
+import { CREDIT } from '@shared/credit.js';
+
 const MESSAGES = {
   failed: 'Login did not work. Please try again.',
   denied: 'You cancelled the login.',
@@ -23,6 +25,7 @@ export default function LoginScreen() {
         <a className="btn primary big" href="/auth/login">Log in with Discord</a>
         <p className="tiny muted">We only read your username and which servers you manage.</p>
       </div>
+      <footer className="app-credit">{CREDIT}</footer>
     </main>
   );
 }

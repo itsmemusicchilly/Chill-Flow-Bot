@@ -1,3 +1,5 @@
+import { CREDIT } from '@shared/credit.js';
+
 function Icon({ guild }) {
   if (guild.icon) return <img className="guild-icon" src={guild.icon} alt="" width="48" height="48" />;
   return <div className="guild-icon fallback" aria-hidden="true">{guild.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 3)}</div>;
@@ -55,6 +57,7 @@ export default function GuildPicker({ me, onOpen, onRefresh, onLogout }) {
           <button className="btn" onClick={onRefresh}>Refresh</button>
         </div>
       )}
+      <footer className="app-credit">{CREDIT}</footer>
     </main>
   );
 }
