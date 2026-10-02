@@ -1,0 +1,17 @@
+# docker compose up -d --build        (put your secrets in a file called .env next to this one: copy .env.example)
+services:
+  flowbot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3000"
+      DATA_DIR: /data
+    ports:
+      - "3000:3000"          # left number = the port on your machine; change it if 3000 is taken
+    volumes:
+      - flowbot-data:/data   # the database, uploaded pictures and saved transcripts
+
+volumes:
+  flowbot-data:

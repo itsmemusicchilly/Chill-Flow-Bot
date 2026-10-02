@@ -34,14 +34,16 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (824 unit/integration tests plus a
-> 190-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (828 unit/integration tests plus a
+> 192-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it. The alert triggers (feeds, YouTube, Twitch, webhooks) were tested against a pretend network and fake accounts,
 > not the real platforms; the same checklist covers them.
 
 ## Quick start
 
 Requires **Node 22.13+** (uses the built-in `node:sqlite`; no native dependencies).
+
+> **Step-by-step guides for Windows, Linux, macOS, Raspberry Pi, a home-lab NAS (Docker), a VPS, Heroku and Pterodactyl / game panels: [docs/SETUP.md](docs/SETUP.md).** The short version is below.
 
 1. **Create the application** at <https://discord.com/developers/applications> → *New Application*.
    * *General Information* → copy **Application ID** → `DISCORD_CLIENT_ID`.
@@ -580,6 +582,8 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 
 ## Hosting notes
 
+Full walkthroughs per platform (systemd, Docker, Caddy, panels…): [docs/SETUP.md](docs/SETUP.md). A `Dockerfile`, `docker-compose.yml` and `Procfile` are included.
+
 * Put HTTPS in front (Caddy/nginx), set `BASE_URL=https://…` and `TRUST_PROXY=1`. Cookies become `Secure` automatically.
 * One process, no sharding — fine up to a couple of thousand servers. The bot caches everything discord.js caches by default.
 * Back up `DATA_DIR/flowbot.sqlite`, `DATA_DIR/uploads/` **and** `DATA_DIR/transcripts/` together (a database row without its file shows a missing picture, or a transcript page that “isn't available”).
@@ -588,7 +592,7 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 ## Development
 
 ```bash
-npm test          # 824 unit + API + event + button/transcript + saved-transcript-link + public-page + upload + draft/live + access + maths + counter + cron/schedule + role-check/title + guarded-fetch/feed/webhook/platform-alert tests (fake Discord objects, in-memory SQLite, a fake clock, a pretend network)
+npm test          # 828 unit + API + event + button/transcript + saved-transcript-link + public-page + upload + draft/live + access + maths + counter + cron/schedule + role-check/title + guarded-fetch/feed/webhook/platform-alert tests (fake Discord objects, in-memory SQLite, a fake clock, a pretend network)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
@@ -674,3 +678,7 @@ Not yet automated — please run through this once on a test server:
 
 Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, an outbound HTTP/webhook node, watching X/TikTok/Instagram/Facebook/Twitch followers directly (needs each account's own consent), autocomplete options, sub-commands, embed preview, undo/redo, flow version history,
 sharding.
+
+---
+
+made by itsmemusicchilly
