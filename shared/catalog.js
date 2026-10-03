@@ -602,35 +602,75 @@ def('action.message.react', {
   ],
   outputs: ACTION_OUTS, summary: (d) => d.emoji || '',
 });
+// Show Form: one question per item. A question saved before there were question types has no `kind`, and is a text question.
+const FORM_KINDS = [['text', 'Text'], ['select', 'Dropdown (pick from your list)'], ['user', 'Member picker'], ['role', 'Role picker'], ['channel', 'Channel picker'], ['file', 'File upload']];
+const FORM_PICKERS = ['select', 'user', 'role', 'channel', 'file'];
+const FORM_ANSWERS = { select: 'chosen value(s)', user: 'picked member ID(s)', role: 'picked role ID(s)', channel: 'picked channel ID(s)', file: 'uploaded file link(s)' };
+const MAX_FORM_FILES = 10;
+const formNumber = (v) => (v === '' || v === null || v === undefined || String(v).includes('{{') ? null : Number(v));
 def('action.modal.show', {
   category: 'message', label: 'Show Form (Modal)', icon: '🧾',
-  description: 'Pop up a form. Must be the first thing the flow does with a command or button. Answers are {{input.<id>}}.',
+  description: 'Pop up a form of up to 5 questions — text, a dropdown, a member / role / channel picker or a file upload. Must be the first thing the flow does with a command or button. Answers are {{input.<id>}}.',
   fields: [
     text('title', 'Form title', { required: true, default: 'Tell us more' }),
     list('inputs', 'Inputs', {
-      create: () => ({ id: `field_${uid(4)}`, label: 'Your answer', style: 'short', placeholder: '', required: true, maxLength: '' }),
+      create: () => ({ id: `field_${uid(4)}`, label: 'Your answer', kind: 'text', description: '', style: 'short', placeholder: '', defaultValue: '', minLength: '', maxLength: '', options: [], maxChoices: 1, required: true }),
       label: (i) => i.label,
       fields: [
         text('id', 'ID (used as {{input.ID}})', { required: true }),
         text('label', 'Label', { required: true }),
-        select('style', 'Size', [['short', 'One line'], ['paragraph', 'Paragraph']]),
-        text('placeholder', 'Placeholder'),
-        num('maxLength', 'Max length', { min: 1, max: 4000 }),
+        select('kind', 'Question type', FORM_KINDS, { help: 'A dropdown gives {{input.ID}} the chosen value; the pickers give the picked ID; a file upload gives the file\'s link (Discord\'s own links stop working after a while). Several picks are joined with a comma and a space.' }),
+        text('description', 'Help text under the label', { placeholder: 'optional, up to 100 characters' }),
+        select('style', 'Size', [['short', 'One line'], ['paragraph', 'Paragraph']], { showIf: whenNot('kind', ...FORM_PICKERS) }),
+        text('placeholder', 'Placeholder', { showIf: whenNot('kind', 'file') }),
+        text('defaultValue', 'Pre-filled text', { showIf: whenNot('kind', ...FORM_PICKERS), help: 'Shown in the box when the form opens. You can use {{variables}}.' }),
+        num('minLength', 'Min length', { showIf: whenNot('kind', ...FORM_PICKERS), min: 0, max: 4000 }),
+        num('maxLength', 'Max length', { showIf: whenNot('kind', ...FORM_PICKERS), min: 1, max: 4000 }),
+        list('options', 'Choices', {
+          create: () => ({ label: 'Choice', value: `choice_${uid(3)}`, description: '', default: false }),
+          label: (o) => o.label,
+          fields: [
+            text('label', 'Label shown', { required: true }),
+            text('value', 'Value (what {{input.ID}} becomes)', { required: true }),
+            text('description', 'Small description'),
+            bool('default', 'Pre-selected'),
+          ],
+        }, { max: 25, showIf: when('kind', 'select') }),
+        num('maxChoices', 'How many (at most)', { default: 1, showIf: when('kind', ...FORM_PICKERS), min: 1, max: 25, help: '1 = just one. More lets people pick several (files: up to 10).' }),
         bool('required', 'Required'),
       ],
     }, { max: 5 }),
   ],
   outputs: [{ id: 'submit', label: 'Submitted', kind: 'button' }, ERR],
-  provides: (d) => (d.inputs || []).filter((i) => i.id).map((i) => [`input.${i.id}`, `Answer: ${i.label}`]),
+  provides: (d) => (d.inputs || []).filter((i) => i.id).map((i) => [`input.${i.id}`, `Answer: ${i.label}${FORM_ANSWERS[i.kind] ? ` (${FORM_ANSWERS[i.kind]})` : ''}`]),
   summary: (d) => d.title || '',
   check(d) {
     const e = [];
     if (!(d.inputs || []).length) e.push('Add at least one input.');
     const seen = new Set();
     for (const i of d.inputs || []) {
+      const name = `“${i.label || i.id}”`;
       if (i.id && !/^[A-Za-z_][\w]{0,31}$/.test(i.id)) e.push(`Input ID “${i.id}” must be letters, numbers or _ and not start with a number.`);
       if (seen.has(i.id)) e.push(`Duplicate input ID “${i.id}”.`);
       seen.add(i.id);
+      const kind = i.kind || 'text';
+      if (!FORM_KINDS.some(([k]) => k === kind)) { e.push(`Question ${name} has an unknown type.`); continue; }
+      const most = formNumber(i.maxChoices);
+      if (kind === 'text') {
+        const [lo, hi] = [formNumber(i.minLength), formNumber(i.maxLength)];
+        if (lo !== null && hi !== null && lo > hi) e.push(`Question ${name}: the minimum length cannot be more than the maximum.`);
+      }
+      if (kind === 'file' && most !== null && most > MAX_FORM_FILES) e.push(`Question ${name}: at most ${MAX_FORM_FILES} files.`);
+      if (kind !== 'select') continue;
+      const options = Array.isArray(i.options) ? i.options : [];
+      if (!options.length) e.push(`Question ${name} needs at least one choice.`);
+      const values = new Set();
+      options.forEach((o, n) => {
+        const value = String(o?.value ?? '').trim();
+        if (value && values.has(value)) e.push(`Question ${name}: choice #${n + 1} repeats the value “${value}”.`);
+        values.add(value);
+      });
+      if (most !== null && options.length && most > options.length) e.push(`Question ${name}: “How many” (${most}) is more than the number of choices (${options.length}).`);
     }
     return e;
   },
