@@ -1,8 +1,9 @@
-import { ActionRowBuilder, ButtonBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ModalBuilder } from 'discord.js';
 import { LIMITS } from '../../../shared/limits.js';
 import { parseButtonId } from '../custom-id.js';
 import { isRich, patchEmbeds } from '../embed-edit.js';
 import { FlowError } from '../errors.js';
+import { buildQuestion, readAnswer } from '../form.js';
 import { buildButton, buildEmbeds, buildPayload, cut, parseEmoji } from '../payload.js';
 import { newAck, respond } from '../responder.js';
 import { cleanId, resolveChannel, resolveMember, SNOWFLAKE } from '../resolve.js';
@@ -208,17 +209,7 @@ async function showModal({ ctx, d, node }) {
   const customId = `fcm:${ctx.runId}:${node.id}`;
   const inputs = (d.inputs || []).slice(0, 5);
   const modal = new ModalBuilder().setCustomId(customId).setTitle(String(d.title || 'Form').slice(0, 45));
-  for (const inp of inputs) {
-    const t = new TextInputBuilder()
-      .setCustomId(`in_${inp.id}`)
-      .setLabel(String(inp.label || inp.id).slice(0, 45))
-      .setStyle(inp.style === 'paragraph' ? TextInputStyle.Paragraph : TextInputStyle.Short)
-      .setRequired(inp.required !== false);
-    if (inp.placeholder) t.setPlaceholder(String(inp.placeholder).slice(0, 100));
-    const max = Number(inp.maxLength);
-    if (Number.isFinite(max) && max > 0) t.setMaxLength(Math.min(4000, max));
-    modal.addComponents(new ActionRowBuilder().addComponents(t));
-  }
+  modal.addLabelComponents(inputs.map(buildQuestion));
   ctx.ack.state = 'modal';
   await i.showModal(modal);
   let submit;
@@ -230,7 +221,7 @@ async function showModal({ ctx, d, node }) {
   ctx.interaction = submit;
   ctx.ack = newAck();
   ctx.armDefer?.();
-  ctx.data.input = Object.fromEntries(inputs.map((inp) => [inp.id, submit.fields.getTextInputValue(`in_${inp.id}`)]));
+  ctx.data.input = Object.fromEntries(inputs.map((inp) => [inp.id, readAnswer(inp, submit.fields)]));
   return 'submit';
 }
 
