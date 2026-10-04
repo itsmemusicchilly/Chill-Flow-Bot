@@ -520,7 +520,7 @@ tell nodes apart; it is never sent to Discord.
 
 ### 🧾 Show Form (Modal)
 
-`action.modal.show` — Pop up a form. Must be the first thing the flow does with a command or button. Answers are {{input.<id>}}.
+`action.modal.show` — Pop up a form of up to 5 questions — text, a dropdown, a member / role / channel picker or a file upload. Must be the first thing the flow does with a command or button. Answers are {{input.<id>}}.
 
 | Field | Type | Notes |
 | --- | --- | --- |
@@ -528,9 +528,19 @@ tell nodes apart; it is never sent to Discord.
 | Inputs | list | up to 5 items |
 | ↳ ID (used as {{input.ID}}) | text | required |
 | ↳ Label | text | required |
-| ↳ Size | select | options: One line, Paragraph |
-| ↳ Placeholder | text |  |
-| ↳ Max length | number | range 1–4000 |
+| ↳ Question type | select | options: Text, Dropdown (pick from your list), Member picker, Role picker, Channel picker, File upload; A dropdown gives {{input.ID}} the chosen value; the pickers give the picked ID; a file upload gives the file's link (Discord's own links stop working after a while). Several picks are joined with a comma and a space. |
+| ↳ Help text under the label | text |  |
+| ↳ Size | select | shown when `kind` is not `select` / `user` / `role` / `channel` / `file`; options: One line, Paragraph |
+| ↳ Placeholder | text | shown when `kind` is not `file` |
+| ↳ Pre-filled text | text | shown when `kind` is not `select` / `user` / `role` / `channel` / `file`; Shown in the box when the form opens. You can use {{variables}}. |
+| ↳ Min length | number | shown when `kind` is not `select` / `user` / `role` / `channel` / `file`; range 0–4000 |
+| ↳ Max length | number | shown when `kind` is not `select` / `user` / `role` / `channel` / `file`; range 1–4000 |
+| ↳ Choices | list | shown when `kind` is `select`; up to 25 items |
+| ↳ ↳ Label shown | text | required |
+| ↳ ↳ Value (what {{input.ID}} becomes) | text | required |
+| ↳ ↳ Small description | text |  |
+| ↳ ↳ Pre-selected | boolean |  |
+| ↳ How many (at most) | number | shown when `kind` is `select` / `user` / `role` / `channel` / `file`; range 1–25; 1 = just one. More lets people pick several (files: up to 10). |
 | ↳ Required | boolean |  |
 
 **Outputs:** Submitted, On error

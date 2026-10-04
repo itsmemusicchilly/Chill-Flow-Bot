@@ -34,8 +34,8 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (828 unit/integration tests plus a
-> 192-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (866 unit/integration tests plus a
+> 201-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it. The alert triggers (feeds, YouTube, Twitch, webhooks) were tested against a pretend network and fake accounts,
 > not the real platforms; the same checklist covers them.
 
@@ -143,7 +143,17 @@ Development with hot reload: `npm run dev` (server + Vite). Set `BASE_URL=http:/
   knew — its run variables (`{{var.x}}`) and `{{original.user.name}}` etc. (whoever/whatever created the message) — is stored
   in the database, so it survives restarts too. **Every press gets its own private copy**: one person's press can never
   change what the next person sees. If you want something to carry over between presses, use a server, channel or user variable.
-* **Forms (modals)** must be the first thing a command/button does; answers are `{{input.<id>}}`.
+* **Forms (modals)** must be the first thing a command/button does; answers are `{{input.<id>}}`. A form has up to **5 questions** (Discord's limit), each of one type:
+
+  | Type | What it asks | `{{input.<id>}}` is |
+  | --- | --- | --- |
+  | **Text** | a one-line or paragraph box, with placeholder, help line, minimum / maximum length and pre-filled text (`{{variables}}` work) | what was typed |
+  | **Dropdown** | pick from a list of up to 25 choices you write (a label, a value, an optional small description, optionally pre-selected); *how many (at most)* lets people pick several | the chosen **values**, several joined with `, ` |
+  | **Member / role / channel picker** | Discord's own picker; *how many (at most)*, up to 25 | the picked **IDs**, several joined with `, ` (ready for *Give Role*, a channel field…) |
+  | **File upload** | attach up to 10 files | the file **links**, several joined with `, ` — they are Discord's own links and **stop working after a while**, so copy a file somewhere if you need it later |
+
+  Every question has a label, an optional help line and a *Required* switch; an optional question left empty gives an empty answer. Forms built before the types existed are text questions and
+  keep working unchanged.
 * **No feedback loops**: changes the bot makes itself (a role it gave, a channel it created) do not trigger flows unless you
   tick *Also run for changes made by this bot*.
 * **Kick vs leave, who banned whom**: read from the audit log — give the bot *View Audit Log* or kicks look like leaves.
@@ -592,7 +602,7 @@ Full walkthroughs per platform (systemd, Docker, Caddy, panels…): [docs/SETUP.
 ## Development
 
 ```bash
-npm test          # 828 unit + API + event + button/transcript + saved-transcript-link + public-page + upload + draft/live + access + maths + counter + cron/schedule + role-check/title + guarded-fetch/feed/webhook/platform-alert tests (fake Discord objects, in-memory SQLite, a fake clock, a pretend network)
+npm test          # 866 unit + API + event + button/transcript + saved-transcript-link + public-page + upload + draft/live + access + maths + counter + cron/schedule + role-check/title + guarded-fetch/feed/webhook/platform-alert tests (fake Discord objects, in-memory SQLite, a fake clock, a pretend network)
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
@@ -626,6 +636,9 @@ Not yet automated — please run through this once on a test server:
       (with `ENABLE_MESSAGE_CONTENT_INTENT` on they show the text; off, they say the text is hidden). Check the `.txt` on a phone too, and
       that Discord accepts both files in the DM. With the opener's DMs closed the ticket still
       closes; with no log channel the ticket stays open and says why.
+- [ ] Form questions: build a *Show Form* with one question of each type (text, dropdown with several choices, member picker, role picker, channel picker, file upload; one of them optional) and run it from a slash command.
+      The pop-up opens and looks right on desktop **and** a phone, required questions cannot be skipped, and the answers come back as described in the Forms table (IDs for pickers, a link for the file).
+      An older form with only text questions still opens.
 - [ ] Boosts: boost the server with a test account → *Member Boosted Server* fires once (not again for a second boost); remove the boost
       → *Member Stopped Boosting* fires. Check it still fires for a member who was not cached (restart the bot first).
 - [ ] Schedules: set *At a set time of day* two minutes ahead in your own time zone — the log shows one “▶ … Schedule” run in that minute

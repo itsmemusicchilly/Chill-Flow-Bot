@@ -562,6 +562,33 @@ try {
   await page.locator('.field', { has: page.locator('label', { hasText: /^Embeds$/ }) }).locator('.list-title', { hasText: 'Welcome!' }).waitFor();
   ok(true, 'a flow made from a starter template shows its embed (“Welcome!”) in the embed list');
 
+  // Show Form: the settings follow the kind of question
+  await page.getByRole('tab', { name: 'Nodes' }).click();
+  await page.getByRole('button', { name: /Show Form/ }).click();
+  await page.locator('[data-testid="node-action.modal.show"]').waitFor();
+  const formPanel = page.getByRole('complementary', { name: 'Node settings' });
+  const questions = formPanel.locator('.field', { has: page.locator('label', { hasText: /^Inputs$/ }) });
+  await questions.getByRole('button', { name: '+ Add' }).first().click();
+  const question = questions.locator('.list-body').first();
+  const has = async (label) => (await question.getByLabel(label, { exact: true }).count()) === 1;
+  ok((await question.getByLabel('Question type').inputValue()) === 'text', 'a new form question is a text question');
+  ok((await has('Size')) && (await has('Placeholder')) && (await has('Pre-filled text')) && (await has('Min length')) && (await has('Max length')) && (await has('Help text under the label')), 'a text question has size, placeholder, pre-filled text, min and max length, and a help line');
+  await question.getByLabel('Question type').selectOption('select');
+  await question.getByLabel('How many (at most)').waitFor();
+  ok(!(await has('Size')) && !(await has('Min length')) && !(await has('Pre-filled text')), 'a dropdown hides the text-only settings');
+  await question.getByRole('button', { name: '+ Add' }).click();
+  ok((await question.getByLabel('Label shown').count()) === 1 && (await question.getByLabel('Value (what {{input.ID}} becomes)').count()) === 1, 'a dropdown has a list of choices, each with a label and a value');
+  await shot('44-form-dropdown');
+  await question.getByLabel('Question type').selectOption('file');
+  await page.waitForTimeout(250);
+  ok((await has('How many (at most)')) && !(await has('Placeholder')) && (await question.getByLabel('Label shown').count()) === 0, 'a file upload asks how many files, with no placeholder and no choices');
+  for (const kind of ['user', 'role', 'channel']) {
+    await question.getByLabel('Question type').selectOption(kind);
+    await page.waitForTimeout(150);
+    ok((await has('Placeholder')) && (await has('How many (at most)')) && !(await has('Size')), `a ${kind} picker has a placeholder and how many, not the text settings`);
+  }
+  ok((await question.getByLabel('Question type').locator('option').allTextContents()).length === 6, 'a question can be one of six types');
+
   // unpublish: the public page disappears
   await page.getByRole('tab', { name: 'Pages' }).click();
   await page.locator('.flow-open', { hasText: 'Staff applications' }).click();
