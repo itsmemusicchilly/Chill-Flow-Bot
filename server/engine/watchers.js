@@ -1,4 +1,4 @@
-// Watches things outside Discord (feeds, YouTube, Twitch) and starts flows when something new appears.
+// Watches things outside Discord (feeds, YouTube, Twitch, TikTok) and starts flows when something new appears.
 //
 // One `target` per thing to look at (a feed address, a channel), however many servers watch it: it is looked at once per round and every watching
 // flow gets its own turn to see what is new. An adapter may look at many targets in ONE request (`fetchMany`: up to 100 Twitch channels at once). Each flow keeps its own memory of what it has already announced (in SQLite), so a restart never repeats a post
@@ -12,16 +12,18 @@ const errorText = (err) => String(err?.message ?? err).slice(0, 200);
 
 export class Watchers {
   /**
-   * @param {{runtime: object, db: object, logger: object, adapters: object[], fetch: Function, minMinutes?: number, maxParallel?: number, keys?: object}} deps
-   *   `fetch(url, options)` is the guarded fetcher (server/net/safe-fetch.js), or a pretend one in tests; `keys` are the operator's API keys.
+   * @param {{runtime: object, db: object, logger: object, adapters: object[], fetch: Function, minMinutes?: number, maxParallel?: number, keys?: object, accounts?: object}} deps
+   *   `fetch(url, options)` is the guarded fetcher (server/net/safe-fetch.js), or a pretend one in tests; `keys` are the operator's API keys;
+   *   `accounts` (server/accounts.js) hands out the tokens of the creator accounts a server has connected.
    */
-  constructor({ runtime, db, logger, adapters, fetch, minMinutes = 5, maxParallel = 4, keys = {} }) {
+  constructor({ runtime, db, logger, adapters, fetch, minMinutes = 5, maxParallel = 4, keys = {}, accounts = null }) {
     this.runtime = runtime;
     this.db = db;
     this.logger = logger;
     this.adapters = new Map(adapters.map((a) => [a.type, a]));
     this.fetch = fetch;
     this.keys = keys;
+    this.accounts = accounts;
     this.minMinutes = minMinutes;
     this.maxParallel = maxParallel;
     this.subs = new Map(); // "guild|flow|node" → one flow's interest in one target
@@ -47,7 +49,7 @@ export class Watchers {
       for (const { flow, node } of this.runtime.index.get(guildId)?.triggers.get(type) ?? []) {
         const key = `${guildId}|${flow.id}|${node.id}`;
         let plan;
-        try { plan = adapter.prepare(node.data, { minMinutes: this.minMinutes, keys: this.keys }); } catch (err) {
+        try { plan = adapter.prepare(node.data, { minMinutes: this.minMinutes, keys: this.keys, guildId }); } catch (err) {
           if (err instanceof FeedSettingError) continue; // already shown as a problem on the node, and the trigger is not active
           throw err;
         }
@@ -121,7 +123,7 @@ export class Watchers {
   /** Resolves when no round is running (for tests and for a clean shutdown). */
   async idle() { while (this.pass) await this.pass; }
 
-  #context(now) { return { fetch: this.fetch, now, keys: this.keys }; }
+  #context(now) { return { fetch: this.fetch, now, keys: this.keys, accounts: this.accounts }; }
 
   async #lookOne(target, now) {
     let result;

@@ -7,8 +7,11 @@ import { LIMITS } from '../../shared/limits.js';
 import { normalizeGraph, validateFlow } from '../../shared/validate.js';
 import { integrationFlags } from '../../shared/platforms.js';
 import { feedAdapter } from '../feeds/adapter.js';
+import { tiktokFollowersAdapter } from '../feeds/tiktok-followers.js';
 import { createTwitchAdapter } from '../feeds/twitch.js';
+import { twitchFollowersAdapter } from '../feeds/twitch-followers.js';
 import { youtubeAdapter } from '../feeds/youtube.js';
+import { youtubeGainedAdapter } from '../feeds/youtube-gained.js';
 import { safeFetch } from '../net/safe-fetch.js';
 import { uid } from '../../shared/util.js';
 import { ChannelEdits } from './channel-edits.js';
@@ -34,10 +37,11 @@ export class Runtime {
    * @param {{db: import('../db.js').Database, logger: import('../logger.js').Logger, intents?: {members: boolean, messageContent: boolean}, uploads?: {publicUrl: (guildId: string, ref: string) => string},
    *          transcripts?: {save: Function, remove: Function, publicBase: boolean},
    *          clock?: {now?: () => number, setTimer?: (fn: () => void, ms: number) => any, clearTimer?: (timer: any) => void},
-   *          fetcher?: Function, feedMinMinutes?: number, integrations?: {youtube?: string, twitch?: {clientId: string, clientSecret: string}}}} deps
+   *          fetcher?: Function, feedMinMinutes?: number, integrations?: {youtube?: string, twitch?: {clientId: string, clientSecret: string}, tiktok?: {clientKey: string, clientSecret: string}},
+   *          accounts?: object}} deps
    *   `clock` is for tests: schedules read the time and set their timer through it. `fetcher` is the guarded fetcher the feed watchers use (a pretend one in tests).
    */
-  constructor({ db, logger, intents = { members: false, messageContent: false }, uploads = null, transcripts = null, clock = {}, fetcher = safeFetch, feedMinMinutes = 5, integrations = {} }) {
+  constructor({ db, logger, intents = { members: false, messageContent: false }, uploads = null, transcripts = null, clock = {}, fetcher = safeFetch, feedMinMinutes = 5, integrations = {}, accounts = null }) {
     this.db = db;
     this.logger = logger;
     this.intents = intents;
@@ -59,7 +63,11 @@ export class Runtime {
     this.ticker = null; // the one timer that wakes up at the start of each minute while any schedule exists
     this.lastMinute = null; // the last minute whose schedules were looked at
     this.integrationFlags = integrationFlags(integrations);
-    this.watchers = new Watchers({ runtime: this, db, logger, adapters: [feedAdapter, youtubeAdapter, createTwitchAdapter()], fetch: fetcher, minMinutes: feedMinMinutes, keys: integrations });
+    this.accounts = accounts; // the creator accounts (Twitch, TikTok) each server has connected; null where there is no such thing (some tests)
+    this.watchers = new Watchers({
+      runtime: this, db, logger, fetch: fetcher, minMinutes: feedMinMinutes, keys: integrations, accounts,
+      adapters: [feedAdapter, youtubeAdapter, youtubeGainedAdapter, createTwitchAdapter(), twitchFollowersAdapter, tiktokFollowersAdapter],
+    });
     this.deferAfterMs = DEFER_AFTER_MS;
   }
 
@@ -72,7 +80,7 @@ export class Runtime {
     for (const flow of this.db.listEnabledFlows(guildId)) {
       const graph = normalizeGraph(flow.graph);
       const active = { ...flow, graph };
-      const issues = validateFlow(graph, { intents: this.intents, integrations: this.integrationFlags });
+      const issues = validateFlow(graph, { intents: this.intents, integrations: this.integrationFlags, accounts: this.accounts?.flags(guildId) });
       entry.flows.set(flow.id, active);
       this.flowsById.set(flow.id, active);
       for (const node of graph.nodes) {

@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ChannelType } from 'discord.js';
 import express from 'express';
+import { createAccounts } from '../server/accounts.js';
 import { createApp } from '../server/app.js';
 import { Database } from '../server/db.js';
 import { Runtime } from '../server/engine/runtime.js';
@@ -15,6 +16,7 @@ import { Logger } from '../server/logger.js';
 import { createTranscripts } from '../server/transcripts.js';
 import { createUploads } from '../server/uploads.js';
 import { fakeGuild, fakeUser } from '../test/helpers/fakes.js';
+import { pretendProviders } from '../test/helpers/providers.js';
 
 const port = Number(process.env.PORT || 4100);
 const baseUrl = `http://127.0.0.1:${port}`;
@@ -25,8 +27,8 @@ const config = {
   token: 'demo', clientId: '1', clientSecret: 'demo', baseUrl, port, host: '127.0.0.1', trustProxy: false, dataDir,
   intents: { members: true, messageContent: true }, minPermission: 'Administrator', sessionTtlMs: 8 * 3600e3,
   publicRate: { views: 100000, visitor: 1000, ip: 100000 },
-  // the demo pretends YouTube is set up and Twitch is not, so the editor shows both cases
-  integrations: { youtube: 'demo-key', twitch: { clientId: '', clientSecret: '' } }, feedMinMinutes: 5,
+  // the demo pretends YouTube and TikTok are set up and Twitch is not, so the editor shows both cases
+  integrations: { youtube: 'demo-key', twitch: { clientId: '', clientSecret: '' }, tiktok: { clientKey: 'demo-key', clientSecret: 'demo-secret' } }, feedMinMinutes: 5,
 };
 const db = new Database(':memory:');
 const logger = new Logger({ console: false });
@@ -34,7 +36,10 @@ const uploads = createUploads({ config, db, logger });
 const transcripts = createTranscripts({ config, db, logger });
 // the demo never goes on the internet: whatever a feed trigger wants to read simply cannot be read
 const offline = async () => { throw new Error('The demo has no internet connection.'); };
-const runtime = new Runtime({ db, logger, intents: config.intents, uploads, transcripts, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes, fetcher: offline });
+// connected accounts (TikTok here): the approval page is TikTok's, which the demo cannot reach — the browser check plays its part, and what
+// the bot asks TikTok for is answered by a pretend TikTok that accepts the code "good-code"
+const accounts = createAccounts({ config, db, logger, fetch: pretendProviders().fetch });
+const runtime = new Runtime({ db, logger, intents: config.intents, uploads, transcripts, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes, fetcher: offline, accounts });
 
 const guilds = new Map();
 function makeGuild(id, name) {
@@ -80,7 +85,7 @@ const bot = {
 };
 const sync = { status: new Map(), sync: async (gid) => { const n = runtime.commandsFor(gid).length; const r = { ok: true, count: n, at: Date.now() }; sync.status.set(gid, r); logger.log(gid, 'info', `Slash commands updated (${n}). [demo]`); return r; } };
 
-const inner = createApp({ config, db, runtime, bot, sync, logger, uploads, transcripts, distDir: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist') });
+const inner = createApp({ config, db, runtime, bot, sync, logger, uploads, transcripts, accounts, distDir: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist') });
 const app = express();
 app.get('/demo-login', (_req, res) => {
   const sid = db.createSession('42', {

@@ -18,6 +18,26 @@ function apiError(res) {
   return `YouTube answered with an error (${res.status}).`;
 }
 
+/** Looks at up to 50 channels per request; shared by every trigger that reads a channel's subscriber count. */
+export async function fetchYoutubeChannels(targets, { fetch, keys }) {
+  const out = new Map();
+  for (let i = 0; i < targets.length; i += MAX_IDS) {
+    const chunk = targets.slice(i, i + MAX_IDS);
+    const url = `${API}?part=snippet,statistics&maxResults=${MAX_IDS}&id=${chunk.map((t) => t.key).join(',')}&key=${encodeURIComponent(keys.youtube)}`;
+    const res = await fetch(url, { headers: { accept: 'application/json' } });
+    if (res.status !== 200) { for (const t of chunk) out.set(t.key, new Error(apiError(res))); continue; }
+    let items;
+    try { items = JSON.parse(res.text).items ?? []; } catch { for (const t of chunk) out.set(t.key, new Error('YouTube’s answer could not be read.')); continue; }
+    for (const t of chunk) {
+      const item = items.find((x) => x?.id === t.key);
+      if (!item) { out.set(t.key, new Error('That YouTube channel was not found. Check the channel ID.')); continue; }
+      const count = Number(item.statistics?.subscriberCount);
+      out.set(t.key, { channel: { id: t.key, title: String(item.snippet?.title ?? '').slice(0, 100), hidden: Boolean(item.statistics?.hiddenSubscriberCount) || !Number.isFinite(count), subscribers: Number.isFinite(count) ? count : null } });
+    }
+  }
+  return out;
+}
+
 export const youtubeAdapter = {
   type: 'trigger.youtube.subscribers',
 
@@ -26,24 +46,7 @@ export const youtubeAdapter = {
     return { key: channelId, everyMs, label: `YouTube ${channelId}`, step };
   },
 
-  async fetchMany(targets, { fetch, keys }) {
-    const out = new Map();
-    for (let i = 0; i < targets.length; i += MAX_IDS) {
-      const chunk = targets.slice(i, i + MAX_IDS);
-      const url = `${API}?part=snippet,statistics&maxResults=${MAX_IDS}&id=${chunk.map((t) => t.key).join(',')}&key=${encodeURIComponent(keys.youtube)}`;
-      const res = await fetch(url, { headers: { accept: 'application/json' } });
-      if (res.status !== 200) { for (const t of chunk) out.set(t.key, new Error(apiError(res))); continue; }
-      let items;
-      try { items = JSON.parse(res.text).items ?? []; } catch { for (const t of chunk) out.set(t.key, new Error('YouTube’s answer could not be read.')); continue; }
-      for (const t of chunk) {
-        const item = items.find((x) => x?.id === t.key);
-        if (!item) { out.set(t.key, new Error('That YouTube channel was not found. Check the channel ID.')); continue; }
-        const count = Number(item.statistics?.subscriberCount);
-        out.set(t.key, { channel: { id: t.key, title: String(item.snippet?.title ?? '').slice(0, 100), hidden: Boolean(item.statistics?.hiddenSubscriberCount) || !Number.isFinite(count), subscribers: Number.isFinite(count) ? count : null } });
-      }
-    }
-    return out;
-  },
+  fetchMany: fetchYoutubeChannels,
 
   evaluate(state, { channel }, sub) {
     const { step } = sub.plan;

@@ -39,10 +39,11 @@ describe('the settings of the platform triggers', () => {
   });
 
   it('which platforms are set up, as plain yes/no', () => {
-    assert.deepEqual(integrationFlags(KEYS), { youtube: true, twitch: true });
-    assert.deepEqual(integrationFlags({}), { youtube: false, twitch: false });
-    assert.deepEqual(integrationFlags(undefined), { youtube: false, twitch: false });
-    assert.deepEqual(integrationFlags({ youtube: '', twitch: { clientId: 'x', clientSecret: '' } }), { youtube: false, twitch: false }, 'half a Twitch application is not one');
+    assert.deepEqual(integrationFlags(KEYS), { youtube: true, twitch: true, tiktok: false });
+    assert.deepEqual(integrationFlags({ ...KEYS, tiktok: { clientKey: 'k', clientSecret: 's' } }), { youtube: true, twitch: true, tiktok: true });
+    assert.deepEqual(integrationFlags({}), { youtube: false, twitch: false, tiktok: false });
+    assert.deepEqual(integrationFlags(undefined), { youtube: false, twitch: false, tiktok: false });
+    assert.deepEqual(integrationFlags({ youtube: '', twitch: { clientId: 'x', clientSecret: '' }, tiktok: { clientKey: 'k', clientSecret: '' } }), { youtube: false, twitch: false, tiktok: false }, 'half an application is not one');
   });
 
   it('a trigger that needs a platform is an error until the operator has set it up', () => {
@@ -53,7 +54,7 @@ describe('the settings of the platform triggers', () => {
     assert.match(errors({ youtube: true, twitch: false })[0][1], /TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET/);
     assert.deepEqual(errors({ youtube: true, twitch: true }), []);
     assert.deepEqual(errors(undefined), [], 'nobody said what is set up: nothing to complain about');
-    assert.deepEqual(Object.keys(INTEGRATIONS), ['youtube', 'twitch']);
+    assert.deepEqual(Object.keys(INTEGRATIONS), ['youtube', 'twitch', 'tiktok']);
   });
 
   it('the node settings are checked with the same rules', () => {
@@ -464,7 +465,7 @@ describe('what the editor is told about the platforms', () => {
   it('only whether each is set up — never the keys', async () => {
     const me = await h.call('GET', '/api/me');
     assert.equal(me.status, 200);
-    assert.deepEqual(me.json.meta.integrations, { youtube: true, twitch: true });
+    assert.deepEqual(me.json.meta.integrations, { youtube: true, twitch: true, tiktok: false });
     for (const secret of ['SECRET-YT-KEY', 'SECRET-TWITCH-SECRET', 'twitch-id']) assert.ok(!me.text.includes(secret), `${secret} leaked to the browser`);
   });
 
@@ -479,7 +480,7 @@ describe('what the editor is told about the platforms', () => {
     await h.close();
     h = await startHarness({ config: { integrations: { youtube: '', twitch: { clientId: '', clientSecret: '' } } } });
     const me = await h.call('GET', '/api/me');
-    assert.deepEqual(me.json.meta.integrations, { youtube: false, twitch: false });
+    assert.deepEqual(me.json.meta.integrations, { youtube: false, twitch: false, tiktok: false });
     const graph = { nodes: [node('t', 'trigger.twitch.live', { login: 'shroud' })], edges: [] };
     const created = await h.call('POST', `/api/guilds/${A}/flows`, { body: { name: 'Live alert', graph } });
     assert.equal(created.status, 201, created.text);

@@ -9,8 +9,8 @@ const LISTED_CHANNEL_TYPES = new Set([ChannelType.GuildText, ChannelType.GuildVo
 const PERM_CACHE_MS = 60_000;
 
 export class BotManager {
-  constructor({ config, runtime, logger, sync }) {
-    this.config = config; this.runtime = runtime; this.logger = logger; this.sync = sync;
+  constructor({ config, runtime, logger, sync, accounts = null }) {
+    this.config = config; this.runtime = runtime; this.logger = logger; this.sync = sync; this.accounts = accounts;
     this.client = null;
     this.ready = false;
     this.permCache = new Map();
@@ -27,7 +27,7 @@ export class BotManager {
       allowedMentions: { parse: ['users'] },
     });
     this.runtime.attachClient(this.client);
-    wireEvents({ client: this.client, runtime: this.runtime, logger: this.logger, sync: this.sync });
+    wireEvents({ client: this.client, runtime: this.runtime, logger: this.logger, sync: this.sync, accounts: this.accounts });
     this.client.once(Events.ClientReady, async (c) => {
       this.ready = true;
       this.logger.log(null, 'info', `Bot online as ${c.user.tag} in ${c.guilds.cache.size} server(s).`);

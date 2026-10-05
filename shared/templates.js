@@ -214,6 +214,42 @@ export const TEMPLATES = [
     }),
   },
   {
+    id: 'youtube-counter',
+    name: 'YouTube subscriber counter',
+    description: 'Keeps a channel named “▶️ Subscribers: 12,300” up to date as the YouTube channel grows. Paste the YouTube channel ID (starts with UC…) in the trigger and pick the channel to rename in the last node. YouTube rounds public counts above 1,000, so it moves in small steps. Needs the bot operator to have a YouTube API key.',
+    build: () => ({
+      nodes: [
+        n('t1', 'trigger.youtube.gained', 0, 60, { fire: 'change', minutes: 30 }),
+        n('u1', 'action.channel.update', 340, 40, { name: '▶️ Subscribers: {{youtube.subscribers | commas}}', reason: 'Subscriber counter' }),
+      ],
+      edges: [e('t1', 'u1')],
+    }),
+  },
+  {
+    id: 'twitch-counter',
+    name: 'Twitch follower counter',
+    description: 'Keeps a channel named “💜 Followers: 4,321” up to date. Connect the Twitch channel first (top bar → Accounts), then pick the channel to rename in the last node. Needs the bot operator to have set up a Twitch application.',
+    build: () => ({
+      nodes: [
+        n('t1', 'trigger.twitch.followers', 0, 60, { fire: 'change', minutes: 5 }),
+        n('u1', 'action.channel.update', 340, 40, { name: '💜 Followers: {{twitch.followers | commas}}', reason: 'Follower counter' }),
+      ],
+      edges: [e('t1', 'u1')],
+    }),
+  },
+  {
+    id: 'tiktok-counter',
+    name: 'TikTok follower counter',
+    description: 'Keeps a channel named “🎵 Followers: 8,765” up to date. Connect the TikTok account first (top bar → Accounts), then pick the channel to rename in the last node. Needs the bot operator to have a TikTok developer app that TikTok has approved.',
+    build: () => ({
+      nodes: [
+        n('t1', 'trigger.tiktok.followers', 0, 60, { fire: 'change', minutes: 15 }),
+        n('u1', 'action.channel.update', 340, 40, { name: '🎵 Followers: {{tiktok.followers | commas}}', reason: 'Follower counter' }),
+      ],
+      edges: [e('t1', 'u1')],
+    }),
+  },
+  {
     id: 'webhook-alert',
     name: 'Webhook alert (Zapier, IFTTT, StreamElements…)',
     description: 'Posts whatever another tool sends: a new X / TikTok / Instagram / Facebook post, a Twitch follower, a sale. Save the flow, copy the secret address from the trigger into the tool, and have it send JSON like {"title":"…","message":"…","url":"…"}. Pick the channel in the last node.',

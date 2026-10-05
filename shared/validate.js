@@ -4,7 +4,7 @@ import { connectionKey } from './connections.js';
 import { upgradeNodeData } from './upgrade.js';
 import { checkFields } from './fields.js';
 import { isCapped, LIMITS } from './limits.js';
-import { INTEGRATIONS } from './platforms.js';
+import { CONNECTIONS, INTEGRATIONS } from './platforms.js';
 
 export const ID_RE = /^[A-Za-z0-9_-]{1,12}$/;
 
@@ -40,8 +40,9 @@ export function normalizeGraph(input) {
 /**
  * @returns {{nodeId: string|null, level: 'error'|'warning', kind: 'structure'|'config'|'intent'|'graph', message: string}[]}
  * `kind: 'structure'` issues make a graph unsavable; the rest are shown as warnings but can be saved.
+ * `accounts` (optional) = which creator accounts this server has connected, e.g. `{ twitch: true }`; without it that check is skipped.
  */
-export function validateFlow(graph, { intents, integrations } = {}) {
+export function validateFlow(graph, { intents, integrations, accounts } = {}) {
   const issues = [];
   const add = (nodeId, level, kind, message) => issues.push({ nodeId, level, kind, message });
   const { nodes, edges } = graph;
@@ -98,6 +99,11 @@ export function validateFlow(graph, { intents, integrations } = {}) {
     // `needs` = something the bot operator must have set up (an API key); without it the trigger cannot work.
     if (d.needs && integrations && !integrations[d.needs]) {
       add(n.id, 'error', 'intent', `This trigger needs ${INTEGRATIONS[d.needs]}, which the bot operator has not set up — it will not run.`);
+    }
+    // `connect` = a creator account that someone must connect to this server (Connected accounts); `accounts` says which ones are.
+    // Not said when the operator's app is missing too: that message already explains why nothing will run.
+    if (d.connect && accounts && !accounts[d.connect] && !(d.needs && integrations && !integrations[d.needs])) {
+      add(n.id, 'error', 'intent', `Connect a ${CONNECTIONS[d.connect]} account first: open “Accounts” in the top bar and press Connect ${CONNECTIONS[d.connect]} — it will not run until then.`);
     }
     // `wants` = works better with an intent but does not need it: warn, never block.
     if (d.wants && intents && !intents[d.wants]) {

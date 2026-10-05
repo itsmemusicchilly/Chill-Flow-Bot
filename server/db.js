@@ -56,6 +56,12 @@ CREATE TABLE IF NOT EXISTS webhooks (
   token TEXT PRIMARY KEY, guild_id TEXT NOT NULL, flow_id TEXT NOT NULL, node_id TEXT NOT NULL, created_at INTEGER NOT NULL, last_at INTEGER,
   UNIQUE (guild_id, flow_id, node_id)
 );
+CREATE TABLE IF NOT EXISTS linked_accounts (
+  guild_id TEXT NOT NULL, provider TEXT NOT NULL, account_id TEXT NOT NULL, account_name TEXT NOT NULL, account_login TEXT NOT NULL DEFAULT '',
+  access_enc TEXT NOT NULL, refresh_enc TEXT NOT NULL, expires_at INTEGER NOT NULL, scopes TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'ok', connected_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  PRIMARY KEY (guild_id, provider)
+);
 CREATE TABLE IF NOT EXISTS watch_state (
   guild_id TEXT NOT NULL, flow_id TEXT NOT NULL, node_id TEXT NOT NULL, data TEXT NOT NULL, updated_at INTEGER NOT NULL,
   PRIMARY KEY (guild_id, flow_id, node_id)
@@ -201,6 +207,38 @@ export class Database {
     const rows = this.#stmt('SELECT flow_id, node_id FROM watch_state WHERE guild_id = ?').all(guildId);
     for (const r of rows) if (!keep.has(`${r.flow_id}|${r.node_id}`)) this.#stmt('DELETE FROM watch_state WHERE guild_id=? AND flow_id=? AND node_id=?').run(guildId, r.flow_id, r.node_id);
   }
+
+  // ---- accounts a server has connected (Twitch, TikTok): the tokens are sealed by server/secrets.js before they get here ---------
+  /** One row WITH its sealed tokens (for the accounts service only — never send this to the browser). */
+  getAccount(guildId, provider) {
+    const r = this.#stmt('SELECT * FROM linked_accounts WHERE guild_id=? AND provider=?').get(guildId, provider);
+    return r ? {
+      guildId: r.guild_id, provider: r.provider, accountId: r.account_id, accountName: r.account_name, accountLogin: r.account_login, accessSealed: r.access_enc, refreshSealed: r.refresh_enc,
+      expiresAt: r.expires_at, scopes: r.scopes, status: r.status, connectedBy: r.connected_by, createdAt: r.created_at, updatedAt: r.updated_at,
+    } : null;
+  }
+
+  /** What is connected to a server, without any token. */
+  listAccounts(guildId) {
+    return this.#stmt('SELECT provider, account_id, account_name, status, connected_by, created_at, updated_at FROM linked_accounts WHERE guild_id = ? ORDER BY provider').all(guildId)
+      .map((r) => ({ provider: r.provider, accountId: r.account_id, accountName: r.account_name, status: r.status, connectedBy: r.connected_by, createdAt: r.created_at, updatedAt: r.updated_at }));
+  }
+
+  saveAccount(a, now = Date.now()) {
+    this.#stmt(`INSERT INTO linked_accounts (guild_id, provider, account_id, account_name, account_login, access_enc, refresh_enc, expires_at, scopes, status, connected_by, created_at, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(guild_id, provider) DO UPDATE SET account_id = excluded.account_id, account_name = excluded.account_name, account_login = excluded.account_login, access_enc = excluded.access_enc, refresh_enc = excluded.refresh_enc,
+        expires_at = excluded.expires_at, scopes = excluded.scopes, status = excluded.status, connected_by = COALESCE(excluded.connected_by, connected_by), updated_at = excluded.updated_at`)
+      .run(a.guildId, a.provider, a.accountId, a.accountName, a.accountLogin ?? '', a.accessSealed, a.refreshSealed, a.expiresAt, a.scopes ?? '', a.status ?? 'ok', a.connectedBy ?? null, now, now);
+  }
+
+  setAccountStatus(guildId, provider, status, now = Date.now()) {
+    this.#stmt('UPDATE linked_accounts SET status = ?, updated_at = ? WHERE guild_id=? AND provider=?').run(status, now, guildId, provider);
+  }
+
+  deleteAccount(guildId, provider) { this.#stmt('DELETE FROM linked_accounts WHERE guild_id=? AND provider=?').run(guildId, provider); }
+
+  deleteGuildAccounts(guildId) { this.#stmt('DELETE FROM linked_accounts WHERE guild_id=?').run(guildId); }
 
   // ---- variables (scopes: guild, channel, user — never global) ---------------------------------
   getVar(guildId, scope, scopeId, name) {

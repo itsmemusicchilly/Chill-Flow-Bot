@@ -46,7 +46,7 @@ const plain = (g) => ({
   edges: g.edges.map(({ id, source, sourceHandle, target }) => ({ id, source, sourceHandle: sourceHandle || 'out', target })),
 });
 
-export default function FlowWorkspace({ gid, flow, meta, guildData, flash, apiRef, dirtyRef, onSaved, onToggle }) {
+export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, flash, apiRef, dirtyRef, onSaved, onToggle }) {
   const toast = useToast();
   const rf = useReactFlow();
   const phone = useMediaQuery(PHONE);
@@ -84,7 +84,7 @@ export default function FlowWorkspace({ gid, flow, meta, guildData, flash, apiRe
   }, [dirtyRef]);
 
   // ---- validation (same rules as the server) ---------------------------------------------------
-  const issues = useMemo(() => validateFlow(normalizeGraph(graph), { intents: meta.intents, integrations: meta.integrations }), [graph, meta.intents, meta.integrations]);
+  const issues = useMemo(() => validateFlow(normalizeGraph(graph), { intents: meta.intents, integrations: meta.integrations, accounts }), [graph, meta.intents, meta.integrations, accounts]);
   const issuesByNode = useMemo(() => {
     const map = {};
     for (const i of issues) if (i.nodeId) (map[i.nodeId] ||= []).push(i);

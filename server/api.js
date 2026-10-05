@@ -9,6 +9,7 @@ import { toCsv } from './csv.js';
 import { livePage, SlugTakenError } from './db.js';
 import { FlowError } from './engine/errors.js';
 import { RateLimiter } from './engine/rate-limit.js';
+import { AccountError } from './accounts.js';
 import { available as imagesAvailable, IMAGE_LIMITS } from './images.js';
 import { SNOWFLAKE } from './engine/resolve.js';
 
@@ -19,7 +20,7 @@ export class HttpError extends Error {
 const avatarUrl = (u) => (u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png?size=64` : 'https://cdn.discordapp.com/embed/avatars/0.png');
 const iconUrl = (g) => (g.icon ? `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png?size=64` : null);
 
-export function createApi({ config, db, runtime, bot, sync, logger, auth, uploads }) {
+export function createApi({ config, db, runtime, bot, sync, logger, auth, uploads, accounts, connect }) {
   const router = express.Router();
   const flags = integrationFlags(config.integrations);
   const perUser = new RateLimiter(300, 60_000);
@@ -55,17 +56,19 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
     next();
   });
 
+  /** What the checks need to know about a server: the operator's settings, and which creator accounts the server has connected. */
+  const checkOptions = (gid) => ({ intents: config.intents, integrations: flags, accounts: accounts.flags(gid) });
   const summary = (f) => ({
     id: f.id, name: f.name, enabled: f.enabled, updatedAt: f.updatedAt, updatedBy: f.updatedBy,
-    nodes: f.graph.nodes.length, issues: validateFlow(f.graph, { intents: config.intents, integrations: flags }).filter((i) => i.level === 'error').length,
+    nodes: f.graph.nodes.length, issues: validateFlow(f.graph, checkOptions(f.guildId)).filter((i) => i.level === 'error').length,
   });
-  const full = (f) => ({ ...summary(f), createdAt: f.createdAt, graph: f.graph, issues: validateFlow(f.graph, { intents: config.intents, integrations: flags }) });
+  const full = (f) => ({ ...summary(f), createdAt: f.createdAt, graph: f.graph, issues: validateFlow(f.graph, checkOptions(f.guildId)) });
 
-  function checkedGraph(input) {
+  function checkedGraph(input, gid) {
     if (!input || typeof input !== 'object') throw new HttpError(400, 'Missing flow graph.');
     const graph = normalizeGraph(input);
     if (isCapped(LIMITS.graphBytes) && JSON.stringify(graph).length > LIMITS.graphBytes) throw new HttpError(413, 'This flow is too large.');
-    const issues = validateFlow(graph, { intents: config.intents, integrations: flags });
+    const issues = validateFlow(graph, checkOptions(gid));
     if (hasStructureErrors(issues)) throw new HttpError(400, 'The flow has structural problems and was not saved.', { issues: issues.filter((i) => i.kind === 'structure') });
     return graph;
   }
@@ -106,7 +109,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
       graph = t.build();
       name = name || t.name;
     }
-    const flow = db.createFlow({ guildId: gid, name: checkedName(name), graph: checkedGraph(graph ?? { nodes: [], edges: [] }), enabled: false, updatedBy: actor(req) });
+    const flow = db.createFlow({ guildId: gid, name: checkedName(name), graph: checkedGraph(graph ?? { nodes: [], edges: [] }, gid), enabled: false, updatedBy: actor(req) });
     res.status(201).json({ flow: full(flow) });
   });
 
@@ -117,7 +120,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
     const patch = {};
     if ('name' in req.body) patch.name = checkedName(req.body.name);
     if ('enabled' in req.body) patch.enabled = Boolean(req.body.enabled);
-    if ('graph' in req.body) patch.graph = checkedGraph(req.body.graph);
+    if ('graph' in req.body) patch.graph = checkedGraph(req.body.graph, req.params.gid);
     const flow = db.updateFlow(req.params.gid, cur.id, patch, actor(req));
     if (patch.graph) db.pruneWebhooks(req.params.gid, cur.id, new Set(flow.graph.nodes.filter((n) => n.type === 'trigger.webhook').map((n) => n.id))); // a removed trigger's address stops working
     res.json({ flow: full(flow), sync: await apply(req.params.gid) });
@@ -295,6 +298,28 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
   guildRouter.delete('/variables', (req, res) => {
     const { scope, scopeId = '', name } = req.query;
     res.json({ ok: db.deleteVar(req.params.gid, String(scope), String(scopeId), String(name)) });
+  });
+
+  // ---- connected accounts (Twitch, TikTok: see server/accounts.js and server/connect.js) -------
+  const providerOf = (req) => {
+    if (!accounts.providers().includes(req.params.provider)) throw new HttpError(404, 'Unknown platform.');
+    return req.params.provider;
+  };
+  guildRouter.get('/accounts', (req, res) => res.json(accounts.list(req.params.gid)));
+  guildRouter.post('/accounts/:provider/start', (req, res) => {
+    const provider = providerOf(req);
+    try {
+      res.json({ url: connect.begin(res, { guildId: req.params.gid, userId: req.session.userId, provider }) });
+    } catch (err) {
+      if (err instanceof AccountError) throw new HttpError(err.message.startsWith('Too many') ? 429 : 400, err.message);
+      throw err;
+    }
+  });
+  guildRouter.delete('/accounts/:provider', async (req, res) => {
+    const provider = providerOf(req);
+    const removed = await accounts.disconnect(req.params.gid, provider);
+    runtime.loadGuild(req.params.gid); // flows that used the account stop at once
+    res.json({ ok: true, removed });
   });
 
   // ---- logs ---------------------------------------------------------------------------------

@@ -25,9 +25,12 @@ channel, remember a variable…), press **Save** — it is live. No code.
   vote off when it ends — or deletes the message, and a variable remembered **per channel** can hold that message's ID until you need it.
 * **Alerts from other platforms.** Run a flow when a YouTube channel uploads, a subreddit / Bluesky / Mastodon account / blog posts, a Twitch
   channel goes live, a channel passes a subscriber milestone — or when *any* tool (Zapier, IFTTT, StreamElements…) calls a secret address, which is
-  how X, TikTok, Instagram and Facebook posts or Twitch followers reach the bot (see [Alerts from other platforms](#alerts-from-other-platforms)).
-* **61 nodes**: 31 triggers (commands, buttons, messages, joins/leaves/kicks/bans/timeouts, server boosts, role and channel events,
-  reactions, voice, schedule, new feed item, webhook, YouTube subscribers, Twitch live, manual, form submitted) and 30 actions/logic nodes (messages with buttons/menus/forms, changing the buttons of a sent message, member moderation,
+  how X, Instagram and Facebook posts reach the bot (see [Alerts from other platforms](#alerts-from-other-platforms)).
+* **Subscriber / follower counters.** Run a flow each time a YouTube channel gains subscribers or a Twitch or TikTok account gains followers — or keep a
+  channel named “💜 Followers: 4,321” up to date with a ready-made counter flow. Twitch and TikTok are connected from the dashboard (*Accounts*): the
+  creator approves it on the platform itself (see [Counting subscribers and followers](#counting-subscribers-and-followers)).
+* **64 nodes**: 34 triggers (commands, buttons, messages, joins/leaves/kicks/bans/timeouts, server boosts, role and channel events,
+  reactions, voice, schedule, new feed item, webhook, YouTube subscribers (milestones and gains), Twitch live and followers, TikTok followers, manual, form submitted) and 30 actions/logic nodes (messages with buttons/menus/forms, changing the buttons of a sent message, member moderation,
   channels and ticket transcripts, roles, variables and maths, conditions, loops, cooldowns, waits). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
 * **Remembers things**: run, per-server, per-channel and per-user variables, usable everywhere as `{{templates}}` — with maths built in
   (see [Remembered variables](#remembered-variables) and [Doing maths](#doing-maths)).
@@ -83,10 +86,12 @@ real dashboard and API against a fake in-memory Discord — useful for developme
 
 | `FEED_MIN_INTERVAL_MINUTES` | `5` | The shortest time a *New Feed Item* trigger may wait between looks at a feed (whole minutes, at least 1) |
 | `YOUTUBE_API_KEY` | — | Optional. A YouTube Data API v3 key, for the *YouTube Subscribers* trigger |
-| `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` | — | Optional. A free Twitch developer application, for the *Twitch Channel Live* trigger |
+| `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` | — | Optional. A free Twitch developer application, for the *Twitch Channel Live* trigger and for connecting a Twitch account (*Twitch Followers*) |
+| `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` | — | Optional. A TikTok developer app (Login Kit + Display API), for connecting a TikTok account (*TikTok Followers*). `BASE_URL` must be `https://` |
+| `TOKEN_ENCRYPTION_KEY` | derived from `DISCORD_CLIENT_SECRET` | Optional. A long random string (16+ characters) that seals the connected accounts' tokens in the database. If it ever changes, connected accounts show “Connect again” — nothing else is lost |
 | `LIMIT_*` | unlimited | Optional caps, see [Limits](#limits) |
 
-Triggers whose intent is off — or whose platform key is missing — are greyed out in the palette and never activated (their node shows why). Keys are only ever read by the server; the editor is told yes or no, never the key.
+Triggers whose intent is off — or whose platform key is missing — are greyed out in the palette and never activated (their node shows why). A *Twitch Followers* or *TikTok Followers* node also says “Connect a … account first” until that account is connected under **Accounts**. Keys are only ever read by the server; the editor is told yes or no, never the key.
 
 ### Limits
 
@@ -340,22 +345,25 @@ Three ways in, from “nothing to set up” to “needs a key from the bot opera
 | --- | --- | --- | --- |
 | **YouTube** | a new video | *New Feed Item* → YouTube (paste the channel ID, `UC…`) | nothing |
 | **YouTube** | subscriber milestones | *YouTube Subscribers* | operator's `YOUTUBE_API_KEY` |
+| **YouTube** | subscribers gained, a live counter | *YouTube Subscribers Gained* | operator's `YOUTUBE_API_KEY` |
 | **Twitch** | a channel goes live | *Twitch Channel Live* | operator's Twitch application |
+| **Twitch** | followers gained, a live counter | *Twitch Followers* | operator's Twitch application **and** the streamer connecting the channel (*Accounts*) |
+| **TikTok** | followers gained, a live counter | *TikTok Followers* | operator's TikTok developer app **and** the creator connecting the account (*Accounts*) |
 | **Reddit** | a new post in a subreddit | *New Feed Item* → Reddit | nothing |
 | **Bluesky** | a new post by an account | *New Feed Item* → Bluesky | nothing |
 | **Mastodon** | a new post by an account | *New Feed Item* → Any feed address, `https://server/@name.rss` | nothing |
 | **Blogs, podcasts, GitHub releases…** | a new entry | *New Feed Item* → Any feed address (`…/releases.atom` on GitHub) | nothing |
 | **X, TikTok, Instagram, Facebook** | a new post | *Webhook Received*, called by a tool that can watch them | the tool (Zapier, IFTTT, Make…) — **not the bot** |
-| **Twitch followers** and any other “someone followed / subscribed” | the event | *Webhook Received*, called by StreamElements, Streamlabs or Zapier | the tool |
+| **Twitch subscriptions** and any other “someone subscribed / donated” | the event | *Webhook Received*, called by StreamElements, Streamlabs or Zapier | the tool |
 
 **Seen against the real internet** (a check from the machine this was built on, not a promise): Bluesky, Mastodon, GitHub releases, blog and Hacker News feeds were read and parsed correctly,
 but YouTube's feed address answered *404* for channels that certainly exist, and Reddit's was blocked by that machine's network policy. YouTube is known to refuse feed requests from some hosting
 providers now and then; if your log says a YouTube feed “was not found” for a channel ID you are sure of, that is the likely reason — the bot keeps trying with a growing pause, and the Webhook
 trigger (fed by Zapier or similar) is the fallback. Mastodon and Bluesky posts have **no title** — use `{{feed.summary}}` (the starter flow does).
 
-What is **not** possible, and why, so you are not surprised: X, TikTok, Instagram and Facebook publish no free public feed (a Facebook Page's posts are only handed to an app with the Page owner's own permission), and Twitch only tells an app
-about a channel's followers with a token the *streamer* grants — so the bot cannot watch those by itself. What such a tool can offer changes over time; the
-bot only promises the address it gives you. YouTube **rounds** public subscriber counts to three significant figures once a channel has more than 1,000
+What is **not** possible, and why, so you are not surprised: X, TikTok, Instagram and Facebook publish no free public feed (a Facebook Page's posts are only handed to an app with the Page owner's own permission), so the bot cannot watch
+their *posts* by itself — only a tool that can (through the Webhook trigger). Twitch and TikTok **follower counts** are different: they are only handed to an app with the account owner's own permission, which is exactly what *Accounts* collects
+(next section). What such a tool can offer changes over time; the bot only promises the address it gives you. YouTube **rounds** public subscriber counts to three significant figures once a channel has more than 1,000
 and a channel may hide its count, so choose a step much bigger than the rounding (every 100 for a small channel, every 10,000 for a big one).
 
 **New Feed Item** reads RSS, Atom and JSON Feed from any **public https address** and gives the flow `{{feed.title}}`, `{{feed.link}}`, `{{feed.author}}`,
@@ -382,7 +390,32 @@ The flow gets `{{webhook.body.title}}` (any field of the JSON or form, `{{webhoo
 `404` is an unknown address, `405` any method but POST, `413` too big, `415` an unsupported content type (JSON, form or text are accepted), `429` too many calls, `409` the flow is off.
 **Treat the address like a password**: whoever has it can start that flow (they cannot do anything else). A copied or imported flow gets its own new address, never the original's.
 
-Five starter flows are in **New flow → from template**: *YouTube upload announcer*, *Post announcer*, *Twitch live alert*, *YouTube subscriber milestone* and *Webhook alert*.
+Eight starter flows are in **New flow → from template**: *YouTube upload announcer*, *Post announcer*, *Twitch live alert*, *YouTube subscriber milestone*, *Webhook alert* and the three counters (*YouTube subscriber counter*, *Twitch follower counter*, *TikTok follower counter*).
+
+### Counting subscribers and followers
+
+Three triggers run a flow when a count changes, with `{{…gained}}` (how many arrived), `{{…change}}`, `{{…previous}}` and the count itself:
+
+| Trigger | Count | Where it comes from | Variables |
+| --- | --- | --- | --- |
+| *YouTube Subscribers Gained* | a channel's subscribers | YouTube's public count, through the operator's `YOUTUBE_API_KEY` (you give the channel ID) | `youtube.subscribers .gained .change .previous .channelTitle .channelId .url` |
+| *Twitch Followers* | the connected channel's followers | the streamer's own permission (*Accounts → Connect Twitch*) | `twitch.followers .gained .change .previous .name .login .url` |
+| *TikTok Followers* | the connected account's followers | the creator's own permission (*Accounts → Connect TikTok*) | `tiktok.followers .gained .change .previous .name` |
+
+Each has a **Run** setting: *Each time it goes up* (a thank-you message) or *Every time it changes* (a counter: it also runs when the count drops, and once when you switch the flow on so the number is right straight away).
+The ready-made **YouTube / Twitch / TikTok counter** flows keep a channel named `💜 Followers: 4,321` up to date (pick the channel in the last node; Discord allows a channel to be renamed twice every 10 minutes, so the bot
+shows the newest number as soon as it may). The existing *YouTube Subscribers* trigger (every N subscribers) is unchanged.
+
+* **Counts, not people.** The platforms only tell us the total, so a look that finds 7 new followers runs the flow **once** with `{{twitch.gained}}` = 7, not seven times. The first look only remembers the count (except for *Every time it changes*).
+* **Connecting an account.** Open **Accounts** in the top bar and press **Connect Twitch** or **Connect TikTok**. You are sent to the platform to approve one permission — reading the follower count — and come back. The bot never sees a password.
+  One account per platform per server; connecting another replaces it. Anyone who can manage the server can connect or disconnect. **Disconnect** tells the platform to drop the permission, and a server the bot leaves loses its connections.
+* **How the tokens are kept.** The access and refresh tokens are encrypted in the database (AES-256-GCM, bound to the server and platform) and are never sent to the browser or written to the log. They are renewed by themselves; if the platform stops
+  accepting one (the creator removed the permission, changed their password…), the account shows **Connect again**, the flows using it pause, and the log says so.
+* **The bot operator sets up the apps once.** *Twitch*: the same free application as *Twitch Channel Live* (<https://dev.twitch.tv/console>) — add `BASE_URL/auth/twitch/callback` under *OAuth Redirect URLs*. *TikTok*: an app at
+  <https://developers.tiktok.com> with **Login Kit** and the **Display API**, scopes `user.info.basic` and `user.info.stats`, redirect URI `BASE_URL/auth/tiktok/callback` (TikTok requires `https`). **Until TikTok has approved the app,
+  only the test accounts listed on it can connect** — that is TikTok's rule, not the bot's. Then put the keys in `.env` (see the table above) and restart.
+* **Looks.** Twitch at least every 1 minute (default 5), TikTok at least every 5 (default 15), YouTube at least every 15 (default 30). One request per server however many flows use it.
+* **YouTube is different on purpose.** It needs no connecting, but YouTube **rounds** public counts to three significant figures once a channel has more than 1,000 (so a big channel moves in jumps, never one by one) and a channel may hide its count.
 
 ### Templates
 
@@ -407,6 +440,7 @@ Five starter flows are in **New flow → from template**: *YouTube upload announ
 | `webhook.text .body.<field> .query.<name> .method .contentType` | *Webhook Received*: what was sent |
 | `youtube.subscribers .milestone .previous .channelTitle .channelId .url` | *YouTube Subscribers* |
 | `twitch.user .login .title .game .viewers .url .thumbnail .started .id` | *Twitch Channel Live* |
+| `youtube.gained .change`, `twitch.followers .gained .change .previous .name .login .url`, `tiktok.followers .gained .change .previous .name` | the count triggers (see [Counting subscribers and followers](#counting-subscribers-and-followers)) |
 
 Filters: `default:x`, `upper`, `lower`, `trim`, `length`, `json`, plus the maths filters below. Filters chain left to right.
 Substituted text is never evaluated again, so member-supplied text cannot inject templates.
@@ -655,6 +689,10 @@ Not yet automated — please run through this once on a test server:
       Call it from Zapier/IFTTT/StreamElements once with a real X / TikTok / Instagram / Facebook / follower event and check which fields you can use.
 - [ ] YouTube Subscribers with a real key: the log says the current count; a wrong key says the operator's key was refused (and never prints it). Twitch Channel Live with a real
       application: go live on a test channel → one announcement; stay live → none; end and start again → one more. With no key set the nodes show “not set up”.
+- [ ] Connected accounts with a real Twitch application and a real TikTok app (needs the real internet and your own developer apps): *Accounts → Connect Twitch* sends you to Twitch, asks for one permission and returns with
+      “Connected” and the channel's name; *Twitch Followers* (Run: every change) renames a channel to the follower count within a few minutes; follow from another account → it moves. *Disconnect* → the flow pauses, and the permission is
+      gone from Twitch → Settings → Connections. The same for TikTok with an approved app (or a listed test account while it is in review): the count in the channel name matches the profile. Remove the permission on the platform's side → the account
+      shows “Connect again” and the log says why. Restart the bot → the counters keep working without connecting again.
 - [ ] Two accounts press the same panel button at the same time: each only sees their own variables.
 - [ ] Change Buttons on a real message: post a panel with *Send Message* (save its ID), then run a flow with *Change Buttons* — *Add* a button with a Button ID and press it (a
       *Button Clicked* flow answers), *Add* one without an ID wired to an output and press it, *Disable* one (it greys out and cannot be pressed), *Enable* it again, *Remove* it by label,

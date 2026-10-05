@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { createAccounts } from '../../server/accounts.js';
 import { createApp } from '../../server/app.js';
 import { Database } from '../../server/db.js';
 import { Runtime } from '../../server/engine/runtime.js';
@@ -31,7 +32,9 @@ export async function startHarness({ config: over = {}, distDir = '/nonexistent'
   const logger = new Logger({ console: false });
   const uploads = createUploads({ config, db, logger });
   const transcripts = createTranscripts({ config, db, logger });
-  const runtime = new Runtime({ db, logger, intents: config.intents, uploads, transcripts, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes, ...(over.fetcher ? { fetcher: over.fetcher } : {}) });
+  // the creator accounts (Twitch, TikTok): `config.accountsFetch` is the pretend network they talk to; without one, any request fails loudly
+  const accounts = createAccounts({ config, db, logger, fetch: over.accountsFetch ?? (async (url) => { throw new Error(`unexpected request to ${url}`); }), now: over.now });
+  const runtime = new Runtime({ db, logger, intents: config.intents, uploads, transcripts, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes, accounts, ...(over.fetcher ? { fetcher: over.fetcher } : {}) });
   const guilds = { [A]: fakeGuild({ id: A, name: 'Pixel Café' }), [B]: fakeGuild({ id: B, name: 'Dev Sandbox' }) };
   guilds[A].name = 'Pixel Café';
   guilds[B].name = 'Dev Sandbox';
@@ -64,7 +67,7 @@ export async function startHarness({ config: over = {}, distDir = '/nonexistent'
     return { ok: false, status: 404, json: async () => ({}) };
   };
 
-  const app = createApp({ config, db, runtime, bot, sync, logger, fetchImpl, uploads, transcripts, distDir });
+  const app = createApp({ config, db, runtime, bot, sync, logger, fetchImpl, uploads, transcripts, accounts, distDir });
   const server = http.createServer(app);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -98,5 +101,5 @@ export async function startHarness({ config: over = {}, distDir = '/nonexistent'
     return m;
   };
   const close = async () => { server.close(); db.close(); fs.rmSync(dataDir, { recursive: true, force: true }); };
-  return { config, state, db, logger, runtime, guilds, bot, base, call, session, visitorSession, uploads, transcripts, dataDir, setRoles, close };
+  return { config, state, db, logger, runtime, accounts, guilds, bot, base, call, session, visitorSession, uploads, transcripts, dataDir, setRoles, close };
 }

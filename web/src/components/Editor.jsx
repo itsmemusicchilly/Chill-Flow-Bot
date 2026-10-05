@@ -1,6 +1,6 @@
 import { ReactFlowProvider } from '@xyflow/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api } from '../api.js';
+import { api, takeConnectResult } from '../api.js';
 import { ImagesContext, useToast } from '../context.js';
 import FlowWorkspace from './FlowWorkspace.jsx';
 import ImageLibrary from './ImageLibrary.jsx';
@@ -11,6 +11,7 @@ import NewPageDialog from './NewPageDialog.jsx';
 import PageEditor from './PageEditor.jsx';
 import PagesList from './PagesList.jsx';
 import Palette from './Palette.jsx';
+import ConnectionsDialog from './ConnectionsDialog.jsx';
 import VariablesDialog from './VariablesDialog.jsx';
 import { matches, PHONE } from '../hooks/useMediaQuery.js';
 import { usePages } from '../pages/usePages.js';
@@ -27,7 +28,8 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
   const [flows, setFlows] = useState(null);
   const [flow, setFlow] = useState(null);
   const [tab, setTab] = useState(pageId ? 'pages' : 'flows');
-  const [dialog, setDialog] = useState(null); // 'new' | 'newpage' | 'vars'
+  const [dialog, setDialog] = useState(null); // 'new' | 'newpage' | 'vars' | 'accounts'
+  const [accounts, setAccounts] = useState(null); // the creator accounts (Twitch, TikTok) connected to this server — null until loaded
   const [showLogs, setShowLogs] = useState(() => !matches(PHONE)); // logs take a third of a phone screen: start closed there
   const [navOpen, setNavOpen] = useState(() => matches(PHONE) && !flowId && !pageId); // on a phone the sidebar is a drawer; open it when there is nothing else to show
 
@@ -48,6 +50,27 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
   }), [gid, me.meta.uploads.available, me.meta.uploads.publicBase, uploads.ids]);
   useEffect(() => { if (pageId) setTab('pages'); else if (flowId) setTab('flows'); }, [pageId, flowId]);
   useEffect(() => { if (pageId || flowId) setNavOpen(false); }, [pageId, flowId]);
+
+  // ---- connected accounts: which ones work decides whether a Followers trigger can run ------------
+  const reloadAccounts = useCallback(async () => {
+    const rows = await api(`/guilds/${gid}/accounts`);
+    setAccounts(rows);
+    return rows;
+  }, [gid]);
+  useEffect(() => { reloadAccounts().catch(() => setAccounts([])); }, [reloadAccounts]);
+  /** After connecting or disconnecting here: the flows' issue counts in the list depend on which accounts work. */
+  const accountsChanged = useCallback(async () => {
+    await reloadAccounts();
+    api(`/guilds/${gid}/flows`).then(setFlows).catch(() => {});
+  }, [gid, reloadAccounts]);
+  const accountFlags = useMemo(() => (accounts ? Object.fromEntries(accounts.map((a) => [a.provider, a.status === 'ok'])) : undefined), [accounts]);
+  // coming back from Twitch / TikTok: say how it went, once, and show the accounts
+  useEffect(() => {
+    const back = takeConnectResult();
+    if (!back) return;
+    toast(back.message, back.error ? 'error' : undefined);
+    setDialog('accounts');
+  }, [toast]);
 
   // ---- initial load ---------------------------------------------------------------------------
   useEffect(() => {
@@ -147,10 +170,12 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
         {guild.icon ? <img className="guild-icon sm" src={guild.icon} alt="" width="26" height="26" /> : <span className="guild-icon sm fallback" aria-hidden="true">{guild.name[0]}</span>}
         <b className="guild-title">{guild.name}</b>
         <span className="spacer" />
+        <button className="btn ghost small wide-only" onClick={() => setDialog('accounts')}>Accounts</button>
         <button className="btn ghost small wide-only" onClick={() => setDialog('vars')}>Variables</button>
         <button className="btn ghost small wide-only" onClick={() => setLibrary({})}>Pictures</button>
         <button className="btn ghost small wide-only" onClick={() => setShowLogs((s) => !s)} aria-pressed={showLogs}>{showLogs ? 'Hide logs' : 'Show logs'}</button>
         <MoreMenu className="phone-only" label="⋯" ariaLabel="More actions">
+          <button className="btn ghost small" onClick={() => setDialog('accounts')}>Accounts</button>
           <button className="btn ghost small" onClick={() => setDialog('vars')}>Variables</button>
           <button className="btn ghost small" onClick={() => setLibrary({})}>Pictures</button>
           <button className="btn ghost small" onClick={() => setShowLogs((s) => !s)}>{showLogs ? 'Hide logs' : 'Show logs'}</button>
@@ -207,7 +232,7 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
           ) : flow && flow.id === flowId ? (
             <ReactFlowProvider key={flow.id}>
               <FlowWorkspace
-                gid={gid} flow={flow} meta={me.meta} guildData={guildData} flash={flash}
+                gid={gid} flow={flow} meta={me.meta} accounts={accountFlags} guildData={guildData} flash={flash}
                 apiRef={apiRef} dirtyRef={dirtyRef} onSaved={onSaved} onToggle={onToggle}
               />
             </ReactFlowProvider>
@@ -225,6 +250,7 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
       {dialog === 'new' && <NewFlowDialog templates={me.meta.templates} onCreate={createFlow} onClose={() => setDialog(null)} />}
       {dialog === 'newpage' && <NewPageDialog onCreate={async (payload) => { await pagesApi.createPage(payload); setDialog(null); }} onClose={() => setDialog(null)} />}
       {dialog === 'vars' && <VariablesDialog gid={gid} onClose={() => setDialog(null)} />}
+      {dialog === 'accounts' && <ConnectionsDialog gid={gid} accounts={accounts} reload={accountsChanged} refresh={reloadAccounts} onClose={() => setDialog(null)} />}
       {library && (
         <ImageLibrary
           library={uploads} meta={me.meta.uploads} limits={me.meta.limits} current={library.current}

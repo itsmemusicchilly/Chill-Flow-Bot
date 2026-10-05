@@ -43,6 +43,8 @@ Every platform below ends up with the same settings, either in a file called **`
 | `PORT` | `3000` (default) | the port the dashboard listens on |
 | `HOST` | `127.0.0.1` (default) = only this machine; `0.0.0.0` = reachable from other machines | **must be `0.0.0.0`** inside Docker, Heroku and game panels |
 | `TRUST_PROXY` | `1` when a reverse proxy (Caddy, nginx, a NAS's proxy) sits in front | lets the app see the real visitor address and use secure cookies |
+| `YOUTUBE_API_KEY`, `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET`, `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` | keys from those platforms | optional: only for the YouTube / Twitch / TikTok triggers. For Twitch and TikTok *follower* counters, also add `BASE_URL/auth/twitch/callback` / `BASE_URL/auth/tiktok/callback` as redirect addresses in their developer consoles (TikTok needs `https`). See the README's *Counting subscribers and followers* |
+| `TOKEN_ENCRYPTION_KEY` | a long random string | optional: seals the tokens of connected Twitch/TikTok accounts. Left out, `DISCORD_CLIENT_SECRET` is used |
 | `DATA_DIR` | `data` (default) | where the database, uploaded pictures and saved transcripts live. **Keep it on a disk that survives restarts, and back it up** |
 
 The program reads `.env` by itself when it starts, so you never *have* to set real environment variables. That matters on hosts that don't let you.

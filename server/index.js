@@ -1,9 +1,11 @@
 import path from 'node:path';
 import { applyLimits } from '../shared/limits.js';
+import { createAccounts } from './accounts.js';
 import { ConfigError, loadConfig } from './config.js';
 import { Database } from './db.js';
 import { Runtime } from './engine/runtime.js';
 import { warmUp } from './images.js';
+import { safeFetch } from './net/safe-fetch.js';
 import { Logger } from './logger.js';
 import { createTranscripts } from './transcripts.js';
 import { createUploads } from './uploads.js';
@@ -26,10 +28,11 @@ const db = new Database(path.join(config.dataDir, 'flowbot.sqlite'));
 const uploads = createUploads({ config, db, logger });
 const transcripts = createTranscripts({ config, db, logger });
 warmUp(); // load the image library now, so the first upload is not slow (and a missing binary shows up in the log at start)
-const runtime = new Runtime({ db, logger, intents: config.intents, uploads, transcripts, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes });
+const accounts = createAccounts({ config, db, fetch: safeFetch, logger });
+const runtime = new Runtime({ db, logger, intents: config.intents, uploads, transcripts, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes, accounts });
 const sync = new CommandSync({ db, runtime, logger, config });
-const bot = new BotManager({ config, runtime, logger, sync });
-const app = createApp({ config, db, runtime, bot, sync, logger, uploads, transcripts });
+const bot = new BotManager({ config, runtime, logger, sync, accounts });
+const app = createApp({ config, db, runtime, bot, sync, logger, uploads, transcripts, accounts });
 
 const server = app.listen(config.port, config.host, () => {
   console.log(`Dashboard: ${config.baseUrl}  (listening on ${config.host}:${config.port})`);

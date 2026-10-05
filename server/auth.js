@@ -22,7 +22,7 @@ export function parseCookies(header = '') {
   return out;
 }
 
-const safeEqual = (a, b) => {
+export const safeEqual = (a, b) => {
   const x = Buffer.from(String(a ?? ''));
   const y = Buffer.from(String(b ?? ''));
   return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);

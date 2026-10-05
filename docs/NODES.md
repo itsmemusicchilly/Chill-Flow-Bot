@@ -348,7 +348,7 @@ tell nodes apart; it is never sent to Discord.
 
 ### 🟣 Twitch Channel Live
 
-`trigger.twitch.live` — Runs when a Twitch channel starts a new broadcast. A broadcast that is already running when you switch the flow on is not announced. (Followers cannot be watched from outside — use the Webhook trigger with StreamElements, Streamlabs or Zapier.) Needs the bot operator’s Twitch application.
+`trigger.twitch.live` — Runs when a Twitch channel starts a new broadcast. A broadcast that is already running when you switch the flow on is not announced. (For followers use “Twitch Followers”.) Needs the bot operator’s Twitch application.
 
 > Needs a Twitch application (TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET) — the bot operator must set it up (see `.env.example`).
 
@@ -359,6 +359,49 @@ tell nodes apart; it is never sent to Discord.
 | Channel for context (optional) | channel |  |
 
 **Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{twitch.user}}`, `{{twitch.login}}`, `{{twitch.title}}`, `{{twitch.game}}`, `{{twitch.viewers}}`, `{{twitch.url}}`, `{{twitch.thumbnail}}`, `{{twitch.started}}`, `{{twitch.id}}`
+
+### 📈 YouTube Subscribers Gained
+
+`trigger.youtube.gained` — Runs when a YouTube channel gets new subscribers (or, for a counter, whenever its count changes). YouTube rounds public counts to three significant figures once a channel has more than 1,000, so a big channel moves in small jumps rather than one by one. The count that is already there when you switch the flow on is only noted. Needs the bot operator’s YouTube API key.
+
+> Needs a YouTube API key (YOUTUBE_API_KEY) — the bot operator must set it up (see `.env.example`).
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| YouTube channel ID | text | required; It starts with UC and has 24 characters. In YouTube: your channel → About → Share → Copy channel ID. (A link with /channel/UC… in it works too.) |
+| Run | select | options: Each time it goes up, Every time it changes (for counters); “Each time it goes up” suits a thank-you message. “Every time it changes” also runs when the count drops and once when you switch the flow on, so a counter channel is right straight away. |
+| Check every (minutes) | number | required; range 15–… |
+| Channel for context (optional) | channel |  |
+
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{youtube.subscribers}}`, `{{youtube.gained}}`, `{{youtube.change}}`, `{{youtube.previous}}`, `{{youtube.channelTitle}}`, `{{youtube.channelId}}`, `{{youtube.url}}`
+
+### 💜 Twitch Followers
+
+`trigger.twitch.followers` — Runs when the Twitch channel connected to this server gets new followers (or, for a counter, whenever its follower count changes). Connect the channel once under “Accounts” in the top bar: the streamer approves it on Twitch. You get the number gained since the last check, not one run per follower. The count that is there when you switch the flow on is only noted. Needs the bot operator’s Twitch application.
+
+> Needs a Twitch application (TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET) — the bot operator must set it up (see `.env.example`).
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Run | select | options: Each time it goes up, Every time it changes (for counters); “Each time it goes up” suits a thank-you message. “Every time it changes” also runs when the count drops and once when you switch the flow on, so a counter channel is right straight away. |
+| Check every (minutes) | number | required; range 1–… |
+| Channel for context (optional) | channel |  |
+
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{twitch.followers}}`, `{{twitch.gained}}`, `{{twitch.change}}`, `{{twitch.previous}}`, `{{twitch.name}}`, `{{twitch.login}}`, `{{twitch.url}}`
+
+### 🎵 TikTok Followers
+
+`trigger.tiktok.followers` — Runs when the TikTok account connected to this server gets new followers (or, for a counter, whenever its follower count changes). Connect the account once under “Accounts” in the top bar: the creator approves it on TikTok. You get the number gained since the last check, not one run per follower. The count that is there when you switch the flow on is only noted. Needs the bot operator’s TikTok developer app.
+
+> Needs a TikTok developer app (TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET) — the bot operator must set it up (see `.env.example`).
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Run | select | options: Each time it goes up, Every time it changes (for counters); “Each time it goes up” suits a thank-you message. “Every time it changes” also runs when the count drops and once when you switch the flow on, so a counter channel is right straight away. |
+| Check every (minutes) | number | required; range 5–… |
+| Channel for context (optional) | channel |  |
+
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{tiktok.followers}}`, `{{tiktok.gained}}`, `{{tiktok.change}}`, `{{tiktok.previous}}`, `{{tiktok.name}}`
 
 ### ▶️ Manual (Run button)
 

@@ -2,7 +2,10 @@
 // this file; the server uses it to validate graphs, compute handles and activate triggers.
 import { CronError, nextRuns, scheduleOf, timeZoneNames, WEEKDAYS } from './cron.js';
 import { DEFAULT_FEED_MINUTES, FEED_SOURCES, FeedSettingError, MIN_FEED_MINUTES, feedUrlOf, parsePublicHttpsUrl } from './feeds.js';
-import { DEFAULT_TWITCH_MINUTES, DEFAULT_YOUTUBE_MINUTES, MIN_TWITCH_MINUTES, MIN_YOUTUBE_MINUTES, twitchSettings, youtubeSettings } from './platforms.js';
+import {
+  COUNT_MODES, countSettings, DEFAULT_TIKTOK_MINUTES, DEFAULT_TWITCH_FOLLOWER_MINUTES, DEFAULT_TWITCH_MINUTES, DEFAULT_YOUTUBE_COUNT_MINUTES, DEFAULT_YOUTUBE_MINUTES,
+  MIN_TIKTOK_MINUTES, MIN_TWITCH_FOLLOWER_MINUTES, MIN_TWITCH_MINUTES, MIN_YOUTUBE_MINUTES, twitchSettings, youtubeCountSettings, youtubeSettings,
+} from './platforms.js';
 import { area, bool, color, idField, image, isVisible, list, multi, num, select, text, VAR_NAME_RE, when, whenNot } from './fields.js';
 import { uid } from './util.js';
 import { blankEmbed, EMBED_PARTS, embedsOf, MAX_EMBEDS } from './embeds.js';
@@ -384,7 +387,7 @@ trigger('trigger.youtube.subscribers', {
 });
 trigger('trigger.twitch.live', {
   label: 'Twitch Channel Live', icon: '🟣', needs: 'twitch',
-  description: 'Runs when a Twitch channel starts a new broadcast. A broadcast that is already running when you switch the flow on is not announced. (Followers cannot be watched from outside — use the Webhook trigger with StreamElements, Streamlabs or Zapier.) Needs the bot operator’s Twitch application.',
+  description: 'Runs when a Twitch channel starts a new broadcast. A broadcast that is already running when you switch the flow on is not announced. (For followers use “Twitch Followers”.) Needs the bot operator’s Twitch application.',
   fields: [
     text('login', 'Twitch channel', { required: true, placeholder: 'shroud', help: 'The channel name, or a twitch.tv link.' }),
     num('minutes', 'Check every (minutes)', { default: DEFAULT_TWITCH_MINUTES, min: MIN_TWITCH_MINUTES, required: true }),
@@ -400,6 +403,57 @@ trigger('trigger.twitch.live', {
     if (!String(d.login ?? '').trim()) return [];
     try { twitchSettings(d); return []; } catch (e) { if (e instanceof FeedSettingError) return [e.message]; throw e; }
   },
+});
+// ---- counts: subscribers and followers ----------------------------------------------------------------------------------------------
+const COUNT_FIELDS = (min, def) => [
+  select('fire', 'Run', COUNT_MODES, { default: 'gain', help: '“Each time it goes up” suits a thank-you message. “Every time it changes” also runs when the count drops and once when you switch the flow on, so a counter channel is right straight away.' }),
+  num('minutes', 'Check every (minutes)', { default: def, min, required: true }),
+  idField('channelId', 'Channel for context (optional)', 'channel'),
+];
+const COUNT_VARS = (ns, noun) => [
+  [`${ns}.${noun}`, 'The count now'], [`${ns}.gained`, 'How many were gained since the last check (0 if it went down)'], [`${ns}.change`, 'The change since the last check (negative if it went down)'], [`${ns}.previous`, 'The count at the last check'],
+];
+const countCheck = (settings) => (d) => {
+  try { settings(d); return []; } catch (e) { if (e instanceof FeedSettingError) return [e.message]; throw e; }
+};
+trigger('trigger.youtube.gained', {
+  label: 'YouTube Subscribers Gained', icon: '📈', needs: 'youtube',
+  description: 'Runs when a YouTube channel gets new subscribers (or, for a counter, whenever its count changes). YouTube rounds public counts to three significant figures once a channel has more than 1,000, so a big channel moves in small jumps rather than one by one. The count that is already there when you switch the flow on is only noted. Needs the bot operator’s YouTube API key.',
+  fields: [
+    text('channel', 'YouTube channel ID', { required: true, placeholder: 'UC…', help: 'It starts with UC and has 24 characters. In YouTube: your channel → About → Share → Copy channel ID. (A link with /channel/UC… in it works too.)' }),
+    ...COUNT_FIELDS(MIN_YOUTUBE_MINUTES, DEFAULT_YOUTUBE_COUNT_MINUTES),
+  ],
+  provides: () => [
+    ...GUILD, ...CHANNEL,
+    ['youtube.subscribers', 'Subscribers now'], ['youtube.gained', 'How many were gained since the last check (0 if it went down)'], ['youtube.change', 'The change since the last check (negative if it went down)'], ['youtube.previous', 'Subscribers at the last check'],
+    ['youtube.channelTitle', 'Channel name'], ['youtube.channelId', 'Channel ID'], ['youtube.url', 'Link to the channel'],
+  ],
+  summary: (d) => (d.channel ? `${String(d.channel).slice(-24)} · ${d.fire === 'change' ? 'every change' : 'each gain'}` : 'choose a channel'),
+  check: (d) => (String(d.channel ?? '').trim() ? countCheck(youtubeCountSettings)(d) : []),
+});
+trigger('trigger.twitch.followers', {
+  label: 'Twitch Followers', icon: '💜', needs: 'twitch', connect: 'twitch',
+  description: 'Runs when the Twitch channel connected to this server gets new followers (or, for a counter, whenever its follower count changes). Connect the channel once under “Accounts” in the top bar: the streamer approves it on Twitch. You get the number gained since the last check, not one run per follower. The count that is there when you switch the flow on is only noted. Needs the bot operator’s Twitch application.',
+  fields: COUNT_FIELDS(MIN_TWITCH_FOLLOWER_MINUTES, DEFAULT_TWITCH_FOLLOWER_MINUTES),
+  provides: () => [
+    ...GUILD, ...CHANNEL,
+    ...COUNT_VARS('twitch', 'followers'),
+    ['twitch.name', 'Streamer name'], ['twitch.login', 'Channel name (lowercase)'], ['twitch.url', 'Link to the channel'],
+  ],
+  summary: (d) => (d.fire === 'change' ? 'every change' : 'each gain'),
+  check: countCheck((d) => countSettings(d, { min: MIN_TWITCH_FOLLOWER_MINUTES })),
+});
+trigger('trigger.tiktok.followers', {
+  label: 'TikTok Followers', icon: '🎵', needs: 'tiktok', connect: 'tiktok',
+  description: 'Runs when the TikTok account connected to this server gets new followers (or, for a counter, whenever its follower count changes). Connect the account once under “Accounts” in the top bar: the creator approves it on TikTok. You get the number gained since the last check, not one run per follower. The count that is there when you switch the flow on is only noted. Needs the bot operator’s TikTok developer app.',
+  fields: COUNT_FIELDS(MIN_TIKTOK_MINUTES, DEFAULT_TIKTOK_MINUTES),
+  provides: () => [
+    ...GUILD, ...CHANNEL,
+    ...COUNT_VARS('tiktok', 'followers'),
+    ['tiktok.name', 'Account name'],
+  ],
+  summary: (d) => (d.fire === 'change' ? 'every change' : 'each gain'),
+  check: countCheck((d) => countSettings(d, { min: MIN_TIKTOK_MINUTES })),
 });
 trigger('trigger.manual', {
   label: 'Manual (Run button)', icon: '▶️',

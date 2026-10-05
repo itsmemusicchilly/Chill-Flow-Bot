@@ -728,7 +728,7 @@ try {
   await shot('37-feed-inspector');
 
   await page.getByRole('tab', { name: 'Nodes' }).click();
-  const ytItem = page.getByRole('button', { name: /YouTube Subscribers/ });
+  const ytItem = page.getByRole('button', { name: /^YouTube Subscribers$/ });
   const twItem = page.getByRole('button', { name: /Twitch Channel Live/ });
   ok(!(await ytItem.evaluate((el) => el.classList.contains('blocked'))) && (await twItem.evaluate((el) => el.classList.contains('blocked'))), 'the palette locks Twitch (the demo operator has no Twitch application) but not YouTube (it has a key)');
   await twItem.click();
@@ -740,6 +740,86 @@ try {
   await ytItem.click();
   await page.locator('.fnode', { hasText: 'YouTube Subscribers' }).waitFor();
   ok((await feed.getByText(/needs a YouTube API key/).count()) === 0 && (await feed.getByLabel(/^Announce every/).inputValue()) === '1000', 'a YouTube Subscribers node has no such warning, and starts at every 1,000');
+
+  // =================================================================================================
+  // Count triggers (subscribers / followers gained) and the Connected accounts dialog
+  // =================================================================================================
+  await page.getByRole('tab', { name: 'Nodes' }).click();
+  ok((await page.getByRole('button', { name: /^YouTube Subscribers Gained$/ }).count()) === 1 && (await page.getByRole('button', { name: /^TikTok Followers$/ }).count()) === 1 && (await page.getByRole('button', { name: /^Twitch Followers/ }).count()) === 1, 'the palette offers YouTube Subscribers Gained, Twitch Followers and TikTok Followers');
+  ok((await page.getByRole('button', { name: /^Twitch Followers/ }).evaluate((el) => el.classList.contains('blocked'))) && !(await page.getByRole('button', { name: /^TikTok Followers$/ }).evaluate((el) => el.classList.contains('blocked'))), 'Twitch Followers is locked (no Twitch application in the demo) and TikTok Followers is not');
+  await page.getByRole('button', { name: /^TikTok Followers$/ }).click();
+  const tkNode = page.locator('.fnode', { hasText: 'TikTok Followers' });
+  await tkNode.waitFor();
+  const tk = page.getByRole('complementary', { name: 'Node settings' });
+  await tk.getByText(/Connect a TikTok account first/).waitFor();
+  ok(true, 'a TikTok Followers node says an account must be connected first, and that it will not run until then');
+  ok((await tk.getByLabel('Run', { exact: true }).inputValue()) === 'gain' && (await tk.getByLabel(/^Check every/).inputValue()) === '15', 'it starts on “Each time it goes up”, every 15 minutes');
+  await tk.getByLabel('Run', { exact: true }).selectOption('change');
+  ok((await tkNode.textContent()).includes('every change'), 'the node card summarises the choice (every change)');
+  await shot('40-tiktok-not-connected');
+
+  await page.getByRole('button', { name: 'Accounts' }).click();
+  const acc = page.getByRole('dialog', { name: 'Connected accounts' });
+  await acc.waitFor();
+  const tkRow = acc.locator('.account-row[data-provider="tiktok"]');
+  const twRow = acc.locator('.account-row[data-provider="twitch"]');
+  ok((await acc.locator('.account-row').count()) === 2, 'the dialog lists Twitch and TikTok');
+  ok(await twRow.getByText(/operator has not set up Twitch/).isVisible() && (await twRow.getByRole('button').count()) === 0, 'Twitch says the bot operator has not set it up, and has no Connect button');
+  ok(await tkRow.getByRole('button', { name: 'Connect TikTok' }).isEnabled() && (await tkRow.getByText('Connected', { exact: true }).count()) === 0, 'TikTok can be connected and is not connected yet');
+  await shot('41-accounts-dialog');
+
+  await page.keyboard.press('Escape');
+
+  // Pressing Connect sends the browser to TikTok's approval page; here that page is faked, and the check plays TikTok's part of sending the person
+  // back. It happens in a second tab, so the flow being edited in this one stays as it is.
+  const tab2 = await page.context().newPage();
+  tab2.on('pageerror', (e) => errors.push(`pageerror (tab 2): ${e.message}`));
+  let approval = '';
+  await tab2.route('https://www.tiktok.com/**', (route) => { approval = route.request().url(); return route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>TikTok approval page (pretend)</h1>' }); });
+  // a forged return (a code and a state nobody asked for) connects nothing, and says so
+  await tab2.goto(`${BASE}/auth/tiktok/callback?code=good-code&state=${'f'.repeat(48)}`);
+  await tab2.getByRole('heading', { name: 'Choose a server' }).waitFor();
+  await tab2.locator('.toast', { hasText: /could not be connected/ }).first().waitFor();
+  const forged = await tab2.evaluate(async () => (await (await fetch('/api/guilds/100000000000000001/accounts')).json()).find((a) => a.provider === 'tiktok'));
+  ok(forged.connected === false && !tab2.url().includes('connect='), 'a forged return connects nothing, says so, and the address is tidied');
+
+  await tab2.goto(`${BASE}/#/g/100000000000000001`);
+  await tab2.getByRole('button', { name: 'Accounts' }).click();
+  await tab2.getByRole('dialog', { name: 'Connected accounts' }).locator('.account-row[data-provider="tiktok"]').getByRole('button', { name: 'Connect TikTok' }).click();
+  await tab2.getByRole('heading', { name: /TikTok approval page/ }).waitFor();
+  const approvalUrl = new URL(approval);
+  ok(approvalUrl.pathname === '/v2/auth/authorize/' && approvalUrl.searchParams.get('client_key') === 'demo-key' && approvalUrl.searchParams.get('scope') === 'user.info.basic,user.info.stats' && approvalUrl.searchParams.get('redirect_uri') === `${BASE}/auth/tiktok/callback`, 'Connect goes to TikTok\'s approval page with the bot\'s app, the follower permission and the way back');
+  const returnState = approvalUrl.searchParams.get('state');
+  ok(/^[0-9a-f]{48}$/.test(returnState), 'with a one-time state');
+
+  // the real return: the same browser holds the cookie that Connect set
+  await tab2.goto(`${BASE}/auth/tiktok/callback?code=good-code&state=${returnState}`);
+  const back = tab2.getByRole('dialog', { name: 'Connected accounts' });
+  await back.waitFor();
+  const tkBack = back.locator('.account-row[data-provider="tiktok"]');
+  await tkBack.getByText('Connected', { exact: true }).waitFor();
+  ok((await tkBack.getByText('Dancer').count()) === 1 && !tab2.url().includes('connect=') && tab2.url().endsWith('#/g/100000000000000001'), 'back from TikTok: the dialog shows “Connected” and the account name, on the same server, and the address is tidied');
+  ok((await tab2.locator('.toast', { hasText: 'TikTok connected.' }).count()) >= 1, 'and a message says so');
+  const html = await tab2.content();
+  ok(!html.includes('tt-access') && !html.includes('tt-refresh'), 'no token is anywhere in the page');
+  await tab2.screenshot({ path: SHOTS ? path.join(SHOTS, '42-tiktok-connected.png') : undefined }).catch(() => {});
+
+  // the first tab learns about it the next time the dialog is opened, and the node stops saying “connect first”
+  await page.getByRole('button', { name: 'Accounts' }).click();
+  await acc.locator('.account-row[data-provider="tiktok"]').getByText('Connected', { exact: true }).waitFor();
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  ok((await tk.getByText(/Connect a TikTok account first/).count()) === 0, 'the TikTok Followers node no longer says an account must be connected first');
+
+  // disconnecting puts it back
+  await page.getByRole('button', { name: 'Accounts' }).click();
+  await acc.locator('.account-row[data-provider="tiktok"]').getByRole('button', { name: 'Disconnect' }).click(); // the page's dialog handler accepts the “are you sure”
+  await acc.locator('.account-row[data-provider="tiktok"]').getByRole('button', { name: 'Connect TikTok' }).waitFor();
+  ok((await acc.locator('.account-row[data-provider="tiktok"]').getByText('Connected', { exact: true }).count()) === 0, 'Disconnect puts it back to “Connect TikTok”');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  ok((await tk.getByText(/Connect a TikTok account first/).count()) === 1, 'and the node asks for an account again');
+  await tab2.close();
 
   // =================================================================================================
   // Change Buttons (a message that was already sent), and the Channel scope of remembered variables

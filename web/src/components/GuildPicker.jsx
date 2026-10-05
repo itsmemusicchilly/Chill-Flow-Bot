@@ -1,4 +1,7 @@
+import { useEffect } from 'react';
 import { CREDIT } from '@shared/credit.js';
+import { takeConnectResult } from '../api.js';
+import { useToast } from '../context.js';
 
 function Icon({ guild }) {
   if (guild.icon) return <img className="guild-icon" src={guild.icon} alt="" width="48" height="48" />;
@@ -6,6 +9,11 @@ function Icon({ guild }) {
 }
 
 export default function GuildPicker({ me, onOpen, onRefresh, onLogout }) {
+  const toast = useToast();
+  useEffect(() => { // a connection that could not even say which server it was for (an expired or forged return) still tells the person
+    const back = takeConnectResult();
+    if (back) toast(back.message, back.error ? 'error' : undefined);
+  }, [toast]);
   const ready = me.guilds.filter((g) => g.botPresent);
   const missing = me.guilds.filter((g) => !g.botPresent);
   const need = me.meta.minPermission === 'ManageGuild' ? 'Manage Server' : 'Administrator';

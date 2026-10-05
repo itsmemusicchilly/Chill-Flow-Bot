@@ -67,6 +67,8 @@ export function loadConfig(env = process.env) {
   if (!Number.isInteger(transcriptRetentionDays) || transcriptRetentionDays < 0 || transcriptRetentionDays > 3650) {
     throw new ConfigError('TRANSCRIPT_RETENTION_DAYS must be a whole number of days from 0 to 3650 (0 keeps saved transcripts forever, which is the default).');
   }
+  const tokenKey = String(env.TOKEN_ENCRYPTION_KEY ?? '').trim();
+  if (tokenKey && tokenKey.length < 16) throw new ConfigError('TOKEN_ENCRYPTION_KEY must be at least 16 characters (a long random string; leave it out to use DISCORD_CLIENT_SECRET instead).');
   return {
     token: env.DISCORD_TOKEN,
     clientId: env.DISCORD_CLIENT_ID,
@@ -86,7 +88,9 @@ export function loadConfig(env = process.env) {
     integrations: {
       youtube: String(env.YOUTUBE_API_KEY ?? '').trim(),
       twitch: { clientId: String(env.TWITCH_CLIENT_ID ?? '').trim(), clientSecret: String(env.TWITCH_CLIENT_SECRET ?? '').trim() },
+      tiktok: { clientKey: String(env.TIKTOK_CLIENT_KEY ?? '').trim(), clientSecret: String(env.TIKTOK_CLIENT_SECRET ?? '').trim() },
     },
+    tokenKey,
     sessionTtlMs: 7 * 24 * 3600 * 1000,
   };
 }

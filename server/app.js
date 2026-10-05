@@ -2,17 +2,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
+import { createAccounts } from './accounts.js';
 import { createApi, HttpError } from './api.js';
 import { createHooks } from './hooks.js';
 import { createAuth } from './auth.js';
+import { createConnect } from './connect.js';
 import { createPublic } from './public.js';
 import { createTranscripts } from './transcripts.js';
 import { createUploads } from './uploads.js';
+import { safeFetch } from './net/safe-fetch.js';
 import { FlowError } from './engine/errors.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-export function createApp({ config, db, runtime, bot, sync, logger, fetchImpl, uploads = createUploads({ config, db, logger }), transcripts = createTranscripts({ config, db, logger }), distDir = path.join(ROOT, 'dist') }) {
+export function createApp({ config, db, runtime, bot, sync, logger, fetchImpl, uploads = createUploads({ config, db, logger }), transcripts = createTranscripts({ config, db, logger }), accounts = createAccounts({ config, db, fetch: safeFetch, logger }), distDir = path.join(ROOT, 'dist') }) {
   const app = express();
   app.disable('x-powered-by');
   if (config.trustProxy) app.set('trust proxy', config.trustProxy);
@@ -31,11 +34,13 @@ export function createApp({ config, db, runtime, bot, sync, logger, fetchImpl, u
 
   const auth = createAuth({ config, db, fetchImpl, log: (m) => logger.log(null, 'warn', m) });
   app.use(auth.router);
+  const connect = createConnect({ config, auth, accounts, bot, runtime, logger });
+  app.use(connect.router); // “Connect Twitch / TikTok” coming back from the platform: /auth/<provider>/callback
   app.get('/healthz', (_req, res) => res.json({ ok: true, botReady: Boolean(bot.ready) }));
   app.use('/s', createPublic({ config, db, runtime, bot, logger, auth }).router); // public pages: no dashboard session, own CSP
   app.use('/i', uploads.files); // uploaded pictures: public, read-only, no session
   app.use('/t', transcripts.files); // saved transcripts: public to anyone with the link, read-only, no session
-  app.use('/api', createApi({ config, db, runtime, bot, sync, logger, auth, uploads }));
+  app.use('/api', createApi({ config, db, runtime, bot, sync, logger, auth, uploads, accounts, connect }));
 
   const indexHtml = path.join(distDir, 'index.html');
   if (fs.existsSync(indexHtml)) {

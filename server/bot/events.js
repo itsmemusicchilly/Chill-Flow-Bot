@@ -5,7 +5,7 @@ import { executorData } from '../engine/serialize.js';
 const AUDIT_WINDOW_MS = 15000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export function wireEvents({ client, runtime, logger, sync, auditDelayMs = 1000 }) {
+export function wireEvents({ client, runtime, logger, sync, accounts = null, auditDelayMs = 1000 }) {
   const { selfActions, components, db } = runtime.services;
   const warned = new Map();
   const has = (guild, type) => runtime.hasTrigger(guild.id, type);
@@ -33,7 +33,15 @@ export function wireEvents({ client, runtime, logger, sync, auditDelayMs = 1000 
   }
 
   client.on(Events.InteractionCreate, (i) => runtime.handleInteraction(i));
-  client.on(Events.GuildCreate, (guild) => { sync.sync(guild.id).catch(() => {}); });
+  client.on(Events.GuildCreate, (guild) => {
+    runtime.loadGuild(guild.id); // idempotent; brings back the flows of a server the bot was removed from and then added to again
+    sync.sync(guild.id).catch(() => {});
+  });
+  // The bot was removed (or the server deleted): stop watching for it and drop the tokens of the creator accounts it had connected.
+  client.on(Events.GuildDelete, (guild) => {
+    runtime.unloadGuild(guild.id);
+    accounts?.removeGuild(guild.id).catch((err) => logger.log(null, 'warn', `Could not clear the connected accounts of a server the bot left: ${err?.message || err}`));
+  });
 
   // ---- messages -------------------------------------------------------------------------------
   client.on(Events.MessageCreate, safe('message', async (m) => {

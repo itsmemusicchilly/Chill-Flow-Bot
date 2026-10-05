@@ -34,6 +34,22 @@ export async function logout() {
   await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
 }
 
+/**
+ * Coming back from Twitch / TikTok ("Connect …"): what the address says about it, read once and then removed from the address.
+ * Returns `{ result: 'ok' | 'denied' | 'failed', message, error }`, or null when this is not such a visit.
+ */
+export function takeConnectResult() {
+  const q = new URLSearchParams(window.location.search);
+  const result = q.get('connect');
+  if (!result) return null;
+  const label = { twitch: 'Twitch', tiktok: 'TikTok' }[q.get('provider')] ?? 'The account';
+  const reason = q.get('reason');
+  window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`);
+  if (result === 'ok') return { result, message: `${label} connected.`, error: false };
+  if (result === 'denied') return { result, message: `${label} was not connected: the approval was cancelled.`, error: true };
+  return { result: 'failed', message: reason || `${label} could not be connected. Try again.`, error: true };
+}
+
 /** `#/g/<guildId>` · `#/g/<guildId>/f/<flowId>` · `#/g/<guildId>/p/<pageId>` */
 export function parseHash(hash = window.location.hash) {
   const m = hash.match(/^#\/g\/(\d+)(?:\/([fp])\/([\w-]+))?/);
