@@ -112,6 +112,10 @@ try {
   await page.getByRole('button', { name: /Give Role/ }).click();
   await page.waitForTimeout(300);
   ok((await page.locator('.fnode', { hasText: 'Give Role' }).count()) === 1, 'clicking a palette item adds the node');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  ok((await page.locator('.fnode', { hasText: 'Give Role' }).count()) === 0, 'Undo removes the node that was just added');
+  await page.keyboard.press('Control+Shift+Z');
+  ok((await page.locator('.fnode', { hasText: 'Give Role' }).count()) === 1, 'Redo puts that node back');
   const rects = await page.locator('.fnode').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON()));
   const overlap = rects.some((a, i) => rects.some((b, j) => i < j && a.left < b.right - 4 && b.left < a.right - 4 && a.top < b.bottom - 4 && b.top < a.bottom - 4));
   ok(!overlap, 'a newly added node does not land on top of another node');
