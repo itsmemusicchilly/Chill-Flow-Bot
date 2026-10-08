@@ -22,6 +22,7 @@ import { FlowAbort, friendlyError } from './errors.js';
 import { RateLimiter, SelfActions } from './rate-limit.js';
 import { Watchers } from './watchers.js';
 import { autoDefer, finalize, newAck } from './responder.js';
+import { MessageMemory } from './message-memory.js';
 import { channelData, guildData, memberData, messageData, roleData, userData } from './serialize.js';
 import { matches } from './triggers.js';
 
@@ -52,6 +53,7 @@ export class Runtime {
       channelEdits: new ChannelEdits(),
       cooldowns: new Map(),
       components: new ComponentState({ db }),
+      messageMemory: new MessageMemory(),
       guard: { runs: new RateLimiter(() => LIMITS.runsPer10s, 10000), actions: new RateLimiter(() => LIMITS.actionsPer10s, 10000) },
     };
     this.index = new Map(); // guildId -> { flows, triggers: Map<type, {flow,node}[]>, commands: Map<name, {flow,node}>, buttons: Map<buttonId, {flow,node}> }
@@ -113,6 +115,7 @@ export class Runtime {
       }
     }
     this.index.set(guildId, entry);
+    if (!entry.triggers.get('trigger.message.deleted')?.length) this.services.messageMemory.clear(guildId);
     this.#stopRemovedRuns(guildId, entry);
     this.watchers.sync(guildId);
     this.syncSchedules(guildId); // also decides whether the one-minute ticker is needed (schedules AND watchers use it)
@@ -143,6 +146,7 @@ export class Runtime {
     this.#stopRemovedRuns(guildId, { flows: new Map() });
     this.watchers.clear(guildId);
     this.clearSchedules(guildId);
+    this.services.messageMemory.clear(guildId);
     this.services.channelEdits.cancel(guildId);
   }
 

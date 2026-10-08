@@ -57,13 +57,13 @@ tell nodes apart; it is never sent to Discord.
 
 ### 🗑️ Message Deleted
 
-`trigger.message.deleted` — Runs when a message is deleted. Text and author are only known if the bot had seen the message.
+`trigger.message.deleted` — Runs when a message is deleted. The text, author and attachments are filled in when the bot has seen the message (it remembers recent messages while this flow is on). The text needs the Message Content intent.
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | Only in channel (optional) | channel |  |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{message.createdAt}}`, `{{message.attachments}}`, `{{message.attachmentCount}}`
 
 ### 👋 Member Joined
 
