@@ -61,6 +61,7 @@ The program reads `.env` by itself when it starts, so you never *have* to set re
 1. Open `BASE_URL` in a browser → **Log in with Discord**.
 2. Pick a server → **Add bot** (opens Discord; choose the server and accept the permissions) → back in the dashboard press **refresh**.
 3. **+ New flow** → try the *Support tickets* template, fill the highlighted fields, switch it **On**.
+4. **Set up a backup.** Everything the bot knows lives in `DATA_DIR` (the database, uploaded pictures, saved transcripts). `npm run backup` (in the bot's folder) makes a dated copy of all three under `DATA_DIR/backups/` while the bot is running, and keeps the newest 7 (`npm run backup -- --keep 14 --out /another/disk`). Run it once a day from cron (Linux/macOS: `crontab -e` → `30 3 * * * cd /path/to/bot && npm run backup`) or Task Scheduler (Windows), and copy the folder to another disk or computer now and then — a backup on the same disk does not survive the disk. Restoring: stop the bot, put the three things back in `DATA_DIR`, start it. (Connected Twitch/TikTok accounts need the same `TOKEN_ENCRYPTION_KEY`, or `DISCORD_CLIENT_SECRET` when that is not set, or they show “Connect again”.)
 
 ---
 

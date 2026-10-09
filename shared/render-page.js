@@ -72,7 +72,6 @@ const THEMES = {
 const WIDTHS = { narrow: '560px', normal: '720px', wide: '960px' };
 
 const align = (d) => (d.align === 'center' ? ' center' : '');
-const paragraph = (s) => (s ? `<p>${renderInline(s)}</p>` : '');
 const externalLink = (href, inner, cls = '') => `<a${cls ? ` class="${cls}"` : ''} href="${esc(href)}" target="_blank" rel="${REL}">${inner}</a>`;
 
 // ---- blocks -----------------------------------------------------------------------------------------------------------

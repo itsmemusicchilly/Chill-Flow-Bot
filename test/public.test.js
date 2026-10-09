@@ -374,7 +374,7 @@ describe('abuse limits on the public site', () => {
   it('slows a visitor who submits too fast', async () => {
     const strict = await startHarness({ config: { publicRate: { visitor: 3, ip: 1000, views: 1000 } } });
     try {
-      const p = strict.db.createPage({ guildId: A, slug: 'rl', title: 'RL', theme: {}, blocks: [formBlock({ requireMember: false })], published: true });
+      strict.db.createPage({ guildId: A, slug: 'rl', title: 'RL', theme: {}, blocks: [formBlock({ requireMember: false })], published: true });
       const v = { id: 'rl1', sid: strict.visitorSession({ id: 'rl1', name: 'R', avatar: null }) };
       const token = (await strict.call('GET', `/s/${A}/rl`, { sid: null, visitor: v.sid })).text.match(/name="_csrf" value="([0-9a-f]{64})"/)[1];
       const statuses = [];

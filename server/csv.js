@@ -7,4 +7,4 @@ export function csvCell(value) {
 }
 
 /** A UTF-8 BOM keeps Excel from mangling non-ASCII names. */
-export const toCsv = (header, rows) => `﻿${[header, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n')}\r\n`;
+export const toCsv = (header, rows) => `\uFEFF${[header, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n')}\r\n`;

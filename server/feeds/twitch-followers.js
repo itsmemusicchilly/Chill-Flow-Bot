@@ -30,13 +30,11 @@ export const twitchFollowersAdapter = {
       throw new AccountError('Twitch did not allow reading the followers of the connected account. Open “Accounts” and connect it again.', { expired: true });
     }
     if (res.status !== 200) throw new Error(`Twitch answered with an error (${res.status}).`);
-    let total; let latest = '';
-    try {
-      const body = JSON.parse(res.text);
-      total = Number(body.total);
-      latest = String(body.data?.[0]?.user_name ?? body.data?.[0]?.user_login ?? ''); // with first=1 this is the newest follower
-    } catch { throw new Error('Twitch’s answer could not be read.'); }
+    let body;
+    try { body = JSON.parse(res.text); } catch { throw new Error('Twitch’s answer could not be read.'); }
+    const total = Number(body?.total);
     if (!Number.isInteger(total) || total < 0) throw new Error('Twitch’s answer could not be read.');
+    const latest = String(body.data?.[0]?.user_name ?? body.data?.[0]?.user_login ?? ''); // with first=1 this is the newest follower
     accounts.noteCount(guildId, 'twitch', access.accountId, total);
     return { followers: total, name: access.accountName, login: access.accountLogin, accountId: access.accountId, latest };
   },

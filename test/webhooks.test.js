@@ -6,8 +6,6 @@ import { shapeValue } from '../server/hooks.js';
 import { A, B, startHarness } from './helpers/harness.js';
 import { edge, node } from './helpers/fakes.js';
 
-const TOKEN = /^[A-Za-z0-9_-]{43}$/;
-
 describe('webhook addresses and calls', () => {
   let h; let channel; let flow;
   const hook = (over = {}) => ({ sid: null, origin: null, ...over }); // a public call: no dashboard login, no Origin

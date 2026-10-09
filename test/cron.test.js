@@ -236,7 +236,7 @@ describe('scheduleOf (a Schedule node\'s settings)', () => {
     for (const every of [0, -5, '', 'abc', undefined, 0.5]) assert.throws(() => scheduleOf({ every, unit: 'minutes' }), /Interval must be at least 1/, String(every));
     assert.throws(() => scheduleOf({ every: 4000, unit: 'days' }), /longer than 10 years/);
     assert.throws(() => scheduleOf({ every: Infinity, unit: 'days' }), /longer than 10 years/);
-    assert.throws(() => scheduleOf({ every: 1e999, unit: 'days' }), /longer than 10 years/);
+    assert.throws(() => scheduleOf({ every: Number.MAX_VALUE, unit: 'days' }), /longer than 10 years/);
   });
   it('"at a set time" becomes a cron expression in its zone', () => {
     const s = scheduleOf({ mode: 'time', time: '18:00', days: ['fri'], timezone: 'Asia/Tokyo' });

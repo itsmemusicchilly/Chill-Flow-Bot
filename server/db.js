@@ -62,6 +62,9 @@ CREATE TABLE IF NOT EXISTS linked_accounts (
   status TEXT NOT NULL DEFAULT 'ok', connected_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
   PRIMARY KEY (guild_id, provider, account_id)
 );
+CREATE TABLE IF NOT EXISTS connect_pending (
+  state_hash TEXT PRIMARY KEY, guild_id TEXT NOT NULL, user_id TEXT NOT NULL, provider TEXT NOT NULL, expires_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS watch_state (
   guild_id TEXT NOT NULL, flow_id TEXT NOT NULL, node_id TEXT NOT NULL, data TEXT NOT NULL, updated_at INTEGER NOT NULL,
   PRIMARY KEY (guild_id, flow_id, node_id)
@@ -258,6 +261,21 @@ export class Database {
   deleteAccount(guildId, provider, accountId) { this.#stmt('DELETE FROM linked_accounts WHERE guild_id=? AND provider=? AND account_id=?').run(guildId, provider, String(accountId)); }
 
   deleteGuildAccounts(guildId) { this.#stmt('DELETE FROM linked_accounts WHERE guild_id=?').run(guildId); }
+
+  // ---- “Connect Twitch / TikTok” in progress: who started it, for which server. Only a hash of the one-time state is kept, so it survives a restart
+  // (or a second copy of the bot using the same database) without the table being worth stealing. -----------------------------------------------
+  putConnectState(hash, { guildId, userId, provider, expiresAt }, max = 500) {
+    this.#stmt('INSERT OR REPLACE INTO connect_pending (state_hash, guild_id, user_id, provider, expires_at) VALUES (?,?,?,?,?)').run(hash, guildId, userId, provider, expiresAt);
+    this.#stmt('DELETE FROM connect_pending WHERE state_hash IN (SELECT state_hash FROM connect_pending ORDER BY expires_at DESC LIMIT -1 OFFSET ?)').run(max);
+  }
+
+  /** Reads and removes in one step: a state can be used once, even by two copies of the bot at the same moment. */
+  takeConnectState(hash) {
+    const r = this.#stmt('DELETE FROM connect_pending WHERE state_hash = ? RETURNING guild_id, user_id, provider, expires_at').get(String(hash));
+    return r ? { guildId: r.guild_id, userId: r.user_id, provider: r.provider, expiresAt: r.expires_at } : null;
+  }
+
+  pruneConnectStates(now = Date.now()) { this.#stmt('DELETE FROM connect_pending WHERE expires_at <= ?').run(now); }
 
   // ---- variables (scopes: guild, channel, user — never global) ---------------------------------
   getVar(guildId, scope, scopeId, name) {

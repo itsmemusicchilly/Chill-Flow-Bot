@@ -144,7 +144,7 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
     const node = { id: freshId(), type, position: { x: Math.round(pos.x), y: Math.round(pos.y) }, data, selected: true };
     setGraph((g) => ({ ...g, nodes: [...g.nodes.map((n) => ({ ...n, selected: false })), node] }));
     markDirty();
-  }, [rf, markDirty, toast]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rf, markDirty, toast]);  
 
   const duplicateNode = useCallback((id) => {
     const src = graphRef.current.nodes.find((n) => n.id === id);
@@ -153,7 +153,7 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
     copy.position = { x: src.position.x + 40, y: src.position.y + 40 };
     setGraph((g) => ({ ...g, nodes: [...g.nodes.map((n) => ({ ...n, selected: false })), copy] }));
     markDirty();
-  }, [markDirty]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [markDirty]);  
 
   const deleteNode = useCallback((id) => { rf.deleteElements({ nodes: [{ id }] }); }, [rf]);
 

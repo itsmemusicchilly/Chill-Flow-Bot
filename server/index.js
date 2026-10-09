@@ -49,6 +49,7 @@ bot.start().catch((err) => {
 const housekeeping = () => {
   db.pruneSessions();
   db.pruneComponentState();
+  db.pruneConnectStates();
   try { transcripts.prune(); } catch (err) { logger.log(null, 'error', `Clearing out old saved transcripts failed: ${err?.message || err}`); }
 };
 housekeeping();

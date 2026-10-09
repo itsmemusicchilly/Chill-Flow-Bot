@@ -30,7 +30,7 @@ export default function Inspector({ node, nodes, edges, issues, onChange, onDupl
   const fieldsBefore = split ? def.fields.slice(0, split) : def.fields;
   const fieldsAfter = split ? def.fields.slice(split) : [];
 
-  const useVar = (path) => {
+  const insertVar = (path) => {
     const token = `{{${path}}}`;
     if (focusRef.current && document.contains(focusRef.current.el)) insertAtCaret(focusRef.current, token);
     else navigator.clipboard?.writeText(token).catch(() => {});
@@ -70,7 +70,7 @@ export default function Inspector({ node, nodes, edges, issues, onChange, onDupl
           <p className="tiny muted">Click a variable to insert it where your cursor is.</p>
           <div className="chips">
             {vars.map((v) => (
-              <button key={v.path} type="button" className="chip var" title={v.label} onMouseDown={(e) => e.preventDefault()} onClick={() => useVar(v.path)}>
+              <button key={v.path} type="button" className="chip var" title={v.label} onMouseDown={(e) => e.preventDefault()} onClick={() => insertVar(v.path)}>
                 {`{{${v.path}}}`}
               </button>
             ))}

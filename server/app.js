@@ -34,7 +34,7 @@ export function createApp({ config, db, runtime, bot, sync, logger, fetchImpl, u
 
   const auth = createAuth({ config, db, fetchImpl, log: (m) => logger.log(null, 'warn', m) });
   app.use(auth.router);
-  const connect = createConnect({ config, auth, accounts, bot, runtime, logger });
+  const connect = createConnect({ config, db, auth, accounts, bot, runtime, logger });
   app.use(connect.router); // “Connect Twitch / TikTok” coming back from the platform: /auth/<provider>/callback
   app.get('/healthz', (_req, res) => res.json({ ok: true, botReady: Boolean(bot.ready) }));
   app.use('/s', createPublic({ config, db, runtime, bot, logger, auth }).router); // public pages: no dashboard session, own CSP
@@ -56,7 +56,7 @@ export function createApp({ config, db, runtime, bot, sync, logger, fetchImpl, u
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }));
 
-  // eslint-disable-next-line no-unused-vars
+   
   app.use((err, _req, res, _next) => {
     if (err instanceof HttpError) return res.status(err.status).json({ error: err.message, ...err.extra });
     if (err instanceof FlowError) return res.status(400).json({ error: err.message });

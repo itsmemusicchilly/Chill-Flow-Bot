@@ -634,23 +634,30 @@ Full walkthroughs per platform (systemd, Docker, Caddy, panels…): [docs/SETUP.
 * Put HTTPS in front (Caddy/nginx), set `BASE_URL=https://…` and `TRUST_PROXY=1`. Cookies become `Secure` automatically.
 * One process, no sharding — fine up to a couple of thousand servers. The bot caches everything discord.js caches by default.
 * Back up `DATA_DIR/flowbot.sqlite`, `DATA_DIR/uploads/` **and** `DATA_DIR/transcripts/` together (a database row without its file shows a missing picture, or a transcript page that “isn't available”).
+  **`npm run backup`** does exactly that while the bot is running: it makes a dated folder under `DATA_DIR/backups/` with a consistent copy of the database plus the pictures and transcripts, and keeps the newest 7
+  (`npm run backup -- --keep 14 --out /mnt/other-disk/flowbot`). Run it from cron / Task Scheduler, and copy the folder to another disk now and then. To restore, stop the bot and put the three things back in `DATA_DIR`.
+  Connected Twitch/TikTok accounts are sealed with `TOKEN_ENCRYPTION_KEY` (or `DISCORD_CLIENT_SECRET`): restore with the same key, or those accounts show “Connect again” (nothing else is affected).
   Deleting a server's flows/variables is up to you (data is kept if the bot is removed).
 
 ## Development
 
 ```bash
-npm test          # 866 unit + API + event + button/transcript + saved-transcript-link + public-page + upload + draft/live + access + maths + counter + cron/schedule + role-check/title + guarded-fetch/feed/webhook/platform-alert tests (fake Discord objects, in-memory SQLite, a fake clock, a pretend network)
+npm test          # ~1,000 unit + API + event + OAuth + backup + ... tests (fake Discord objects, in-memory SQLite, a fake clock, a pretend network and pretend Twitch / TikTok / YouTube)
+npm run lint      # real mistakes only (unused or undefined names, duplicate keys…), not style
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
+npm run backup    # copy the database, pictures and transcripts into a dated folder (see Hosting notes)
 ```
 
 ```
 shared/   catalog.js (every node) · blocks.js (page blocks) · forms.js · render-page.js · page-meta.js (link previews) · validate.js · templates — used by the editor AND server
-server/   app/api/auth/public (the /s pages) · hooks (the /hooks webhook addresses) · uploads + images (the /i pictures) · db (node:sqlite) · engine/ (runner, templates, executors, responder, watchers) · net/ (the guarded fetcher) · feeds/ (feed parser, YouTube, Twitch) · bot/ (events, commands)
+server/   app/api/auth/public (the /s pages) · hooks (the /hooks webhook addresses) · uploads + images (the /i pictures) · db (node:sqlite) · engine/ (runner, templates, executors, responder, watchers) · net/ (the guarded fetcher) · feeds/ (feed parser, YouTube, Twitch, TikTok, the shared count logic) · accounts (connected Twitch / TikTok accounts, sealed tokens) + connect (the approval round trip) · bot/ (events, commands)
 web/      React + @xyflow/react editor
 test/     node:test suites · e2e/ (Playwright) · helpers/fakes.js
 ```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs lint, build, the unit tests, a check that `docs/` is up to date, and the browser checks on every push to `master` and every pull request.
 
 Adding a node type = one entry in `shared/catalog.js` + one executor in `server/engine/executors/` (a test fails if a
 node has no executor).
@@ -723,6 +730,7 @@ Not yet automated — please run through this once on a test server:
 - [ ] A form with “redirect to another address” lands on that address; the response and its CSV appear in the dashboard.
 - [ ] Pictures: upload a photo taken with a phone (it comes out upright, without location data); pick it for a page and open the
       public page in a private window; on your real domain, use an uploaded picture in a *Send Message* embed and check Discord shows it.
+- [ ] `npm run backup` makes a dated folder under `DATA_DIR/backups/` with `flowbot.sqlite`, `uploads/` and `transcripts/` (try it while the bot runs); a database restored from it opens, and old backups beyond `--keep` disappear.
 - [ ] `DATA_DIR/uploads/` and `DATA_DIR/transcripts/` are part of your backup; restoring the database and the folders together brings the pictures and the transcript links back.
 - [ ] Bot restarts: an old button still works and still knows who opened its ticket (`{{original.user.mention}}`); slash commands are not re-registered needlessly.
 - [ ] Build a flow that loops forever (two Log nodes pointing at each other), run it, confirm other commands still answer,
@@ -730,7 +738,7 @@ Not yet automated — please run through this once on a test server:
 
 ## Ideas not done yet
 
-Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, an outbound HTTP/webhook node, watching X/TikTok/Instagram/Facebook/Twitch followers directly (needs each account's own consent), autocomplete options, sub-commands, embed preview, undo/redo, flow version history,
+Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, an outbound HTTP/webhook node, watching X/Instagram/Facebook posts directly (needs each account's own consent), instant Twitch follower alerts (Twitch can push them, but that needs a public address and a subscription to keep alive; the bot checks every few minutes instead), exact YouTube subscriber counts (needs the channel owner's Google login), autocomplete options, sub-commands, embed preview, undo/redo, flow version history,
 sharding.
 
 ---

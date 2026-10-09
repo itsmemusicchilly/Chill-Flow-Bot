@@ -19,7 +19,7 @@ async function fetchMessage(ctx, channelValue, messageValue) {
 
 async function send({ ctx, d, node }) {
   const payload = buildPayload(ctx, d, node, { replace: d.target === 'update' });
-  let sent = null;
+  let sent;
   switch (d.target) {
     case 'reply': sent = await respond(ctx, 'reply', payload, d.ephemeral); break;
     case 'update': sent = await respond(ctx, 'update', payload); break;
