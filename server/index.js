@@ -6,6 +6,7 @@ import { Runtime } from './engine/runtime.js';
 import { warmUp } from './images.js';
 import { safeFetch } from './net/safe-fetch.js';
 import { Logger } from './logger.js';
+import { createDatabaseFiles } from './files.js';
 import { createTranscripts } from './transcripts.js';
 import { createUploads } from './uploads.js';
 import { createApp } from './app.js';
@@ -29,8 +30,11 @@ try { db = await openDatabase(config); } catch (err) {
   process.exit(1);
 }
 console.log(`Database: ${config.database.label}`);
-const uploads = createUploads({ config, db, logger });
-const transcripts = createTranscripts({ config, db, logger });
+// Without a local disk to rely on (MongoDB, Firebase, Cloudflare D1), pictures and saved transcripts are kept in that database too
+const files = config.database.driver === 'sqlite' ? null : createDatabaseFiles({ db, logger });
+if (files) console.log(`Pictures and saved transcripts are kept in ${config.database.label} too (not on this machine's disk).`);
+const uploads = createUploads({ config, db, logger, files });
+const transcripts = createTranscripts({ config, db, logger, files });
 warmUp(); // load the image library now, so the first upload is not slow (and a missing binary shows up in the log at start)
 const accounts = createAccounts({ config, db, fetch: safeFetch, logger });
 const runtime = new Runtime({ db, logger, intents: config.intents, uploads, transcripts, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes, accounts });

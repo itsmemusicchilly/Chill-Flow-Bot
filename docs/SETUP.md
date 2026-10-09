@@ -50,7 +50,7 @@ Every platform below ends up with the same settings, either in a file called **`
 | `TRUST_PROXY` | `1` when a reverse proxy (Caddy, nginx, a NAS's proxy) sits in front | lets the app see the real visitor address and use secure cookies |
 | `YOUTUBE_API_KEY`, `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET`, `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` | keys from those platforms | optional: only for the YouTube / Twitch / TikTok triggers. For Twitch and TikTok *follower* counters, also add `BASE_URL/auth/twitch/callback` / `BASE_URL/auth/tiktok/callback` as redirect addresses in their developer consoles (TikTok needs `https`). See the README's *Counting subscribers and followers* |
 | `TOKEN_ENCRYPTION_KEY` | a long random string | optional: seals the tokens of connected Twitch/TikTok accounts. Left out, `DISCORD_CLIENT_SECRET` is used |
-| `DATA_DIR` | `data` (default) | where the database, uploaded pictures and saved transcripts live. **Keep it on a disk that survives restarts, and back it up** |
+| `DATA_DIR` | `data` (default) | where the database, uploaded pictures and saved transcripts live. **Keep it on a disk that survives restarts, and back it up** — unless a [cloud database](#5-the-database) is set, which then keeps all of those and leaves `DATA_DIR` empty |
 
 The program reads `.env` by itself when it starts, so you never *have* to set real environment variables. That matters on hosts that don't let you.
 
@@ -70,7 +70,7 @@ The program reads `.env` by itself when it starts, so you never *have* to set re
 
 ### 5. The database
 
-With nothing else set, the bot stores its rows in `DATA_DIR/flowbot.sqlite`. That is the right choice on a machine, a Pi, a NAS or a VPS. Set a cloud database only when you want the rows kept somewhere that is not that disk. Uploaded pictures and saved transcripts are still files under `DATA_DIR` (`uploads/` and `transcripts/`). A cloud database does not hold those files.
+With nothing else set, the bot stores its rows in `DATA_DIR/flowbot.sqlite`. That is the right choice on a machine, a Pi, a NAS or a VPS. Set a cloud database only when you want the rows kept somewhere that is not that disk. Uploaded pictures and saved transcripts are kept in that cloud database too (cut into small pieces, with recently used ones remembered in memory), so with a cloud database nothing the bot needs is on the disk. They do take space there: free plans are small, so on one of those consider `LIMIT_STORAGE_BYTES_PER_GUILD`, `LIMIT_UPLOADS_PER_GUILD` and `TRANSCRIPT_RETENTION_DAYS`. (Switching an existing bot from the local file to a cloud database starts the cloud database empty: rows, pictures and transcripts are not copied over.)
 
 Set **one** of the following. If more than one is filled in, the bot stops at startup and asks you to set `DB_DRIVER` to the one you want. `DB_DRIVER=sqlite` forces the local file even if the other variables are present. The names `local`, `localdb`, `mongo`, `firestore` and `d1` are accepted too.
 
@@ -342,7 +342,7 @@ The best home for a bot that must always be online: a small server (1 GB of memo
 
 ## Heroku
 
-> **Read this first.** Heroku's disk is **temporary**: it is wiped every time the app restarts, is redeployed, or at least once a day. The bot keeps its flows, variables, uploaded pictures and saved transcripts in files on disk, so on Heroku **you would lose them regularly**. A [cloud database](#5-the-database) keeps the rows (flows, variables, pages) across those wipes. Pictures and transcripts are still files, and a sleeping dyno still takes the bot offline. For a real bot use a [VPS](#vps-ubuntu--debian), [Render](#render) (a paid instance with a disk), [Cloudflare](#cloudflare) with a cloud database, a [NAS/Docker host](#home-lab-nas-docker), a Pi, or a [panel with persistent storage](#pterodactyl-and-other-game-panels).
+> **Read this first.** Heroku's disk is **temporary**: it is wiped every time the app restarts, is redeployed, or at least once a day. By default the bot keeps its flows, variables, uploaded pictures and saved transcripts in files on disk, so on Heroku **you would lose them regularly** — unless you set a [cloud database](#5-the-database) (MongoDB, Firebase or Cloudflare D1): then flows, variables, pages, connected accounts, pictures and saved transcripts are all kept in it and survive every wipe. What a cloud database cannot fix is a sleeping dyno, which still takes the bot offline. For a real bot use a [VPS](#vps-ubuntu--debian), [Render](#render) (a paid instance with a disk), [Cloudflare](#cloudflare) with a cloud database, a [NAS/Docker host](#home-lab-nas-docker), a Pi, or a [panel with persistent storage](#pterodactyl-and-other-game-panels).
 > Also, free-tier and Eco dynos **go to sleep** when nobody visits the web page, which takes the bot offline. You need at least a *Basic* dyno for the bot to stay connected.
 
 If you still want to try it:
@@ -361,6 +361,7 @@ If you still want to try it:
    (`git push heroku main` if your branch is called `main`.) The included `Procfile` starts the bot; Heroku supplies `PORT` by itself, and runs `npm run build` for you because the project has a `build` script.
 3. Add `https://my-flowbot.herokuapp.com/auth/callback` as a Redirect in the Discord portal.
 4. There is no `.env` on Heroku (it is not part of the Git repository), so every setting goes in `heroku config:set`.
+5. **Add a cloud database**, or everything is lost at the next restart. Create a free MongoDB Atlas cluster (or a Firebase project, or a Cloudflare D1 database — see [the database](#5-the-database)) and set its keys the same way, for example `heroku config:set MONGODB_URI='mongodb+srv://…'`. Flows, variables, pages, connected accounts, **uploaded pictures and saved transcripts** are then kept there. On a small free database also consider `LIMIT_STORAGE_BYTES_PER_GUILD`, `LIMIT_UPLOADS_PER_GUILD` and `TRANSCRIPT_RETENTION_DAYS`. Keep `DISCORD_CLIENT_SECRET` (or `TOKEN_ENCRYPTION_KEY`) the same from now on: it seals the Twitch and TikTok tokens stored in the database.
 
 ---
 
@@ -422,7 +423,7 @@ Render runs the bot as one web service: a public `https://….onrender.com` addr
 
 Cloudflare can run the bot as **one Container**: a Worker receives the dashboard traffic and forwards it to the included `Dockerfile`. Containers are part of the **Workers Paid** plan. They are not on the free plan.
 
-> **Read this first.** The container's disk is wiped whenever it stops, and Cloudflare can restart the machine under it. It does not promise that a container will keep running for any set length of time. Use a [cloud database](#5-the-database) so flows, variables and the other rows come back. Pictures and transcripts are files in `DATA_DIR` and do **not** come back. An always-on container is billed for the whole time it runs; the hours included with Workers Paid do not cover a bot that stays up all month. The rates are on [Cloudflare's Containers pricing page](https://developers.cloudflare.com/containers/platform/pricing/).
+> **Read this first.** The container's disk is wiped whenever it stops, and Cloudflare can restart the machine under it. It does not promise that a container will keep running for any set length of time. Use a [cloud database](#5-the-database) so everything comes back: flows, variables and the other rows, and the uploaded pictures and saved transcripts too (they are kept in that database). An always-on container is billed for the whole time it runs; the hours included with Workers Paid do not cover a bot that stays up all month. The rates are on [Cloudflare's Containers pricing page](https://developers.cloudflare.com/containers/platform/pricing/).
 >
 > The bot's connection to Discord is outbound. Nobody opening the website does not count as activity, so the steps below keep the container awake on purpose. Use **one** instance. A second copy would log in with the same token and fight the first.
 
@@ -660,7 +661,7 @@ A home network (Pi, NAS, PC) usually has no address that Discord and your member
 | `No such built-in module: node:sqlite` or a `SyntaxError` on start | Node is older than 22.13. Update Node (`node -v`). |
 | You are logged out all the time behind a proxy | Set `TRUST_PROXY=1` and make sure the proxy passes `X-Forwarded-Proto` (Caddy does this automatically). |
 | Transcript links or uploaded pictures do not work | `BASE_URL` is not a public address (it is `localhost`, a private IP, or has no dot). Use your real domain. |
-| Everything was reset after a restart | `DATA_DIR` is on a disk that is wiped (Heroku, a free Render service, Vercel, a Cloudflare container, or a container without a volume). Put it on persistent storage, or set a [cloud database](#5-the-database). Pictures and transcripts are files either way, so they still need a disk that survives a restart. |
+| Everything was reset after a restart | `DATA_DIR` is on a disk that is wiped (Heroku, a free Render service, Vercel, a Cloudflare container, or a container without a volume). Put it on persistent storage, or set a [cloud database](#5-the-database), which keeps the rows, pictures and saved transcripts. |
 | `More than one database is configured` | MongoDB, Firebase and Cloudflare D1 are all partly set. Set `DB_DRIVER` to the one you want, or clear the others. Leave them all unset to use the local SQLite file. |
 | `Could not open the database` | The cloud address, token or service account was refused, or the database is still being created. The line under the message is the reason from that service. |
 | `The database took too long` | A cloud call sat for more than 30 seconds. The bot stops that worker so the next call does not use a half-finished reply. Check that the database is reachable from the machine running the bot. |

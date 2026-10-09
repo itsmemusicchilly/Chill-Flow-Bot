@@ -202,6 +202,41 @@ export class DocumentDatabase {
     }
   }
 
+  // ---- files kept in the database ---------------------------------------------------------------
+  // Pictures and saved transcripts live here instead of on a disk when the bot runs somewhere without a lasting one. A file is a manifest (how many
+  // pieces, how many bytes, its fingerprint) plus its pieces; each piece is small enough for every store (Firestore documents stop at 1 MiB, D1 rows
+  // at 2 MB). Pieces come first and the manifest last, so a file whose upload was cut short simply does not exist. server/files.js does the splitting.
+  async putFileChunk(guildId, kind, fileId, index, data) {
+    const id = docKey(kind, fileId, index);
+    await this.store.put('file_chunks', id, { id, guildId, kind, fileId, index, data });
+  }
+
+  async putFileManifest(guildId, kind, fileId, { bytes, chunks, sha256 }) {
+    const id = docKey(kind, fileId);
+    await this.store.put('file_manifests', id, { id, guildId, kind, fileId, bytes, chunks, sha256, createdAt: Date.now() });
+  }
+
+  async getFileManifest(guildId, kind, fileId) {
+    const row = await this.store.get('file_manifests', docKey(kind, fileId), { guildId });
+    return row ? { bytes: row.bytes, chunks: row.chunks, sha256: row.sha256 } : null;
+  }
+
+  async getFileChunk(guildId, kind, fileId, index) {
+    const row = await this.store.get('file_chunks', docKey(kind, fileId, index), { guildId });
+    return row ? row.data : null;
+  }
+
+  /** The manifest goes first, so from that moment readers see no file; then the pieces (found by the manifest, or by a search when the manifest never got written). */
+  async deleteFile(guildId, kind, fileId) {
+    const manifest = await this.getFileManifest(guildId, kind, fileId);
+    await this.store.delete('file_manifests', docKey(kind, fileId), { guildId });
+    if (manifest) {
+      for (let i = 0; i < manifest.chunks; i += 1) await this.store.delete('file_chunks', docKey(kind, fileId, i), { guildId });
+      return;
+    }
+    for (const row of await this.store.find('file_chunks', { eq: { guildId, kind, fileId } })) await this.store.delete('file_chunks', row.id, { guildId });
+  }
+
   // ---- variables ------------------------------------------------------------------------------
   async getVar(guildId, scope, scopeId, name) {
     const row = await this.store.get('vars', docKey(scope, scopeId, name), { guildId });

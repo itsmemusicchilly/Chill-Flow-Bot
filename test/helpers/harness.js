@@ -6,6 +6,8 @@ import path from 'node:path';
 import { createAccounts } from '../../server/accounts.js';
 import { createApp } from '../../server/app.js';
 import { Database } from '../../server/db.js';
+import { openRemoteDatabase } from '../../server/db/remote.js';
+import { createDatabaseFiles } from '../../server/files.js';
 import { Runtime } from '../../server/engine/runtime.js';
 import { Logger } from '../../server/logger.js';
 import { createTranscripts } from '../../server/transcripts.js';
@@ -18,7 +20,11 @@ export const B = '222222';
 export const STAFF = '333333'; // a role every test server has
 export const MEMBERS = '444444'; // and another one
 
-export async function startHarness({ config: over = {}, distDir = '/nonexistent' } = {}) {
+/**
+ * `database: 'memory'` runs everything on the cloud database bridge (the real worker thread, with an in-memory store) instead of SQLite, with pictures and
+ * transcripts kept in it — the way the bot runs on MongoDB, Firebase or Cloudflare D1. `filesOptions` tunes that file store (chunk size, cache size).
+ */
+export async function startHarness({ config: over = {}, distDir = '/nonexistent', database = 'sqlite', filesOptions = {} } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowbot-test-')); // uploaded images go here, never into the repo
   const config = {
     token: 't', clientId: 'cid', clientSecret: 'secret', baseUrl: ORIGIN, port: 0, host: '127.0.0.1', dataDir,
@@ -28,10 +34,11 @@ export async function startHarness({ config: over = {}, distDir = '/nonexistent'
     managers: new Set([`${A}:u1`, `${B}:u1`]), members: new Set(), syncCalls: [], discordCalls: [],
     discordGuilds: [], discordUser: { id: 'v1', username: 'visitor', global_name: 'Vee', avatar: null },
   };
-  const db = new Database(':memory:');
+  const db = database === 'memory' ? openRemoteDatabase({ driver: 'memory', limits: {} }) : new Database(':memory:');
   const logger = new Logger({ console: false });
-  const uploads = createUploads({ config, db, logger });
-  const transcripts = createTranscripts({ config, db, logger });
+  const files = database === 'memory' ? createDatabaseFiles({ db, logger, ...filesOptions }) : null;
+  const uploads = createUploads({ config, db, logger, files });
+  const transcripts = createTranscripts({ config, db, logger, files });
   // the creator accounts (Twitch, TikTok): `config.accountsFetch` is the pretend network they talk to; without one, any request fails loudly
   const accounts = createAccounts({ config, db, logger, fetch: over.accountsFetch ?? (async (url) => { throw new Error(`unexpected request to ${url}`); }), now: over.now });
   const runtime = new Runtime({ db, logger, intents: config.intents, uploads, transcripts, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes, accounts, ...(over.fetcher ? { fetcher: over.fetcher } : {}) });
@@ -101,5 +108,5 @@ export async function startHarness({ config: over = {}, distDir = '/nonexistent'
     return m;
   };
   const close = async () => { server.close(); db.close(); fs.rmSync(dataDir, { recursive: true, force: true }); };
-  return { config, state, db, logger, runtime, accounts, guilds, bot, base, call, session, visitorSession, uploads, transcripts, dataDir, setRoles, close };
+  return { config, state, db, files, logger, runtime, accounts, guilds, bot, base, call, session, visitorSession, uploads, transcripts, dataDir, setRoles, close };
 }

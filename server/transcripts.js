@@ -1,6 +1,7 @@
 // Saved transcripts: the web page a Save Transcript node can link to (public route /t/<id>), and how long the server keeps it.
 //
-// The page is the same standalone HTML the node can attach as a file. It lives in DATA_DIR/transcripts/<serverId>/<id>.html; the
+// The page is the same standalone HTML the node can attach as a file. It lives in DATA_DIR/transcripts/<serverId>/<id>.html — or, when the bot's
+// storage is MongoDB, Firebase or Cloudflare D1 (no lasting disk), in that database (`files`, see server/files.js); the
 // database row is what makes a transcript exist. The id in the link is the only secret, so a miss never says why: a wrong id, a
 // deleted transcript and an expired one all get the same page.
 //
@@ -28,7 +29,7 @@ h1{margin:0 0 .5rem;font-size:1.25rem}p{margin:0;color:#4f5660}
 <body><main><h1>This transcript isn't available</h1><p>The link may be wrong, or the transcript may have been deleted or may have expired.</p></main></body></html>
 `;
 
-export function createTranscripts({ config, db, logger, now = () => Date.now() }) {
+export function createTranscripts({ config, db, logger, now = () => Date.now(), files: kept = null }) {
   const root = path.resolve(config.dataDir ?? 'data', 'transcripts');
   const tmpDir = path.join(root, '.tmp');
   fs.rmSync(tmpDir, { recursive: true, force: true }); // leftovers of a save that was interrupted by a restart (folders are made on first use)
@@ -57,6 +58,18 @@ export function createTranscripts({ config, db, logger, now = () => Date.now() }
   /** Stores the finished transcript (`doc` is what createTranscript().finish() returns) and gives back its public address. */
   function save(guildId, doc) {
     assertPublic();
+    if (kept) {
+      let stored;
+      try {
+        stored = db.addTranscript({ guildId, name: doc.name, messages: doc.messages, bytes: doc.bytes, truncated: doc.truncated, now: now() });
+        kept.write('transcripts', guildId, stored.id, doc.buffer);
+      } catch (err) { // no transcript exists without both its page and its row
+        if (stored) db.deleteTranscript(stored.id);
+        logger.log(guildId, 'error', `A transcript could not be stored in the database: ${err.message}`);
+        throw new FlowError('The database did not accept the transcript (it may be full or unreachable), so no link was made. See the server log.');
+      }
+      return { id: stored.id, url: `${config.baseUrl}${transcriptPath(stored.id)}`, createdAt: stored.createdAt, expiresAt: expiresAt(stored) };
+    }
     const tmp = path.join(tmpDir, `${uid(16)}.html`);
     fs.mkdirSync(tmpDir, { recursive: true });
     let row;
@@ -79,7 +92,8 @@ export function createTranscripts({ config, db, logger, now = () => Date.now() }
   function remove(id) {
     const row = TRANSCRIPT_ID_RE.test(String(id)) ? db.getTranscript(id) : null;
     if (!row) return false;
-    fs.rmSync(fileFor(row.guildId, row.id), { force: true });
+    if (kept) kept.remove('transcripts', row.guildId, row.id);
+    else fs.rmSync(fileFor(row.guildId, row.id), { force: true });
     return db.deleteTranscript(row.id);
   }
 
@@ -89,7 +103,8 @@ export function createTranscripts({ config, db, logger, now = () => Date.now() }
     const gone = new Map();
     for (const row of db.transcriptsBefore(now() - retentionMs)) {
       try {
-        fs.rmSync(fileFor(row.guildId, row.id), { force: true });
+        if (kept) kept.remove('transcripts', row.guildId, row.id);
+        else fs.rmSync(fileFor(row.guildId, row.id), { force: true });
         db.deleteTranscript(row.id);
         gone.set(row.guildId, (gone.get(row.guildId) ?? 0) + 1);
       } catch (err) {
@@ -118,6 +133,12 @@ export function createTranscripts({ config, db, logger, now = () => Date.now() }
     const row = TRANSCRIPT_ID_RE.test(id) ? db.getTranscript(id) : null;
     if (!row || expired(row)) return missing(res);
     res.set('Content-Type', 'text/html; charset=utf-8');
+    if (kept) {
+      return kept.read('transcripts', row.guildId, row.id).then((page) => {
+        if (!page) { logger.log(row.guildId, 'warn', `The page of the saved transcript “${row.name}” is missing in the database.`); return missing(res); }
+        return res.send(page);
+      }, next);
+    }
     return res.sendFile(`${row.guildId}/${row.id}.html`, { root, dotfiles: 'deny', etag: false, lastModified: false, cacheControl: false, headers: {} }, (err) => {
       if (!err) return undefined;
       if (err.code === 'ENOENT') { logger.log(row.guildId, 'warn', `The page of the saved transcript “${row.name}” is missing on disk.`); return missing(res); }

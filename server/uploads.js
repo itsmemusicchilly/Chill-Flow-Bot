@@ -1,7 +1,8 @@
 // Uploaded pictures: the admin-only API (mounted inside the per-server router) and the public file route /i/<serverId>/<id>.webp.
 //
 // Everything stored here went through server/images.js, so it is a WebP that we encoded ourselves. Files live in
-// DATA_DIR/uploads/<serverId>/<id>.webp; the database row is what makes an image exist, and every lookup is scoped by server.
+// DATA_DIR/uploads/<serverId>/<id>.webp — or, when the bot's storage is MongoDB, Firebase or Cloudflare D1 (no lasting disk), in that database
+// (`files`, see server/files.js). The database row is what makes an image exist, and every lookup is scoped by server.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -48,7 +49,7 @@ export function isPublicBase(baseUrl) {
   return host.includes('.');
 }
 
-export function createUploads({ config, db, logger }) {
+export function createUploads({ config, db, logger, files: kept = null }) {
   const root = path.resolve(config.dataDir ?? 'data', 'uploads');
   const tmpDir = path.join(root, '.tmp');
   fs.rmSync(tmpDir, { recursive: true, force: true }); // leftovers of an upload that was interrupted by a restart (folders are made on first use)
@@ -118,6 +119,30 @@ export function createUploads({ config, db, logger }) {
       throw err;
     }
 
+    const newRow = () => db.addUpload({
+      guildId: gid, name: cleanName(req.headers['x-filename']), bytes: image.data.length, width: image.width, height: image.height,
+      animated: image.animated, sha256: hash, createdBy: { id: req.session.userId, name: req.session.data.user.name },
+    });
+
+    // Kept in the database: the same order — checks, row, file — with nothing waiting in between, and no row is left without its file.
+    if (kept) {
+      const raced = db.getUploadByHash(gid, hash);
+      if (raced) return res.json({ upload: present(raced), duplicate: true });
+      const problem = capProblem(gid, image.data.length);
+      if (problem) throw new HttpError(409, problem);
+      let stored;
+      try {
+        stored = newRow();
+        kept.write('pictures', gid, stored.id, image.data);
+      } catch (err) {
+        if (stored) db.deleteUpload(gid, stored.id);
+        logger.log(gid, 'error', `A picture could not be stored in the database: ${err.message}`);
+        throw new HttpError(507, 'The database did not accept the picture (it may be full or unreachable). See the server log.');
+      }
+      logger.log(gid, 'info', `Image “${stored.name}” (${size(stored.bytes)}) was uploaded by ${req.session.data.user.name}.`);
+      return res.status(201).json({ upload: present(stored) });
+    }
+
     // The heavy part is done. From here the checks, the rename and the insert follow each other without a pause, so two
     // uploads cannot both squeeze under a cap, and no image exists without both its file and its row.
     const tmp = path.join(tmpDir, `${uid(16)}.webp`);
@@ -135,10 +160,7 @@ export function createUploads({ config, db, logger }) {
       if (raced) { fs.rmSync(tmp, { force: true }); return res.json({ upload: present(raced), duplicate: true }); }
       const problem = capProblem(gid, image.data.length);
       if (problem) throw new HttpError(409, problem);
-      row = db.addUpload({
-        guildId: gid, name: cleanName(req.headers['x-filename']), bytes: image.data.length, width: image.width, height: image.height,
-        animated: image.animated, sha256: hash, createdBy: { id: req.session.userId, name: req.session.data.user.name },
-      });
+      row = newRow();
       dest = fileFor(gid, row.id);
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.renameSync(tmp, dest);
@@ -158,7 +180,9 @@ export function createUploads({ config, db, logger }) {
     if (!row) throw new HttpError(404, 'Image not found.');
     const uses = db.uploadUses(gid).get(id) ?? { pages: [], flows: [] };
     db.deleteUpload(gid, id);
-    fs.rmSync(fileFor(gid, id), { force: true });
+    if (kept) {
+      try { kept.remove('pictures', gid, id); } catch (err) { logger.log(gid, 'warn', `The stored copy of image “${row.name}” could not be removed from the database: ${err.message}`); }
+    } else fs.rmSync(fileFor(gid, id), { force: true });
     logger.log(gid, 'info', `Image “${row.name}” was deleted by ${req.session.data.user.name}.`);
     res.json({ ok: true, uses });
   });
@@ -186,6 +210,12 @@ export function createUploads({ config, db, logger }) {
     const etag = `"${row.sha256.slice(0, 32)}"`;
     res.set({ 'Cache-Control': 'public, max-age=31536000, immutable', ETag: etag, 'Content-Type': 'image/webp' });
     if (req.headers['if-none-match'] === etag) return res.status(304).end();
+    if (kept) {
+      return kept.read('pictures', gid, id).then((data) => {
+        if (!data) { logger.log(gid, 'warn', `The stored copy of image “${row.name}” is missing in the database.`); return send404(res); }
+        return res.send(data);
+      }, next);
+    }
     return res.sendFile(`${gid}/${id}.webp`, { root, dotfiles: 'deny', etag: false, lastModified: false, cacheControl: false, headers: {} }, (err) => {
       if (!err) return undefined;
       if (err.code === 'ENOENT') { logger.log(gid, 'warn', `The file of image “${row.name}” is missing on disk.`); return send404(res); }

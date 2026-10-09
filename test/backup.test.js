@@ -7,7 +7,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import { Database } from '../server/db.js';
-import { runBackup, stampOf } from '../scripts/backup.js';
+import { NothingToBackUp, runBackup, stampOf } from '../scripts/backup.js';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 
@@ -90,7 +90,7 @@ describe('backing up the data folder', () => {
     assert.equal(fs.existsSync(path.join(r.folder, 'flowbot.sqlite')), false);
     const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'flowbot-backup-bare-'));
     try {
-      assert.throws(() => runBackup({ dataDir: bare, includeDatabase: false }), /no uploaded pictures or saved transcripts/);
+      assert.throws(() => runBackup({ dataDir: bare, includeDatabase: false }), (e) => e instanceof NothingToBackUp && /no uploaded pictures or saved transcripts/.test(e.message));
       assert.equal(fs.existsSync(path.join(bare, 'backups')), false, 'nothing is created for nothing');
     } finally { fs.rmSync(bare, { recursive: true, force: true }); }
   });
@@ -135,11 +135,18 @@ describe('npm run backup (the command)', () => {
     const r = run([], { MONGODB_URI: 'mongodb://localhost:27017' });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /contains: uploads\//);
-    assert.match(r.stdout, /NOT included: the bot's data lives in MongoDB\. Back that up with MongoDB's own tools/);
+    assert.match(r.stdout, /NOT included: the bot's data lives in MongoDB \(the pictures and saved transcripts it stores now too\)\. Back that up with MongoDB's own tools/);
     assert.equal(run([], { MONGODB_URI: 'mongodb://localhost:27017', DB_DRIVER: 'sqlite' }).stdout.includes('NOT included'), false, 'DB_DRIVER=sqlite keeps the local database');
     const bad = run([], { MONGODB_URI: 'http://not-mongo' });
     assert.equal(bad.status, 1);
     assert.match(bad.stderr, /MONGODB_URI must/);
+  });
+
+  it('with everything in a cloud database and nothing left on this machine, says so and is not an error', () => {
+    const r = run([], { MONGODB_URI: 'mongodb://localhost:27017' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /Nothing to copy from this machine: the bot's data, including pictures and saved transcripts, lives in MongoDB\. Back that up with MongoDB's own tools\./);
+    assert.equal(fs.existsSync(path.join(dir, 'backups')), false, 'no empty backup folder is made');
   });
 
   it('prints help', () => {

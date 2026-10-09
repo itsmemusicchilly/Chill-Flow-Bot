@@ -5,6 +5,7 @@ import { SlugTakenError } from '../server/db/errors.js';
 import { D1Store } from '../server/db/d1-store.js';
 import { FirestoreStore } from '../server/db/firestore-store.js';
 import { MemoryStore } from '../server/db/memory-store.js';
+import { fakeD1, fakeFirestore } from './helpers/cloud-fakes.js';
 import { FlowError } from '../server/engine/errors.js';
 import { applyLimits, resetLimits } from '../shared/limits.js';
 
@@ -150,76 +151,3 @@ describe('a cloud-shaped database', () => {
     } finally { resetLimits(); }
   });
 });
-
-function ok(body, status = 200) {
-  return { ok: status >= 200 && status < 300, status, json: async () => body };
-}
-
-/** Speaks just enough of the D1 HTTP API for the statements this project sends. */
-function fakeD1() {
-  const rows = new Map();
-  return async (_url, opts) => {
-    const { sql, params } = JSON.parse(opts.body);
-    const compact = sql.replace(/\s+/g, ' ').trim();
-    const key = `${params?.[0]}\0${params?.[1]}`;
-    if (compact.startsWith('CREATE')) return ok({ success: true, result: [{ results: [] }] });
-    if (compact.startsWith('INSERT')) {
-      rows.set(key, { collection: params[0], guild_id: params[2], doc: params[3] });
-      return ok({ success: true, result: [{ results: [], meta: { changes: 1 } }] });
-    }
-    if (compact.startsWith('DELETE')) {
-      rows.delete(key);
-      return ok({ success: true, result: [{ results: [], meta: { changes: 1 } }] });
-    }
-    if (compact.startsWith('SELECT 1')) {
-      return ok({ success: true, result: [{ results: rows.has(key) ? [{ n: 1 }] : [] }] });
-    }
-    if (compact.startsWith('SELECT doc FROM docs WHERE collection = ? AND id = ?')) {
-      const row = rows.get(key);
-      return ok({ success: true, result: [{ results: row ? [{ doc: row.doc }] : [] }] });
-    }
-    const wanted = [...rows.values()].filter((row) => row.collection === params[0] && (params.length < 2 || row.guild_id === params[1]));
-    if (!compact.startsWith('SELECT doc')) throw new Error(`unexpected SQL: ${compact}`);
-    return ok({ success: true, result: [{ results: wanted.map((row) => ({ doc: row.doc })) }] });
-  };
-}
-
-/** Speaks just enough of the Firestore REST API to store and list JSON documents. */
-function fakeFirestore() {
-  const docs = new Map();
-  const pathOf = (url) => {
-    const text = String(url);
-    const base = text.split('/documents/')[1] || '';
-    return base.split('?')[0];
-  };
-  return async (url, opts = {}) => {
-    const method = opts.method || 'GET';
-    const text = String(url);
-    if (text.endsWith(':runQuery')) {
-      const { structuredQuery } = JSON.parse(opts.body);
-      const collection = structuredQuery.from[0].collectionId;
-      const documents = [...docs.entries()]
-        .filter(([path]) => path.split('/').includes(collection))
-        .map(([path, json]) => ({ name: path, fields: { json: { stringValue: json } } }));
-      return ok(documents.map((document) => ({ document })));
-    }
-    const path = decodeURIComponent(pathOf(url));
-    if (method === 'PATCH') {
-      docs.set(path, JSON.parse(opts.body).fields.json.stringValue);
-      return ok({});
-    }
-    if (method === 'DELETE') {
-      if (!docs.has(path)) return ok({}, 404);
-      docs.delete(path);
-      return ok({});
-    }
-    if (text.includes('pageSize=')) {
-      const documents = [...docs.entries()]
-        .filter(([key]) => key.startsWith(`${path}/`))
-        .map(([key, json]) => ({ name: key, fields: { json: { stringValue: json } } }));
-      return ok({ documents });
-    }
-    if (!docs.has(path)) return ok({}, 404);
-    return ok({ name: path, fields: { json: { stringValue: docs.get(path) } } });
-  };
-}

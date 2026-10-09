@@ -10,7 +10,7 @@ const OPS = {
 
 /** Collections whose documents belong to one server and are stored under that server. */
 export const GUILD_SCOPED = new Set([
-  'flows', 'vars', 'pages', 'form_responses', 'uploads', 'component_state', 'linked_accounts', 'watch_state',
+  'flows', 'vars', 'pages', 'form_responses', 'uploads', 'component_state', 'linked_accounts', 'watch_state', 'file_manifests', 'file_chunks',
 ]);
 
 /** A key that cannot collide across servers. The unit separator does not appear in the ids we mint. */
