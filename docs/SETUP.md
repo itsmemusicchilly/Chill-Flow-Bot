@@ -107,6 +107,14 @@ CLOUDFLARE_D1_DATABASE_ID=the-id-wrangler-printed
 
 The bot talks to D1 over Cloudflare's HTTP API. It does not need to run on Cloudflare to use this database. One D1 record can be at most 1 MB.
 
+**Check that it works before you rely on it.** In the bot's folder, with the keys in `.env`:
+
+```bash
+npm run check-storage
+```
+
+It connects, stores a few test files from 1 KB to 2 MB, reads each one back and compares it byte for byte, deletes them, and prints what worked, how long each step took, and the largest single item it stored. It needs no Discord settings, works with a temporary or free database, and leaves nothing behind. A wrong key or an address the database does not allow is reported with what to check. If the database refuses the default piece size (some services are stricter than their documentation says), the command tries smaller pieces and ends with a line like `DB_FILE_PIECE_KB=48`: put that in `.env` (or your host's settings) and run it again. `--piece-kb 64` tries one particular size. With the local database there is nothing to check and it says so.
+
 On startup the log line `Database:` says `local sqlite`, `MongoDB`, `Firebase` or `Cloudflare D1`. Rows already in `flowbot.sqlite` are not copied for you. Each read waits for the cloud database, so pick a region near the machine that runs the bot. Keep a single copy of the bot running: two copies would log in with the same Discord token and fight each other.
 
 ---
@@ -361,7 +369,7 @@ If you still want to try it:
    (`git push heroku main` if your branch is called `main`.) The included `Procfile` starts the bot; Heroku supplies `PORT` by itself, and runs `npm run build` for you because the project has a `build` script.
 3. Add `https://my-flowbot.herokuapp.com/auth/callback` as a Redirect in the Discord portal.
 4. There is no `.env` on Heroku (it is not part of the Git repository), so every setting goes in `heroku config:set`.
-5. **Add a cloud database**, or everything is lost at the next restart. Create a free MongoDB Atlas cluster (or a Firebase project, or a Cloudflare D1 database — see [the database](#5-the-database)) and set its keys the same way, for example `heroku config:set MONGODB_URI='mongodb+srv://…'`. Flows, variables, pages, connected accounts, **uploaded pictures and saved transcripts** are then kept there. On a small free database also consider `LIMIT_STORAGE_BYTES_PER_GUILD`, `LIMIT_UPLOADS_PER_GUILD` and `TRANSCRIPT_RETENTION_DAYS`. Keep `DISCORD_CLIENT_SECRET` (or `TOKEN_ENCRYPTION_KEY`) the same from now on: it seals the Twitch and TikTok tokens stored in the database.
+5. **Add a cloud database**, or everything is lost at the next restart. Create a free MongoDB Atlas cluster (or a Firebase project, or a Cloudflare D1 database — see [the database](#5-the-database)) and set its keys the same way, for example `heroku config:set MONGODB_URI='mongodb+srv://…'`, then check it with `heroku run npm run check-storage`. Flows, variables, pages, connected accounts, **uploaded pictures and saved transcripts** are then kept there. On a small free database also consider `LIMIT_STORAGE_BYTES_PER_GUILD`, `LIMIT_UPLOADS_PER_GUILD` and `TRANSCRIPT_RETENTION_DAYS`. Keep `DISCORD_CLIENT_SECRET` (or `TOKEN_ENCRYPTION_KEY`) the same from now on: it seals the Twitch and TikTok tokens stored in the database.
 
 ---
 
@@ -663,6 +671,7 @@ A home network (Pi, NAS, PC) usually has no address that Discord and your member
 | Transcript links or uploaded pictures do not work | `BASE_URL` is not a public address (it is `localhost`, a private IP, or has no dot). Use your real domain. |
 | Everything was reset after a restart | `DATA_DIR` is on a disk that is wiped (Heroku, a free Render service, Vercel, a Cloudflare container, or a container without a volume). Put it on persistent storage, or set a [cloud database](#5-the-database), which keeps the rows, pictures and saved transcripts. |
 | `More than one database is configured` | MongoDB, Firebase and Cloudflare D1 are all partly set. Set `DB_DRIVER` to the one you want, or clear the others. Leave them all unset to use the local SQLite file. |
+| `The database did not accept the picture` / `…the transcript` (cloud database) | The database refused the size of a piece, or is full or unreachable. Run `npm run check-storage`: it names the `DB_FILE_PIECE_KB` that works, or what to fix. |
 | `Could not open the database` | The cloud address, token or service account was refused, or the database is still being created. The line under the message is the reason from that service. |
 | `The database took too long` | A cloud call sat for more than 30 seconds. The bot stops that worker so the next call does not use a half-finished reply. Check that the database is reachable from the machine running the bot. |
 

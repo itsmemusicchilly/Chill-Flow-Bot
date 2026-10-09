@@ -18,7 +18,8 @@
     "demo": "node --no-warnings=ExperimentalWarning scripts/demo-server.js",
     "docs": "node scripts/gen-docs.js",
     "backup": "node --no-warnings=ExperimentalWarning scripts/backup.js",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "check-storage": "node --no-warnings=ExperimentalWarning scripts/check-storage.js"
   },
   "dependencies": {
     "@xyflow/react": "^12.12.0",

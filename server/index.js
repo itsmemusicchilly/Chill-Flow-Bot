@@ -6,7 +6,7 @@ import { Runtime } from './engine/runtime.js';
 import { warmUp } from './images.js';
 import { safeFetch } from './net/safe-fetch.js';
 import { Logger } from './logger.js';
-import { createDatabaseFiles } from './files.js';
+import { filesForConfig } from './files.js';
 import { createTranscripts } from './transcripts.js';
 import { createUploads } from './uploads.js';
 import { createApp } from './app.js';
@@ -31,7 +31,7 @@ try { db = await openDatabase(config); } catch (err) {
 }
 console.log(`Database: ${config.database.label}`);
 // Without a local disk to rely on (MongoDB, Firebase, Cloudflare D1), pictures and saved transcripts are kept in that database too
-const files = config.database.driver === 'sqlite' ? null : createDatabaseFiles({ db, logger });
+const files = filesForConfig({ config, db, logger });
 if (files) console.log(`Pictures and saved transcripts are kept in ${config.database.label} too (not on this machine's disk).`);
 const uploads = createUploads({ config, db, logger, files });
 const transcripts = createTranscripts({ config, db, logger, files });

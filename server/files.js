@@ -104,3 +104,9 @@ export function createDatabaseFiles({ db, logger = null, cacheBytes = 32 * 1024 
 
   return { write, read, remove, chunkBytes, cachedBytes: () => cached };
 }
+
+/** The file store the server uses: none with the local database (pictures and transcripts are ordinary files there), else one in that database, cut into pieces of DB_FILE_PIECE_KB. */
+export function filesForConfig({ config, db, logger = null }) {
+  if (config.database.driver === 'sqlite') return null;
+  return createDatabaseFiles({ db, logger, chunkBytes: config.filePieceKb * 1024 });
+}

@@ -80,6 +80,7 @@ real dashboard and API against a fake in-memory Discord — useful for developme
 | `TRUST_PROXY` | off | Number of reverse proxies in front (or `true`) so client IPs and `https` are detected correctly |
 | `DATA_DIR` | `data` | Where `flowbot.sqlite`, the `uploads/` folder (uploaded pictures) and the `transcripts/` folder (saved ticket transcripts) live. Back them up. With a cloud database configured (MongoDB, Firebase, Cloudflare D1), the rows **and the pictures and saved transcripts** live there instead, so `DATA_DIR` holds nothing the bot needs |
 | `DB_DRIVER` | local SQLite | `sqlite` (the default when nothing else is set), `mongodb`, `firebase` or `cloudflare`. One cloud database is used automatically when its variables are the only ones set |
+| `DB_FILE_PIECE_KB` | `192` | Only with MongoDB, Firebase or Cloudflare D1: how big (in KB, 16 to 512) the pieces are that pictures and saved transcripts are cut into. Leave it unless `npm run check-storage` says your database refuses the default and names a smaller number |
 | `MONGODB_URI` / `MONGODB_DB` | — | Optional. A `mongodb://` or `mongodb+srv://` address. The database name defaults to `chillflow` |
 | `FIREBASE_SERVICE_ACCOUNT` | — | Optional. Firestore service-account JSON on one line. Or set `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL` and `FIREBASE_PRIVATE_KEY` instead. `FIREBASE_DATABASE_ID` defaults to `(default)` |
 | `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_D1_DATABASE_ID` | — | Optional. Cloudflare D1, reached over the HTTP API. All three, or none |
@@ -646,6 +647,7 @@ Full walkthroughs per platform (systemd, Docker, Caddy, panels…): [docs/SETUP.
 * Back up `DATA_DIR/flowbot.sqlite`, `DATA_DIR/uploads/` **and** `DATA_DIR/transcripts/` together (a database row without its file shows a missing picture, or a transcript page that “isn't available”). With MongoDB, Firebase or Cloudflare D1 configured, **everything is in that database** — flows, variables, pages, connected accounts, and also the pictures and saved transcripts (kept in small pieces, with recent ones remembered in memory) — so back up that database with its own tools and `DATA_DIR` needs no backup. That also makes a host whose disk is wiped on every restart (Heroku, a Cloudflare container, a free Render service) workable; the pictures and transcripts take space in the database, so on a small free plan set `LIMIT_STORAGE_BYTES_PER_GUILD` / `LIMIT_UPLOADS_PER_GUILD` and `TRANSCRIPT_RETENTION_DAYS`.
   **`npm run backup`** does exactly that while the bot is running: it makes a dated folder under `DATA_DIR/backups/` with a consistent copy of the database plus the pictures and transcripts, and keeps the newest 7
   (`npm run backup -- --keep 14 --out /mnt/other-disk/flowbot`). Run it from cron / Task Scheduler, and copy the folder to another disk now and then. To restore, stop the bot and put the three things back in `DATA_DIR`.
+  **`npm run check-storage`** tries a cloud database for real before you rely on it (handy with a temporary or free one): using the keys in `.env` it stores test files from 1 KB to 2 MB, reads each back, compares it byte for byte, deletes it, and prints what worked, how fast, and the biggest item it stored. It needs no Discord settings and leaves nothing behind. If the database refuses the default piece size it tries smaller ones and tells you which `DB_FILE_PIECE_KB` to set.
   Connected Twitch/TikTok accounts are sealed with `TOKEN_ENCRYPTION_KEY` (or `DISCORD_CLIENT_SECRET`): restore with the same key, or those accounts show “Connect again” (nothing else is affected).
   Deleting a server's flows/variables is up to you (data is kept if the bot is removed).
 
@@ -658,6 +660,7 @@ npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
 npm run docs      # regenerate docs/NODES.md from the catalog
 npm run backup    # copy the database, pictures and transcripts into a dated folder (see Hosting notes)
+npm run check-storage   # try the MongoDB / Firebase / Cloudflare D1 database from .env with real test files (see Hosting notes)
 ```
 
 ```
@@ -741,6 +744,7 @@ Not yet automated — please run through this once on a test server:
 - [ ] Pictures: upload a photo taken with a phone (it comes out upright, without location data); pick it for a page and open the
       public page in a private window; on your real domain, use an uploaded picture in a *Send Message* embed and check Discord shows it.
 - [ ] `npm run backup` makes a dated folder under `DATA_DIR/backups/` with `flowbot.sqlite`, `uploads/` and `transcripts/` (try it while the bot runs); a database restored from it opens, and old backups beyond `--keep` disappear.
+- [ ] `npm run check-storage` against your own MongoDB / Firebase / Cloudflare D1: every line is ticked, it ends with “All good”, and the database holds none of its test files afterwards (with a wrong key it says what to check instead).
 - [ ] With MongoDB / Firebase / Cloudflare D1 (needs your own account): upload a picture in *Pictures*, show it on a page and in a message, save a ticket transcript with a link; then restart the bot **with an empty `DATA_DIR`** — the picture still shows and the transcript link still opens, and nothing appears in `DATA_DIR/uploads` or `DATA_DIR/transcripts`. Delete the picture and the link's transcript: both are gone from the database.
 - [ ] `DATA_DIR/uploads/` and `DATA_DIR/transcripts/` are part of your backup (with the local database); restoring the database and the folders together brings the pictures and the transcript links back.
 - [ ] Bot restarts: an old button still works and still knows who opened its ticket (`{{original.user.mention}}`); slash commands are not re-registered needlessly.

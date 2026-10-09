@@ -70,6 +70,7 @@ export function loadConfig(env = process.env) {
   const tokenKey = String(env.TOKEN_ENCRYPTION_KEY ?? '').trim();
   if (tokenKey && tokenKey.length < 16) throw new ConfigError('TOKEN_ENCRYPTION_KEY must be at least 16 characters (a long random string; leave it out to use DISCORD_CLIENT_SECRET instead).');
   const database = readDatabase(env, limits);
+  const filePieceKb = pieceKbOf(env);
   return {
     token: env.DISCORD_TOKEN,
     clientId: env.DISCORD_CLIENT_ID,
@@ -94,6 +95,7 @@ export function loadConfig(env = process.env) {
     tokenKey,
     sessionTtlMs: 7 * 24 * 3600 * 1000,
     database,
+    filePieceKb,
   };
 }
 
@@ -163,10 +165,29 @@ function readCloudflare(env) {
   return { accountId, apiToken, databaseId };
 }
 
-/** Which database the settings in `env` choose (without needing the Discord settings): `{ driver, label }`. Throws a ConfigError for a half-filled or ambiguous choice. */
+/** The database the settings in `env` choose, with its keys (without needing the Discord settings). Throws a ConfigError for a half-filled or ambiguous choice. */
+export function databaseSettings(env = process.env) {
+  return readDatabase(env, {});
+}
+
+/** Just which database that is: `{ driver, label }`. */
 export function databaseOf(env = process.env) {
-  const { driver, label } = readDatabase(env, {});
+  const { driver, label } = databaseSettings(env);
   return { driver, label };
+}
+
+export const DEFAULT_PIECE_KB = 192;
+export const MIN_PIECE_KB = 16;
+export const MAX_PIECE_KB = 512;
+
+/** DB_FILE_PIECE_KB: how big the pieces are that pictures and transcripts are cut into when they are kept in a cloud database. */
+export function pieceKbOf(env = process.env) {
+  const raw = filled(env.DB_FILE_PIECE_KB);
+  const kb = raw === null ? DEFAULT_PIECE_KB : Number(raw);
+  if (!Number.isInteger(kb) || kb < MIN_PIECE_KB || kb > MAX_PIECE_KB) {
+    throw new ConfigError(`DB_FILE_PIECE_KB must be a whole number from ${MIN_PIECE_KB} to ${MAX_PIECE_KB} (default ${DEFAULT_PIECE_KB}). Lower it only if \`npm run check-storage\` says your database refuses the default.`);
+  }
+  return kb;
 }
 
 function pack(driver, extra, limits) {
