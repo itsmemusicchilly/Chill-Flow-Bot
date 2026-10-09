@@ -46,7 +46,7 @@ channel, remember a variable…), press **Save** — it is live. No code.
 
 Requires **Node 22.13+** (uses the built-in `node:sqlite`; no native dependencies).
 
-> **Step-by-step guides for Windows, Linux, macOS, Raspberry Pi, a home-lab NAS (Docker), a VPS, Heroku and Pterodactyl / game panels: [docs/SETUP.md](docs/SETUP.md).** The short version is below.
+> **Step-by-step guides for Windows, Linux, macOS, Raspberry Pi, a home-lab NAS (Docker), a VPS, Render, Heroku and Pterodactyl / game panels: [docs/SETUP.md](docs/SETUP.md).** Vercel cannot run this bot; the guide says why. The short version is below.
 
 1. **Create the application** at <https://discord.com/developers/applications> → *New Application*.
    * *General Information* → copy **Application ID** → `DISCORD_CLIENT_ID`.
