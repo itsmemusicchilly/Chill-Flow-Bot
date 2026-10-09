@@ -10,7 +10,19 @@ export default defineConfig({
   root: path.join(root, 'web'),
   plugins: [react()],
   resolve: { alias: { '@shared': path.join(root, 'shared') } },
-  build: { outDir: path.join(root, 'dist'), emptyOutDir: true, chunkSizeWarningLimit: 1000 },
+  build: {
+    outDir: path.join(root, 'dist'), emptyOutDir: true, chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        // React changes rarely and the app often: a separate file lets a browser keep it cached across updates. (The canvas library is not named here:
+        // it simply travels with the editor, which loads only when a server is opened.)
+        manualChunks(id) {
+          if (/node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'react';
+          return undefined;
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     fs: { allow: [root] },

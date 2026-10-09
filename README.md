@@ -651,7 +651,7 @@ npm run backup    # copy the database, pictures and transcripts into a dated fol
 ```
 
 ```
-shared/   catalog.js (every node) · blocks.js (page blocks) · forms.js · render-page.js · page-meta.js (link previews) · validate.js · templates — used by the editor AND server
+shared/   catalog.js (the registry of every node; the definitions live in nodes/: triggers, messages, members, channels, roles, variables, logic) · blocks.js (page blocks) · forms.js · render-page.js · page-meta.js (link previews) · validate.js · templates — used by the editor AND server
 server/   app/api/auth/public (the /s pages) · hooks (the /hooks webhook addresses) · uploads + images (the /i pictures) · db (node:sqlite) · engine/ (runner, templates, executors, responder, watchers) · net/ (the guarded fetcher) · feeds/ (feed parser, YouTube, Twitch, TikTok, the shared count logic) · accounts (connected Twitch / TikTok accounts, sealed tokens) + connect (the approval round trip) · bot/ (events, commands)
 web/      React + @xyflow/react editor
 test/     node:test suites · e2e/ (Playwright) · helpers/fakes.js
@@ -659,7 +659,7 @@ test/     node:test suites · e2e/ (Playwright) · helpers/fakes.js
 
 GitHub Actions (`.github/workflows/ci.yml`) runs lint, build, the unit tests, a check that `docs/` is up to date, and the browser checks on every push to `master` and every pull request.
 
-Adding a node type = one entry in `shared/catalog.js` + one executor in `server/engine/executors/` (a test fails if a
+Adding a node type = one entry in the matching file of `shared/nodes/` (`catalog.js` collects them all) + one executor in `server/engine/executors/` (a test fails if a
 node has no executor).
 
 ## Smoke test against real Discord

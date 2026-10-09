@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { applyLimits } from '@shared/limits.js';
 import { api, hashFor, logout, parseHash } from './api.js';
-import Editor from './components/Editor.jsx';
 import GuildPicker from './components/GuildPicker.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import Toasts from './components/Toasts.jsx';
 import { ToastContext } from './context.js';
+
+// The flow editor (with the canvas library and every node definition) is by far the biggest part of the dashboard: the login screen and the server
+// picker load without it, and it is fetched when a server is opened.
+const Editor = lazy(() => import('./components/Editor.jsx'));
 
 function useHashRoute() {
   const [route, setRoute] = useState(parseHash());
@@ -56,7 +59,7 @@ export default function App() {
     const { me } = state;
     const guild = route.guildId ? me.guilds.find((g) => g.id === route.guildId && g.botPresent) : null;
     body = guild
-      ? <Editor key={guild.id} me={me} guild={guild} flowId={route.flowId} pageId={route.pageId} navigate={navigate} onLogout={doLogout} />
+      ? <Suspense fallback={<div className="splash">Loading the editor…</div>}><Editor key={guild.id} me={me} guild={guild} flowId={route.flowId} pageId={route.pageId} navigate={navigate} onLogout={doLogout} /></Suspense>
       : <GuildPicker me={me} onOpen={(g) => navigate(g.id)} onRefresh={load} onLogout={doLogout} />;
   }
 
