@@ -626,6 +626,12 @@ This is a multi-tenant service: many servers share one bot process, so isolation
 * **Webhooks** (the only other unauthenticated way in): a 256-bit random address per trigger (its own table, never in the flow, never exported or copied), compared only by lookup;
   its own small body limit, JSON/form/text only, rate limits per address and per IP (with a stricter one for wrong guesses), the payload is reshaped to plain data (depth, key count
   and string length capped, `__proto__` dropped) and treated as text, never as a template.
+* **Connected Twitch / TikTok accounts**: connecting is a dashboard request (signed in, same origin, you can manage that server) that makes a random one-time `state`, keeps only its **hash** in the database
+  for 10 minutes and sets a `HttpOnly; SameSite=Lax` cookie with it; the return trip is accepted only if the cookie matches, the state is unused, unexpired and made for that platform, **the same person is still
+  signed in**, and they can still manage that server — otherwise it connects nothing. Access and refresh tokens are sealed in the database with AES-256-GCM (bound to server, platform and account, so a copied value
+  does not open for another row), opened only for the request that needs them, never sent to the browser and never written to the log; refreshing is single-flight because refresh tokens rotate. A failed connection
+  sends back only a **fixed code** in the address (the dashboard owns the words, so a made-up link cannot put its own message on screen), and the guarded fetcher refuses to pass a request that carries a token, a cookie or a
+  posted secret on to **another website** when a platform redirects it. Disconnecting asks the platform to revoke the permission; a server the bot leaves loses its accounts. Anyone who can manage a server can connect or disconnect its accounts.
 
 ## Hosting notes
 

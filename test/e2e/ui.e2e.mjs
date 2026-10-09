@@ -815,6 +815,14 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(150);
   ok((await tk.getByText(/Connect a TikTok account first/).count()) === 0, 'the TikTok Followers node no longer says an account must be connected first');
+  // the trigger's Account setting offers the accounts that are connected (blank = the first one)
+  const accountPick = tk.getByLabel('Pick TikTok account');
+  ok((await accountPick.locator('option', { hasText: 'Dancer' }).count()) === 1, 'the Account setting of a TikTok Followers trigger lists the connected account');
+  await accountPick.selectOption({ label: 'Dancer' });
+  ok((await tk.getByPlaceholder('blank = the first connected account').inputValue()) === 'tt-open-1', 'choosing it fills in the account');
+  await page.waitForTimeout(150);
+  ok((await tk.getByText(/Connect a TikTok account first|not connected any more/).count()) === 0, 'and the node is happy with it');
+  await tk.getByPlaceholder('blank = the first connected account').fill(''); // back to “the first one”, for the disconnect check below
 
   // disconnecting puts it back
   await page.getByRole('button', { name: 'Accounts' }).click();

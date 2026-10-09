@@ -26,6 +26,35 @@ export const CONNECTIONS = {
   tiktok: 'TikTok',
 };
 
+/**
+ * Why a connection did not work, as the short code that comes back to the browser in the address (never free text: a link must not be able to make
+ * the dashboard say whatever it likes). `{label}` is the platform's name.
+ */
+export const CONNECT_FAILURES = {
+  keys: '{label} refused the bot operator’s keys. Tell whoever runs the bot.',
+  approval: '{label} did not accept the approval (it may have run out). Press Connect {label} again.',
+  scope: '{label} did not give the permission to read the follower count. Press Connect {label} again and leave every box ticked.',
+  platform: '{label} could not be reached, or answered with an error. Try again in a moment.',
+  unavailable: '{label} has not been set up by the bot operator.',
+  other: '{label} could not be connected. Try again.',
+};
+export const connectFailureText = (code, label) => CONNECT_FAILURES[Object.hasOwn(CONNECT_FAILURES, code) ? code : 'other'].replaceAll('{label}', label);
+
+/**
+ * What the address says when the person comes back from “Connect Twitch / TikTok” (`?connect=ok|denied|failed&provider=…&reason=<code>`), or null when
+ * this is not such a visit. Only known words are ever turned into text.
+ */
+export function connectResultFrom(search) {
+  const q = new URLSearchParams(search);
+  const result = q.get('connect');
+  if (!result) return null;
+  const provider = q.get('provider');
+  const label = Object.hasOwn(CONNECTIONS, provider) ? CONNECTIONS[provider] : 'The account'; // own names only: “__proto__” is not a platform
+  if (result === 'ok') return { result: 'ok', message: `${label} connected.`, error: false };
+  if (result === 'denied') return { result: 'denied', message: `${label} was not connected: the approval was cancelled.`, error: true };
+  return { result: 'failed', message: connectFailureText(q.get('reason'), label), error: true };
+}
+
 /** What a count trigger does: fire each time the count rises, or every time it changes (for a live counter). */
 export const COUNT_MODES = [['gain', 'Each time it goes up'], ['change', 'Every time it changes (for counters)']];
 
@@ -76,7 +105,7 @@ export function accountFlagsFrom(rows) {
   const flags = Object.fromEntries(Object.keys(CONNECTIONS).map((p) => [p, false]));
   const ids = Object.fromEntries(Object.keys(CONNECTIONS).map((p) => [p, []]));
   for (const r of rows ?? []) {
-    if (r.status !== 'ok' || !(r.provider in flags)) continue;
+    if (r.status !== 'ok' || !Object.hasOwn(flags, r.provider)) continue;
     flags[r.provider] = true;
     ids[r.provider].push(r.id);
   }

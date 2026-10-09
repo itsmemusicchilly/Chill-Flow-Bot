@@ -30,7 +30,7 @@ export function createAccounts({ config, db, fetch, now = () => Date.now(), logg
   const refreshing = new Map(); // "guild|provider|account" → the refresh in progress
   const seen = new Map(); // "guild|provider|account" → { count, at }: what the last look at the platform found (memory only; the next look fills it again)
   const log = (guildId, level, message) => { try { logger?.log(guildId, level, message); } catch { /* never let logging break a refresh */ } };
-  const provider = (id) => PROVIDERS[id] ?? null;
+  const provider = (id) => (Object.hasOwn(PROVIDERS, id) ? PROVIDERS[id] : null);
   const reconnect = (p) => new AccountError(`${p.label} needs to be connected again. Open “Accounts” and press Connect ${p.label}.`, { expired: true });
   const tokenOf = (sealed, row) => sealer.open(sealed, aadOf(row.guildId, row.provider, row.accountId)) ?? sealer.open(sealed, legacyAadOf(row.guildId, row.provider));
 
@@ -58,17 +58,17 @@ export function createAccounts({ config, db, fetch, now = () => Date.now(), logg
 
   function authorizeUrl(id, state) {
     const p = provider(id);
-    if (!p || !p.configured(keys)) throw new AccountError(`${p?.label ?? 'That platform'} has not been set up by the bot operator.`);
+    if (!p || !p.configured(keys)) throw new AccountError(`${p?.label ?? 'That platform'} has not been set up by the bot operator.`, { code: 'unavailable' });
     return p.authorizeUrl({ keys, redirectUri: redirectUri(id), state });
   }
 
   /** The creator approved: trade the code for tokens, find out whose account it is, and keep it for this server (added, or renewed if it was already there). */
   async function complete(guildId, id, userId, code) {
     const p = provider(id);
-    if (!p || !p.configured(keys)) throw new AccountError(`${p?.label ?? 'That platform'} has not been set up by the bot operator.`);
+    if (!p || !p.configured(keys)) throw new AccountError(`${p?.label ?? 'That platform'} has not been set up by the bot operator.`, { code: 'unavailable' });
     const tokens = await p.exchange(ctx(id), code);
     if (!p.requiredScopes.every((s) => tokens.scopes.includes(s))) {
-      throw new AccountError(`${p.label} did not give the permission to read the follower count. Press Connect ${p.label} again and leave every box ticked.`);
+      throw new AccountError(`${p.label} did not give the permission to read the follower count. Press Connect ${p.label} again and leave every box ticked.`, { code: 'scope' });
     }
     const who = await p.identify(ctx(id), tokens.accessToken);
     const before = db.getAccount(guildId, id, who.id);

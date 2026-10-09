@@ -157,6 +157,27 @@ describe('the exchange (with a pretend network)', () => {
     await assert.rejects(safeFetch('https://example.com/a', { fetchImpl: script(reply(302, null)) }), /without saying where/);
   });
 
+  it('never hands a login on to another website: a token, a cookie or a posted secret stops at the first redirect that leaves the site', async () => {
+    const away = () => reply(307, null, { location: 'https://other.example/steal' });
+    const sameSite = () => reply(307, null, { location: 'https://api.example.com/v2/next' });
+    const refused = (e) => e.code === 'EREDIRECT' && /carries a login/.test(e.message);
+    for (const headers of [{ authorization: 'Bearer secret-token' }, { Authorization: 'Bearer secret-token' }, { cookie: 'a=b' }, { 'X-Api-Key': 'k' }]) {
+      const fetchImpl = script(away, reply(200, 'leaked'));
+      await assert.rejects(safeFetch('https://api.example.com/v2/me', { fetchImpl, headers }), refused, JSON.stringify(headers));
+      assert.equal(fetchImpl.seen.length, 1, 'the second website was never contacted');
+    }
+    const post = script(away, reply(200, 'leaked'));
+    await assert.rejects(safeFetch('https://id.example.com/token', { fetchImpl: post, method: 'POST', body: 'client_secret=shh&code=abc' }), refused);
+    assert.equal(post.seen.length, 1);
+    // within the same website it still works, with the login and the body
+    const stay = script(sameSite, reply(200, 'fine'));
+    const res = await safeFetch('https://api.example.com/v2/me', { fetchImpl: stay, headers: { authorization: 'Bearer t' } });
+    assert.equal(res.text, 'fine');
+    assert.equal(stay.seen[1].init.headers.authorization, 'Bearer t');
+    // and a plain request (a feed, nothing secret in it) can still be sent elsewhere, as before
+    assert.equal((await safeFetch('https://example.com/feed', { fetchImpl: script(away, reply(200, 'feed')) })).text, 'feed');
+  });
+
   it('stops reading a body that is too big — by its label, and by what actually arrives', async () => {
     await assert.rejects(safeFetch('https://example.com/a', { maxBytes: 1000, fetchImpl: script(reply(200, 'x', { 'content-length': '5000' })) }), (e) => e.code === 'ETOOBIG');
     const endless = () => ({

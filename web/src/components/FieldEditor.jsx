@@ -36,7 +36,7 @@ function IdPicker({ field, value, onChange, focusRef }) {
           onChange={(e) => onChange(e.target.value)} onFocus={track(focusRef, onChange)} spellCheck={false}
         />
         {options.length > 0 && (
-          <select aria-label={`Pick ${field.kind}`} value="" onChange={(e) => e.target.value && onChange(e.target.value)}>
+          <select aria-label={field.kind.endsWith('-account') ? `Pick ${field.kind.startsWith('tiktok') ? 'TikTok' : 'Twitch'} account` : `Pick ${field.kind}`} value="" onChange={(e) => e.target.value && onChange(e.target.value)}>
             <option value="">Pick…</option>
             {options.map((o) => <option key={o.id} value={o.id}>{prefix}{o.name}</option>)}
           </select>

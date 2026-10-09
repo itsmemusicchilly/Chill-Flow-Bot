@@ -1,3 +1,5 @@
+import { connectResultFrom } from '@shared/platforms.js';
+
 export class ApiError extends Error {
   constructor(status, message, data) {
     super(message);
@@ -39,15 +41,9 @@ export async function logout() {
  * Returns `{ result: 'ok' | 'denied' | 'failed', message, error }`, or null when this is not such a visit.
  */
 export function takeConnectResult() {
-  const q = new URLSearchParams(window.location.search);
-  const result = q.get('connect');
-  if (!result) return null;
-  const label = { twitch: 'Twitch', tiktok: 'TikTok' }[q.get('provider')] ?? 'The account';
-  const reason = q.get('reason');
-  window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`);
-  if (result === 'ok') return { result, message: `${label} connected.`, error: false };
-  if (result === 'denied') return { result, message: `${label} was not connected: the approval was cancelled.`, error: true };
-  return { result: 'failed', message: reason || `${label} could not be connected. Try again.`, error: true };
+  const found = connectResultFrom(window.location.search);
+  if (found) window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`);
+  return found;
 }
 
 /** `#/g/<guildId>` · `#/g/<guildId>/f/<flowId>` · `#/g/<guildId>/p/<pageId>` */

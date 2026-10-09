@@ -160,6 +160,9 @@ const friendly = (err) => {
   return new SafeFetchError(`The site could not be reached (${String(err?.message ?? err).slice(0, 80)}).`, 'EFETCH');
 };
 
+/** Headers that prove who is asking: they must never follow a redirect to another website. */
+const CREDENTIAL_HEADERS = /^(authorization|cookie|proxy-authorization|x-api-key)$/i;
+
 /**
  * GET (or POST) an https address safely.
  * @returns {Promise<{status: number, url: string, headers: Headers, body: Buffer, text: string}>} any status the site answers with (the caller decides what a 304 or 404 means)
@@ -180,9 +183,15 @@ export async function safeFetch(address, { method = 'GET', headers = {}, body, m
         try { await res.body?.cancel(); } catch { /* nothing to drain */ }
         if (!where) throw new SafeFetchError('The site redirected without saying where to.', 'EREDIRECT');
         if (hop >= maxRedirects) throw new SafeFetchError('The address redirects too many times.', 'EREDIRECT');
-        try { url = parseSafeUrl(new URL(where, url).href); } catch (err) {
+        let next;
+        try { next = parseSafeUrl(new URL(where, url).href); } catch (err) {
           throw new SafeFetchError(`The address redirects somewhere that is not allowed: ${err.message}`, 'EREDIRECT');
         }
+        // A request that carries a login or a secret (a token, a cookie, a form body with a client secret) is never handed on to another website.
+        if (next.origin !== url.origin && (body !== undefined || Object.keys(headers).some((h) => CREDENTIAL_HEADERS.test(h)))) {
+          throw new SafeFetchError('The site redirected this request to another website. Because the request carries a login, it was not followed.', 'EREDIRECT');
+        }
+        url = next;
         continue;
       }
       let bytes;

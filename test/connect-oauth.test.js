@@ -11,7 +11,7 @@ const cookieOf = (res) => (res.res.headers.getSetCookie?.() ?? []).find((c) => c
 
 describe('connecting an account from the dashboard', () => {
   let h; let net;
-  const boot = async (integrations = KEYS) => { net = pretendProviders(); h = await startHarness({ config: { integrations, accountsFetch: net.fetch, fetcher: net.fetch } }); };
+  const boot = async (integrations = KEYS) => { net = pretendProviders(); h = await startHarness({ config: { integrations, accountsFetch: (...a) => net.fetch(...a), fetcher: (...a) => net.fetch(...a) } }); };
   beforeEach(async () => { resetLimits(); await boot(); });
   afterEach(async () => { resetLimits(); mock.timers.reset(); await h.close(); });
 
@@ -183,7 +183,7 @@ describe('connecting an account from the dashboard', () => {
       const r = await back('twitch', { code: 'stale-code', state }, { cookieState: state });
       const url = new URL(location(r), ORIGIN);
       assert.equal(url.searchParams.get('connect'), 'failed');
-      assert.match(url.searchParams.get('reason'), /did not accept the approval/);
+      assert.equal(url.searchParams.get('reason'), 'approval', 'only a fixed code travels back, never words');
       assert.equal(url.hash, `#/g/${A}`);
       assert.deepEqual(h.db.listAccounts(A), []);
       assert.ok(h.logger.recent(A, 10).some((l) => l.level === 'warn' && /Connecting twitch failed/.test(l.message)));
@@ -196,8 +196,24 @@ describe('connecting an account from the dashboard', () => {
       const { state } = await approve();
       const r = await back('twitch', { code: 'good-code', state }, { cookieState: state });
       const reason = new URL(location(r), ORIGIN).searchParams.get('reason');
-      assert.match(reason, /Something went wrong while connecting/);
+      assert.equal(reason, 'other');
       assert.ok(!location(r).includes('10.0.0.5'));
+    });
+
+    it('says which kind of problem it was with a fixed code: a missing permission, wrong keys, a platform that is down', async () => {
+      const why = async () => {
+        const { state } = await approve();
+        return new URL(location(await back('twitch', { code: 'good-code', state }, { cookieState: state })), ORIGIN).searchParams.get('reason');
+      };
+      net.state.twitch.scope = []; // the follower box was unticked
+      assert.equal(await why(), 'scope');
+      net.state.twitch.scope = ['moderator:read:followers'];
+      const real = net.fetch;
+      net.fetch = async () => ({ status: 403, text: '{"message":"invalid client secret"}' });
+      assert.equal(await why(), 'keys');
+      net.fetch = async () => ({ status: 503, text: '' });
+      assert.equal(await why(), 'platform');
+      net.fetch = real;
     });
 
     it('needs a code', async () => {

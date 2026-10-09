@@ -5,6 +5,7 @@
 // the cookie matches the `state` the platform sends back, the same signed-in person is still here, and they can still manage that server.
 import crypto from 'node:crypto';
 import express from 'express';
+import { CONNECT_FAILURES } from '../shared/platforms.js';
 import { AccountError } from './accounts.js';
 import { parseCookies, safeEqual } from './auth.js';
 import { RateLimiter } from './engine/rate-limit.js';
@@ -41,7 +42,7 @@ export function createConnect({ config, db, auth, accounts, bot, runtime, logger
     const trusted = entry && safeEqual(state, cookie) && entry.provider === provider && entry.expiresAt > now();
     if (!trusted) return res.redirect(`/?connect=failed&provider=${provider}`);
     if (req.session?.userId !== entry.userId) return res.redirect('/');
-    const back = (result, reason = '') => res.redirect(`/?connect=${result}&provider=${provider}${reason ? `&reason=${encodeURIComponent(reason)}` : ''}#/g/${entry.guildId}`);
+    const back = (result, reason = '') => res.redirect(`/?connect=${result}&provider=${provider}${reason ? `&reason=${reason}` : ''}#/g/${entry.guildId}`); // `reason` is only ever one of the fixed codes
     if (error) return back('denied');
     if (typeof code !== 'string' || !code) return back('failed');
     if (!bot.hasGuild(entry.guildId) || !(await bot.canManage(entry.guildId, entry.userId))) return back('failed');
@@ -51,9 +52,9 @@ export function createConnect({ config, db, auth, accounts, bot, runtime, logger
       logger.log(entry.guildId, 'info', `${accounts.list(entry.guildId).find((a) => a.provider === provider)?.label ?? provider} account “${done.account}” was ${done.added ? 'connected' : 'connected again'}.`);
       return back('ok');
     } catch (err) {
-      const message = err instanceof AccountError ? err.message : 'Something went wrong while connecting. Try again.';
+      const code = err instanceof AccountError && Object.hasOwn(CONNECT_FAILURES, err.code) ? err.code : 'other';
       logger.log(entry.guildId, 'warn', `Connecting ${provider} failed: ${err?.message ?? err}`);
-      return back('failed', message);
+      return back('failed', code);
     }
   });
 

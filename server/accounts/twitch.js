@@ -13,13 +13,13 @@ const messageOf = (res) => { try { return String(JSON.parse(res.text)?.message ?
 function tokensFrom(res, { refreshing = false } = {}) {
   if (res.status !== 200) {
     const message = messageOf(res);
-    if (res.status === 403 || /invalid client/i.test(message)) throw new AccountError('Twitch refused the bot operator’s Client ID or Secret.');
+    if (res.status === 403 || /invalid client/i.test(message)) throw new AccountError('Twitch refused the bot operator’s Client ID or Secret.', { code: 'keys' });
     if (refreshing && (res.status === 401 || /refresh token/i.test(message))) throw new AccountError('Twitch no longer accepts this connection. Connect Twitch again.', { expired: true });
-    if (res.status === 400 || res.status === 401) throw new AccountError('Twitch did not accept the approval (it may have run out). Press Connect Twitch again.');
-    throw new AccountError(`Twitch answered with an error (${res.status}).`);
+    if (res.status === 400 || res.status === 401) throw new AccountError('Twitch did not accept the approval (it may have run out). Press Connect Twitch again.', { code: 'approval' });
+    throw new AccountError(`Twitch answered with an error (${res.status}).`, { code: 'platform' });
   }
   const v = json(res, 'Twitch');
-  if (!v.access_token || !v.refresh_token) throw new AccountError('Twitch’s answer could not be read.');
+  if (!v.access_token || !v.refresh_token) throw new AccountError('Twitch’s answer could not be read.', { code: 'platform' });
   return { accessToken: String(v.access_token), refreshToken: String(v.refresh_token), expiresIn: Number(v.expires_in) || 3600, scopes: Array.isArray(v.scope) ? v.scope.map(String) : String(v.scope ?? '').split(/[ ,]+/).filter(Boolean) };
 }
 
@@ -48,9 +48,9 @@ export const twitchAccount = {
 
   async identify({ fetch, keys }, accessToken) {
     const res = await fetch(USERS, { headers: { accept: 'application/json', 'client-id': keys.twitch.clientId, authorization: `Bearer ${accessToken}` } });
-    if (res.status !== 200) throw new AccountError(`Twitch answered with an error (${res.status}).`);
+    if (res.status !== 200) throw new AccountError(`Twitch answered with an error (${res.status}).`, { code: 'platform' });
     const user = json(res, 'Twitch').data?.[0];
-    if (!user?.id) throw new AccountError('Twitch’s answer could not be read.');
+    if (!user?.id) throw new AccountError('Twitch’s answer could not be read.', { code: 'platform' });
     return { id: String(user.id), name: String(user.display_name || user.login || user.id), login: String(user.login ?? '').toLowerCase() };
   },
 
