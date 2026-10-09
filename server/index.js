@@ -1,8 +1,7 @@
-import path from 'node:path';
 import { applyLimits } from '../shared/limits.js';
 import { createAccounts } from './accounts.js';
 import { ConfigError, loadConfig } from './config.js';
-import { Database } from './db.js';
+import { openDatabase } from './db.js';
 import { Runtime } from './engine/runtime.js';
 import { warmUp } from './images.js';
 import { safeFetch } from './net/safe-fetch.js';
@@ -24,7 +23,12 @@ try { config = loadConfig(); } catch (err) {
 applyLimits(config.limits);
 
 const logger = new Logger();
-const db = new Database(path.join(config.dataDir, 'flowbot.sqlite'));
+let db;
+try { db = await openDatabase(config); } catch (err) {
+  console.error(`\nCould not open the database: ${err.message}\n`);
+  process.exit(1);
+}
+console.log(`Database: ${config.database.label}`);
 const uploads = createUploads({ config, db, logger });
 const transcripts = createTranscripts({ config, db, logger });
 warmUp(); // load the image library now, so the first upload is not slow (and a missing binary shows up in the log at start)

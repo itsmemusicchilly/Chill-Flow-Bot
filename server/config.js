@@ -69,6 +69,7 @@ export function loadConfig(env = process.env) {
   }
   const tokenKey = String(env.TOKEN_ENCRYPTION_KEY ?? '').trim();
   if (tokenKey && tokenKey.length < 16) throw new ConfigError('TOKEN_ENCRYPTION_KEY must be at least 16 characters (a long random string; leave it out to use DISCORD_CLIENT_SECRET instead).');
+  const database = readDatabase(env, limits);
   return {
     token: env.DISCORD_TOKEN,
     clientId: env.DISCORD_CLIENT_ID,
@@ -92,5 +93,112 @@ export function loadConfig(env = process.env) {
     },
     tokenKey,
     sessionTtlMs: 7 * 24 * 3600 * 1000,
+    database,
   };
+}
+
+const DRIVER_NAMES = new Map([
+  ['sqlite', 'sqlite'], ['local', 'sqlite'], ['localdb', 'sqlite'],
+  ['mongodb', 'mongodb'], ['mongo', 'mongodb'],
+  ['firebase', 'firebase'], ['firestore', 'firebase'],
+  ['cloudflare', 'cloudflare'], ['d1', 'cloudflare'],
+]);
+
+const DRIVER_LABELS = { sqlite: 'local sqlite', mongodb: 'MongoDB', firebase: 'Firebase', cloudflare: 'Cloudflare D1' };
+
+const filled = (value) => {
+  const text = String(value ?? '').trim();
+  return text || null;
+};
+
+/** mongodb:// and mongodb+srv:// only. An empty value means "not configured". */
+function readMongo(env) {
+  const uri = filled(env.MONGODB_URI);
+  if (!uri) return null;
+  let parsed;
+  try { parsed = new URL(uri); } catch { throw new ConfigError('MONGODB_URI must be a mongodb:// or mongodb+srv:// address.'); }
+  if (parsed.protocol !== 'mongodb:' && parsed.protocol !== 'mongodb+srv:') {
+    throw new ConfigError('MONGODB_URI must start with mongodb:// or mongodb+srv://.');
+  }
+  return { uri, dbName: filled(env.MONGODB_DB) || 'chillflow' };
+}
+
+/** A service-account JSON blob, or the three fields it contains. Partial settings are an error. */
+function readFirebase(env) {
+  const jsonRaw = filled(env.FIREBASE_SERVICE_ACCOUNT);
+  const projectId = filled(env.FIREBASE_PROJECT_ID);
+  const clientEmail = filled(env.FIREBASE_CLIENT_EMAIL);
+  const privateKeyRaw = filled(env.FIREBASE_PRIVATE_KEY);
+  if (!jsonRaw && !projectId && !clientEmail && !privateKeyRaw) return null;
+  if (jsonRaw && (projectId || clientEmail || privateKeyRaw)) {
+    throw new ConfigError('Set either FIREBASE_SERVICE_ACCOUNT or the three FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY values, not both.');
+  }
+  const databaseId = filled(env.FIREBASE_DATABASE_ID) || '(default)';
+  if (jsonRaw) {
+    let parsed;
+    try { parsed = JSON.parse(jsonRaw); } catch { throw new ConfigError('FIREBASE_SERVICE_ACCOUNT must be the service-account JSON on one line.'); }
+    const privateKey = String(parsed.private_key || '').replace(/\\n/g, '\n');
+    if (!parsed.project_id || !parsed.client_email || !privateKey.includes('BEGIN PRIVATE KEY')) {
+      throw new ConfigError('FIREBASE_SERVICE_ACCOUNT is missing project_id, client_email, or private_key.');
+    }
+    return { projectId: String(parsed.project_id), clientEmail: String(parsed.client_email), privateKey, databaseId };
+  }
+  if (!projectId || !clientEmail || !privateKeyRaw) {
+    throw new ConfigError('Firebase needs FIREBASE_SERVICE_ACCOUNT, or all three of FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY.');
+  }
+  const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
+  if (!privateKey.includes('BEGIN PRIVATE KEY')) throw new ConfigError('FIREBASE_PRIVATE_KEY must be the PEM private key from the service account, with newlines written as \\n.');
+  return { projectId, clientEmail, privateKey, databaseId };
+}
+
+/** Cloudflare D1, reached over the HTTP API. All three values or none. */
+function readCloudflare(env) {
+  const accountId = filled(env.CLOUDFLARE_ACCOUNT_ID);
+  const apiToken = filled(env.CLOUDFLARE_API_TOKEN);
+  const databaseId = filled(env.CLOUDFLARE_D1_DATABASE_ID);
+  if (!accountId && !apiToken && !databaseId) return null;
+  if (!accountId || !apiToken || !databaseId) {
+    throw new ConfigError('Cloudflare D1 needs CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN and CLOUDFLARE_D1_DATABASE_ID. Leave all three unset to use the local database.');
+  }
+  return { accountId, apiToken, databaseId };
+}
+
+function pack(driver, extra, limits) {
+  return { driver, label: DRIVER_LABELS[driver], limits, ...extra };
+}
+
+/**
+ * No cloud settings (or DB_DRIVER=sqlite) keeps the local SQLite file.
+ * One cloud database is used on its own. Two at once is an error unless DB_DRIVER names the one to use.
+ */
+function readDatabase(env, limits) {
+  const raw = filled(env.DB_DRIVER);
+  const chosen = raw ? DRIVER_NAMES.get(raw.toLowerCase()) : null;
+  if (raw && !chosen) throw new ConfigError(`DB_DRIVER must be sqlite, mongodb, firebase or cloudflare (got "${raw}").`);
+  if (chosen === 'sqlite') return pack('sqlite', {}, limits);
+
+  const mongo = readMongo(env);
+  const firebase = readFirebase(env);
+  const cloudflare = readCloudflare(env);
+  if (chosen === 'mongodb') {
+    if (!mongo) throw new ConfigError('DB_DRIVER=mongodb needs MONGODB_URI. Leave DB_DRIVER unset to use the local database.');
+    return pack('mongodb', mongo, limits);
+  }
+  if (chosen === 'firebase') {
+    if (!firebase) throw new ConfigError('DB_DRIVER=firebase needs FIREBASE_SERVICE_ACCOUNT, or FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY.');
+    return pack('firebase', firebase, limits);
+  }
+  if (chosen === 'cloudflare') {
+    if (!cloudflare) throw new ConfigError('DB_DRIVER=cloudflare needs CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN and CLOUDFLARE_D1_DATABASE_ID.');
+    return pack('cloudflare', cloudflare, limits);
+  }
+
+  const provided = [mongo && 'mongodb', firebase && 'firebase', cloudflare && 'cloudflare'].filter(Boolean);
+  if (provided.length > 1) {
+    throw new ConfigError(`More than one database is configured (${provided.join(', ')}). Set DB_DRIVER to the one to use, or remove the others. Leave them all unset to use the local database.`);
+  }
+  if (mongo) return pack('mongodb', mongo, limits);
+  if (firebase) return pack('firebase', firebase, limits);
+  if (cloudflare) return pack('cloudflare', cloudflare, limits);
+  return pack('sqlite', {}, limits);
 }
