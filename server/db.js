@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS linked_accounts (
   guild_id TEXT NOT NULL, provider TEXT NOT NULL, account_id TEXT NOT NULL, account_name TEXT NOT NULL, account_login TEXT NOT NULL DEFAULT '',
   access_enc TEXT NOT NULL, refresh_enc TEXT NOT NULL, expires_at INTEGER NOT NULL, scopes TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'ok', connected_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-  PRIMARY KEY (guild_id, provider)
+  PRIMARY KEY (guild_id, provider, account_id)
 );
 CREATE TABLE IF NOT EXISTS watch_state (
   guild_id TEXT NOT NULL, flow_id TEXT NOT NULL, node_id TEXT NOT NULL, data TEXT NOT NULL, updated_at INTEGER NOT NULL,
@@ -111,6 +111,20 @@ export class Database {
     const have = new Set(this.db.prepare('PRAGMA table_info(pages)').all().map((c) => c.name));
     for (const [name, ddl] of [['live', 'TEXT'], ['access', "TEXT NOT NULL DEFAULT 'public'"], ['role_ids', "TEXT NOT NULL DEFAULT '[]'"]]) {
       if (!have.has(name)) this.db.exec(`ALTER TABLE pages ADD COLUMN ${name} ${ddl}`);
+    }
+    // Connected accounts used to be one per platform per server; a server may now connect several. The key gains the account, so the table is rebuilt.
+    const cols = this.db.prepare('PRAGMA table_info(linked_accounts)').all();
+    if (cols.length && !cols.find((c) => c.name === 'account_id')?.pk) {
+      this.db.exec(`
+        ALTER TABLE linked_accounts RENAME TO linked_accounts_old;
+        CREATE TABLE linked_accounts (
+          guild_id TEXT NOT NULL, provider TEXT NOT NULL, account_id TEXT NOT NULL, account_name TEXT NOT NULL, account_login TEXT NOT NULL DEFAULT '',
+          access_enc TEXT NOT NULL, refresh_enc TEXT NOT NULL, expires_at INTEGER NOT NULL, scopes TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'ok', connected_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+          PRIMARY KEY (guild_id, provider, account_id)
+        );
+        INSERT INTO linked_accounts SELECT guild_id, provider, account_id, account_name, account_login, access_enc, refresh_enc, expires_at, scopes, status, connected_by, created_at, updated_at FROM linked_accounts_old;
+        DROP TABLE linked_accounts_old;`);
     }
     // Pages published before drafts existed: what visitors see today becomes their live version, so nothing changes for them.
     const legacy = this.db.prepare('SELECT id, title, theme, blocks, updated_at, updated_by FROM pages WHERE published = 1 AND live IS NULL').all();
@@ -209,34 +223,39 @@ export class Database {
   }
 
   // ---- accounts a server has connected (Twitch, TikTok): the tokens are sealed by server/secrets.js before they get here ---------
-  /** One row WITH its sealed tokens (for the accounts service only — never send this to the browser). */
-  getAccount(guildId, provider) {
-    const r = this.#stmt('SELECT * FROM linked_accounts WHERE guild_id=? AND provider=?').get(guildId, provider);
+  /**
+   * One row WITH its sealed tokens (for the accounts service only — never send this to the browser). Without an `accountId` it is the first
+   * account of that platform that works (the oldest one), or the oldest of all when none works.
+   */
+  getAccount(guildId, provider, accountId = '') {
+    const r = accountId
+      ? this.#stmt('SELECT * FROM linked_accounts WHERE guild_id=? AND provider=? AND account_id=?').get(guildId, provider, String(accountId))
+      : this.#stmt("SELECT * FROM linked_accounts WHERE guild_id=? AND provider=? ORDER BY (status = 'ok') DESC, created_at, account_id LIMIT 1").get(guildId, provider);
     return r ? {
       guildId: r.guild_id, provider: r.provider, accountId: r.account_id, accountName: r.account_name, accountLogin: r.account_login, accessSealed: r.access_enc, refreshSealed: r.refresh_enc,
       expiresAt: r.expires_at, scopes: r.scopes, status: r.status, connectedBy: r.connected_by, createdAt: r.created_at, updatedAt: r.updated_at,
     } : null;
   }
 
-  /** What is connected to a server, without any token. */
+  /** What is connected to a server, without any token: oldest first. */
   listAccounts(guildId) {
-    return this.#stmt('SELECT provider, account_id, account_name, status, connected_by, created_at, updated_at FROM linked_accounts WHERE guild_id = ? ORDER BY provider').all(guildId)
-      .map((r) => ({ provider: r.provider, accountId: r.account_id, accountName: r.account_name, status: r.status, connectedBy: r.connected_by, createdAt: r.created_at, updatedAt: r.updated_at }));
+    return this.#stmt('SELECT provider, account_id, account_name, account_login, status, connected_by, created_at, updated_at FROM linked_accounts WHERE guild_id = ? ORDER BY provider, created_at, account_id').all(guildId)
+      .map((r) => ({ provider: r.provider, accountId: r.account_id, accountName: r.account_name, accountLogin: r.account_login, status: r.status, connectedBy: r.connected_by, createdAt: r.created_at, updatedAt: r.updated_at }));
   }
 
   saveAccount(a, now = Date.now()) {
     this.#stmt(`INSERT INTO linked_accounts (guild_id, provider, account_id, account_name, account_login, access_enc, refresh_enc, expires_at, scopes, status, connected_by, created_at, updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-      ON CONFLICT(guild_id, provider) DO UPDATE SET account_id = excluded.account_id, account_name = excluded.account_name, account_login = excluded.account_login, access_enc = excluded.access_enc, refresh_enc = excluded.refresh_enc,
+      ON CONFLICT(guild_id, provider, account_id) DO UPDATE SET account_name = excluded.account_name, account_login = excluded.account_login, access_enc = excluded.access_enc, refresh_enc = excluded.refresh_enc,
         expires_at = excluded.expires_at, scopes = excluded.scopes, status = excluded.status, connected_by = COALESCE(excluded.connected_by, connected_by), updated_at = excluded.updated_at`)
-      .run(a.guildId, a.provider, a.accountId, a.accountName, a.accountLogin ?? '', a.accessSealed, a.refreshSealed, a.expiresAt, a.scopes ?? '', a.status ?? 'ok', a.connectedBy ?? null, now, now);
+      .run(a.guildId, a.provider, String(a.accountId), a.accountName, a.accountLogin ?? '', a.accessSealed, a.refreshSealed, a.expiresAt, a.scopes ?? '', a.status ?? 'ok', a.connectedBy ?? null, now, now);
   }
 
-  setAccountStatus(guildId, provider, status, now = Date.now()) {
-    this.#stmt('UPDATE linked_accounts SET status = ?, updated_at = ? WHERE guild_id=? AND provider=?').run(status, now, guildId, provider);
+  setAccountStatus(guildId, provider, accountId, status, now = Date.now()) {
+    this.#stmt('UPDATE linked_accounts SET status = ?, updated_at = ? WHERE guild_id=? AND provider=? AND account_id=?').run(status, now, guildId, provider, String(accountId));
   }
 
-  deleteAccount(guildId, provider) { this.#stmt('DELETE FROM linked_accounts WHERE guild_id=? AND provider=?').run(guildId, provider); }
+  deleteAccount(guildId, provider, accountId) { this.#stmt('DELETE FROM linked_accounts WHERE guild_id=? AND provider=? AND account_id=?').run(guildId, provider, String(accountId)); }
 
   deleteGuildAccounts(guildId) { this.#stmt('DELETE FROM linked_accounts WHERE guild_id=?').run(guildId); }
 

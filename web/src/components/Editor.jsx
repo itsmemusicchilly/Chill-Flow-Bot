@@ -1,5 +1,6 @@
 import { ReactFlowProvider } from '@xyflow/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { accountFlagsFrom } from '@shared/platforms.js';
 import { api, takeConnectResult } from '../api.js';
 import { ImagesContext, useToast } from '../context.js';
 import FlowWorkspace from './FlowWorkspace.jsx';
@@ -63,7 +64,7 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
     await reloadAccounts();
     api(`/guilds/${gid}/flows`).then(setFlows).catch(() => {});
   }, [gid, reloadAccounts]);
-  const accountFlags = useMemo(() => (accounts ? Object.fromEntries(accounts.map((a) => [a.provider, a.status === 'ok'])) : undefined), [accounts]);
+  const accountFlags = useMemo(() => (accounts ? accountFlagsFrom(accounts.flatMap((g) => g.accounts.map((a) => ({ provider: g.provider, id: a.id, status: a.status })))) : undefined), [accounts]);
   // coming back from Twitch / TikTok: say how it went, once, and show the accounts
   useEffect(() => {
     const back = takeConnectResult();
@@ -109,7 +110,8 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
     return () => { alive = false; es.close(); };
   }, [gid]);
 
-  const guildData = useMemo(() => ({ channels, roles, forms: pagesApi.forms }), [channels, roles, pagesApi.forms]);
+  const accountChoices = useMemo(() => Object.fromEntries((accounts ?? []).map((g) => [g.provider, g.accounts.map((a) => ({ id: a.id, name: a.name }))])), [accounts]);
+  const guildData = useMemo(() => ({ channels, roles, forms: pagesApi.forms, accounts: accountChoices }), [channels, roles, pagesApi.forms, accountChoices]);
 
   const openFlow = (id) => { setNavOpen(false); if (id !== flowId && confirmLeave()) navigate(gid, id); };
 

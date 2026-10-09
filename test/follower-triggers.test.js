@@ -46,6 +46,10 @@ describe('the settings of the count triggers', () => {
     assert.deepEqual(check('trigger.twitch.followers', { fire: 'gain', minutes: 5 }), []);
     assert.match(check('trigger.twitch.followers', { fire: 'gain', minutes: 0 })[0], /every 1 minute/);
     assert.match(check('trigger.tiktok.followers', { fire: 'gain', minutes: 1 })[0], /every 5 minutes/);
+    assert.deepEqual(check('trigger.twitch.followers', { account: '555', fire: 'gain', minutes: 5 }), []);
+    assert.deepEqual(check('trigger.tiktok.followers', { account: '-000KPzV6eQ_WKJm', fire: 'gain', minutes: 5 }), []);
+    assert.match(check('trigger.twitch.followers', { account: 'a|b', fire: 'gain', minutes: 5 })[0], /Pick one of the connected accounts/);
+    assert.match(check('trigger.tiktok.followers', { account: 'x y', fire: 'gain', minutes: 5 })[0], /Pick one of the connected accounts/);
     assert.deepEqual(check('trigger.youtube.gained', { channel: ' ', minutes: 30 }), []);
     assert.match(check('trigger.youtube.gained', { channel: 'nope', minutes: 30 })[0], /starts with UC/);
   });
@@ -72,12 +76,24 @@ describe('telling the editor an account must be connected first', () => {
   const ALL = { youtube: true, twitch: true, tiktok: true };
 
   it('is an error on the node until the account is connected, and says where to do it', () => {
-    const found = intents(ALL, { twitch: false, tiktok: false });
+    const found = intents(ALL, { twitch: false, tiktok: false, ids: { twitch: [], tiktok: [] } });
     assert.deepEqual(found.map(([id]) => id), ['t', 'k']);
     assert.match(found[0][1], /Connect a Twitch account first: open “Accounts” in the top bar and press Connect Twitch/);
     assert.match(found[1][1], /Connect a TikTok account first/);
     assert.deepEqual(intents(ALL, { twitch: true, tiktok: false }).map(([id]) => id), ['k']);
     assert.deepEqual(intents(ALL, { twitch: true, tiktok: true }), []);
+  });
+
+  it('knows which accounts are connected: a trigger naming one that is not (any more) says so', () => {
+    const named = (account) => ({ nodes: [node('t', 'trigger.twitch.followers', { account })], edges: [] });
+    const flags = { twitch: true, tiktok: false, ids: { twitch: ['555', '999'], tiktok: [] } };
+    const found = (account, accounts = flags) => validateFlow(named(account), { integrations: ALL, accounts }).filter((i) => i.kind === 'intent').map((i) => i.message);
+    assert.deepEqual(found(''), [], 'blank: the first one that works');
+    assert.deepEqual(found('999'), []);
+    assert.match(found('31337')[0], /The Twitch account chosen here is not connected any more \(or must be connected again\)/);
+    assert.match(found('555', { ...flags, ids: { twitch: ['999'], tiktok: [] } })[0], /not connected any more/, 'an account that must be connected again is as good as gone');
+    assert.match(found('', { twitch: false, tiktok: false, ids: { twitch: [], tiktok: [] } })[0], /Connect a Twitch account first/, 'none at all');
+    assert.deepEqual(found('999', { twitch: true, tiktok: false }), [], 'a caller that only knows yes/no cannot say more');
   });
 
   it('is not said when nobody told it which accounts are connected, so older callers see no change', () => {
@@ -285,7 +301,7 @@ describe('the count triggers, running', () => {
       await connect('twitch');
       watch();
       await run(MIN);
-      await accounts.disconnect(G(), 'twitch');
+      await accounts.disconnect(G(), 'twitch', '555');
       runtime.loadGuild(G());
       net.calls.length = 0;
       net.state.twitch.followers = 500;
@@ -304,6 +320,98 @@ describe('the count triggers, running', () => {
       await run(MIN);
       assert.ok(logger.recent(g2.id, 20).some((l) => /Connect a Twitch account first/.test(l.message)), 'the other server has nothing connected');
       assert.equal(asked('/helix/channels/followers').length, 1, 'only this server\'s account was looked at');
+    });
+
+    it('gives the newest follower\'s name', async () => {
+      await connect('twitch');
+      install('trigger.twitch.followers', { minutes: 5 }, 'Welcome {{twitch.latest}}! ({{twitch.gained}} new)');
+      await run(MIN);
+      net.state.twitch.followers = 101;
+      net.state.twitch.latest = 'Luna_99';
+      await crawl(5);
+      assert.deepEqual(said(), ['Welcome Luna_99! (1 new)']);
+      net.state.twitch.latest = '';
+      net.state.twitch.followers = 102;
+      await crawl(5);
+      assert.equal(said().at(-1), 'Welcome ! (1 new)', 'blank, not “undefined”, when Twitch names nobody');
+    });
+
+    describe('several accounts', () => {
+      const connectSecond = async () => {
+        net.state.twitch.user = { id: '999', login: 'other', display_name: 'Other' };
+        await connect('twitch');
+        net.state.twitch.counts = { 555: 100, 999: 500 };
+      };
+      const says = '{{twitch.name}} {{twitch.followers}} (+{{twitch.gained}})';
+
+      it('a flow follows the account it names, another flow a different one, and a blank one the first that works', async () => {
+        await connect('twitch');
+        await connectSecond();
+        install('trigger.twitch.followers', { minutes: 5, account: '999' }, `A: ${says}`, 'Second');
+        install('trigger.twitch.followers', { minutes: 5 }, `B: ${says}`, 'First');
+        await run(MIN);
+        net.state.twitch.counts = { 555: 103, 999: 510 };
+        await crawl(5);
+        assert.deepEqual(said().sort(), ['A: Other 510 (+10)', 'B: Streamer 103 (+3)']);
+        assert.deepEqual(asked('/helix/channels/followers').slice(0, 2).map((c) => c.query.broadcaster_id).sort(), ['555', '999'], 'each account is looked at on its own');
+      });
+
+      it('flows that name the same account share one look', async () => {
+        await connect('twitch');
+        await connectSecond();
+        install('trigger.twitch.followers', { minutes: 5, account: '999' }, says, 'One');
+        install('trigger.twitch.followers', { minutes: 5, account: '999' }, says, 'Two');
+        await run(MIN);
+        assert.equal(asked('/helix/channels/followers').length, 1);
+      });
+
+      it('a flow that names an account that is not connected stays off, and says why', async () => {
+        await connect('twitch');
+        install('trigger.twitch.followers', { minutes: 5, account: '31337' }, says);
+        await run(MIN);
+        assert.equal(net.calls.filter((c) => c.path === '/helix/channels/followers').length, 0);
+        assert.ok(logs().some((l) => /is not active: The Twitch account chosen here is not connected any more/.test(l)), logs().join('\n'));
+      });
+
+      it('one account that must be connected again does not stop the others', async () => {
+        await connect('twitch');
+        await connectSecond();
+        install('trigger.twitch.followers', { minutes: 5, account: '999' }, `A: ${says}`, 'Second');
+        install('trigger.twitch.followers', { minutes: 5, account: '555' }, `B: ${says}`, 'First');
+        await run(MIN);
+        accounts.expire(G(), 'twitch', '555', 'test');
+        runtime.loadGuild(G());
+        net.state.twitch.counts = { 555: 150, 999: 520 };
+        await crawl(5);
+        assert.deepEqual(said(), ['A: Other 520 (+20)'], 'the first account is paused, the second goes on');
+        assert.ok(logs().some((l) => /First.* is not active: The Twitch account chosen here is not connected any more/.test(l)));
+      });
+
+      it('when “the first account” becomes a different account, its total is not announced as a jump', async () => {
+        await connect('twitch');
+        await connectSecond();
+        install('trigger.twitch.followers', { minutes: 5 }, says);
+        await run(MIN);
+        await accounts.disconnect(G(), 'twitch', '555'); // the second account (500 followers) is now the first one that works
+        runtime.loadGuild(G());
+        await crawl(5);
+        assert.deepEqual(said(), [], 'no “+400”: it starts over from the new account');
+        net.state.twitch.counts = { 999: 503 };
+        await crawl(5);
+        assert.deepEqual(said(), ['Other 503 (+3)']);
+      });
+
+      it('the counter flow rewrites its channel name from the account it follows', async () => {
+        await connect('twitch');
+        await connectSecond();
+        const t = TEMPLATES.find((x) => x.id === 'twitch-counter').build();
+        t.nodes.find((x) => x.id === 'u1').data.channelId = counter.id;
+        t.nodes.find((x) => x.id === 't1').data.account = '999';
+        db.createFlow({ guildId: G(), name: 'counter', graph: t });
+        runtime.loadGuild(G());
+        await run(MIN);
+        assert.deepEqual(renames(), ['💜 Followers: 500']);
+      });
     });
 
     it('the live counter starter flow renames a channel at once, then on every change, with the number formatted', async () => {

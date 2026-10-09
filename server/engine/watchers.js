@@ -123,6 +123,13 @@ export class Watchers {
   /** Resolves when no round is running (for tests and for a clean shutdown). */
   async idle() { while (this.pass) await this.pass; }
 
+  /** One look right now, outside the schedule, at what an adapter watches (the dashboard's “Check now”). Nothing is announced and nothing is remembered. */
+  peek(type, key) {
+    const adapter = this.adapters.get(type);
+    if (!adapter?.fetch) throw new Error('That cannot be checked.');
+    return adapter.fetch({ key }, this.#context(this.runtime.clock.now()));
+  }
+
   #context(now) { return { fetch: this.fetch, now, keys: this.keys, accounts: this.accounts }; }
 
   async #lookOne(target, now) {

@@ -60,6 +60,29 @@ export function countSettings(d = {}, { min }) {
   return { mode, everyMs: minutesOf(d, min) * 60_000 };
 }
 
+/** The connected account a Followers trigger reads: blank = the first one that works. Ids are the platform's own (digits for Twitch; letters, digits, - and _ for TikTok). */
+export const ACCOUNT_ID_RE = /^[\w-]{1,100}$/;
+export function accountOf(d = {}) {
+  const v = String(d.account ?? '').trim();
+  if (v && !ACCOUNT_ID_RE.test(v)) throw new FeedSettingError('Pick one of the connected accounts from the list (or leave it blank to use the first one).');
+  return v;
+}
+
+/**
+ * Which creator accounts a server has, from rows of `{ provider, id, status }`: `{ twitch: true, tiktok: false, ids: { twitch: ['555'], tiktok: [] } }`.
+ * Only accounts that work (status “ok”) count; an account that must be connected again is as good as missing.
+ */
+export function accountFlagsFrom(rows) {
+  const flags = Object.fromEntries(Object.keys(CONNECTIONS).map((p) => [p, false]));
+  const ids = Object.fromEntries(Object.keys(CONNECTIONS).map((p) => [p, []]));
+  for (const r of rows ?? []) {
+    if (r.status !== 'ok' || !(r.provider in flags)) continue;
+    flags[r.provider] = true;
+    ids[r.provider].push(r.id);
+  }
+  return { ...flags, ids };
+}
+
 /** The YouTube count trigger: a channel plus the shared count settings. */
 export function youtubeCountSettings(d = {}) {
   return { channelId: youtubeChannelId(String(d.channel ?? '').trim()), ...countSettings(d, { min: MIN_YOUTUBE_MINUTES }) };

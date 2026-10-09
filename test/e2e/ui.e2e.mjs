@@ -761,9 +761,9 @@ try {
   await page.getByRole('button', { name: 'Accounts' }).click();
   const acc = page.getByRole('dialog', { name: 'Connected accounts' });
   await acc.waitFor();
-  const tkRow = acc.locator('.account-row[data-provider="tiktok"]');
-  const twRow = acc.locator('.account-row[data-provider="twitch"]');
-  ok((await acc.locator('.account-row').count()) === 2, 'the dialog lists Twitch and TikTok');
+  const tkRow = acc.locator('.account-group[data-provider="tiktok"]');
+  const twRow = acc.locator('.account-group[data-provider="twitch"]');
+  ok((await acc.locator('.account-group').count()) === 2, 'the dialog lists Twitch and TikTok');
   ok(await twRow.getByText(/operator has not set up Twitch/).isVisible() && (await twRow.getByRole('button').count()) === 0, 'Twitch says the bot operator has not set it up, and has no Connect button');
   ok(await tkRow.getByRole('button', { name: 'Connect TikTok' }).isEnabled() && (await tkRow.getByText('Connected', { exact: true }).count()) === 0, 'TikTok can be connected and is not connected yet');
   await shot('41-accounts-dialog');
@@ -781,11 +781,11 @@ try {
   await tab2.getByRole('heading', { name: 'Choose a server' }).waitFor();
   await tab2.locator('.toast', { hasText: /could not be connected/ }).first().waitFor();
   const forged = await tab2.evaluate(async () => (await (await fetch('/api/guilds/100000000000000001/accounts')).json()).find((a) => a.provider === 'tiktok'));
-  ok(forged.connected === false && !tab2.url().includes('connect='), 'a forged return connects nothing, says so, and the address is tidied');
+  ok(forged.accounts.length === 0 && !tab2.url().includes('connect='), 'a forged return connects nothing, says so, and the address is tidied');
 
   await tab2.goto(`${BASE}/#/g/100000000000000001`);
   await tab2.getByRole('button', { name: 'Accounts' }).click();
-  await tab2.getByRole('dialog', { name: 'Connected accounts' }).locator('.account-row[data-provider="tiktok"]').getByRole('button', { name: 'Connect TikTok' }).click();
+  await tab2.getByRole('dialog', { name: 'Connected accounts' }).locator('.account-group[data-provider="tiktok"]').getByRole('button', { name: 'Connect TikTok' }).click();
   await tab2.getByRole('heading', { name: /TikTok approval page/ }).waitFor();
   const approvalUrl = new URL(approval);
   ok(approvalUrl.pathname === '/v2/auth/authorize/' && approvalUrl.searchParams.get('client_key') === 'demo-key' && approvalUrl.searchParams.get('scope') === 'user.info.basic,user.info.stats' && approvalUrl.searchParams.get('redirect_uri') === `${BASE}/auth/tiktok/callback`, 'Connect goes to TikTok\'s approval page with the bot\'s app, the follower permission and the way back');
@@ -796,9 +796,14 @@ try {
   await tab2.goto(`${BASE}/auth/tiktok/callback?code=good-code&state=${returnState}`);
   const back = tab2.getByRole('dialog', { name: 'Connected accounts' });
   await back.waitFor();
-  const tkBack = back.locator('.account-row[data-provider="tiktok"]');
+  const tkBack = back.locator('.account-group[data-provider="tiktok"]');
   await tkBack.getByText('Connected', { exact: true }).waitFor();
   ok((await tkBack.getByText('Dancer').count()) === 1 && !tab2.url().includes('connect=') && tab2.url().endsWith('#/g/100000000000000001'), 'back from TikTok: the dialog shows “Connected” and the account name, on the same server, and the address is tidied');
+  ok((await tkBack.getByText(/Not checked yet/).count()) === 1, 'a new account says it has not been checked yet');
+  await tkBack.getByRole('button', { name: 'Check now' }).click();
+  await tkBack.getByText(/2,000 followers · checked just now/).waitFor();
+  ok(true, 'Check now looks at TikTok once and shows the follower count and when it was found');
+  ok((await tkBack.getByRole('button', { name: 'Connect another TikTok' }).count()) === 1, 'and another account can be connected');
   ok((await tab2.locator('.toast', { hasText: 'TikTok connected.' }).count()) >= 1, 'and a message says so');
   const html = await tab2.content();
   ok(!html.includes('tt-access') && !html.includes('tt-refresh'), 'no token is anywhere in the page');
@@ -806,16 +811,16 @@ try {
 
   // the first tab learns about it the next time the dialog is opened, and the node stops saying “connect first”
   await page.getByRole('button', { name: 'Accounts' }).click();
-  await acc.locator('.account-row[data-provider="tiktok"]').getByText('Connected', { exact: true }).waitFor();
+  await acc.locator('.account-group[data-provider="tiktok"]').getByText('Connected', { exact: true }).waitFor();
   await page.keyboard.press('Escape');
   await page.waitForTimeout(150);
   ok((await tk.getByText(/Connect a TikTok account first/).count()) === 0, 'the TikTok Followers node no longer says an account must be connected first');
 
   // disconnecting puts it back
   await page.getByRole('button', { name: 'Accounts' }).click();
-  await acc.locator('.account-row[data-provider="tiktok"]').getByRole('button', { name: 'Disconnect' }).click(); // the page's dialog handler accepts the “are you sure”
-  await acc.locator('.account-row[data-provider="tiktok"]').getByRole('button', { name: 'Connect TikTok' }).waitFor();
-  ok((await acc.locator('.account-row[data-provider="tiktok"]').getByText('Connected', { exact: true }).count()) === 0, 'Disconnect puts it back to “Connect TikTok”');
+  await acc.locator('.account-group[data-provider="tiktok"]').getByRole('button', { name: 'Disconnect' }).click(); // the page's dialog handler accepts the “are you sure”
+  await acc.locator('.account-group[data-provider="tiktok"]').getByRole('button', { name: 'Connect TikTok' }).waitFor();
+  ok((await acc.locator('.account-group[data-provider="tiktok"]').getByText('Connected', { exact: true }).count()) === 0, 'Disconnect puts it back to “Connect TikTok”');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(150);
   ok((await tk.getByText(/Connect a TikTok account first/).count()) === 1, 'and the node asks for an account again');

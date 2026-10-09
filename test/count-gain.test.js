@@ -60,6 +60,28 @@ describe('when a count changed', () => {
     assert.deepEqual(r.fire, [{ count: 12, previous: 10, change: 2, gained: 2 }]);
   });
 
+  it('a count that belongs to a different account starts over instead of announcing a jump', () => {
+    const at = (state, count, owner, mode = 'gain') => evaluateCount(state, count, { mode, noun: 'followers', name: 'Test', owner });
+    let r = at(null, 100, 'A');
+    assert.equal(r.state.owner, 'A');
+    r = at(r.state, 103, 'A');
+    assert.deepEqual(r.fire.map((f) => f.gained), [3]);
+    const other = at(r.state, 5000, 'B');
+    assert.deepEqual(other.fire, [], 'the other account\'s total is not “+4,897”');
+    assert.equal(other.state.owner, 'B');
+    assert.equal(other.state.count, 5000);
+    assert.match(other.log[0].message, /Now watching/);
+    assert.deepEqual(at(other.state, 5002, 'B').fire.map((f) => f.gained), [2]);
+    assert.deepEqual(at(r.state, 5000, 'B', 'change').fire, [{ count: 5000, previous: 5000, change: 0, gained: 0 }], 'a counter shows the new account straight away');
+  });
+
+  it('state saved before accounts had owners adopts the owner without starting over', () => {
+    const old = { baselined: true, count: 100 };
+    const r = evaluateCount(old, 104, { mode: 'gain', noun: 'followers', name: 'Test', owner: 'A' });
+    assert.deepEqual(r.fire.map((f) => f.gained), [4]);
+    assert.equal(r.state.owner, 'A');
+  });
+
   it('a count it cannot read changes nothing', () => {
     const state = { baselined: true, count: 7 };
     for (const bad of [NaN, undefined, null, Infinity]) assert.deepEqual(step(state, bad), { state, fire: [], log: [] }, String(bad));

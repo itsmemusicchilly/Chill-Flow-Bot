@@ -3,7 +3,7 @@ import { isCapped, LIMITS, limitsToJSON } from '../shared/limits.js';
 import { BLOCK_ID_RE, formsOf, hasPageStructureErrors, hasUnpublishedChanges, normalizePage, validatePage } from '../shared/blocks.js';
 import { PAGE_TEMPLATES } from '../shared/page-templates.js';
 import { TEMPLATES } from '../shared/templates.js';
-import { integrationFlags } from '../shared/platforms.js';
+import { ACCOUNT_ID_RE, integrationFlags } from '../shared/platforms.js';
 import { hasStructureErrors, normalizeGraph, validateFlow } from '../shared/validate.js';
 import { toCsv } from './csv.js';
 import { livePage, SlugTakenError } from './db.js';
@@ -305,6 +305,12 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
     if (!accounts.providers().includes(req.params.provider)) throw new HttpError(404, 'Unknown platform.');
     return req.params.provider;
   };
+  const accountIdOf = (req) => {
+    if (!ACCOUNT_ID_RE.test(req.params.accountId)) throw new HttpError(404, 'Unknown account.');
+    return req.params.accountId;
+  };
+  const COUNT_TRIGGERS = { twitch: 'trigger.twitch.followers', tiktok: 'trigger.tiktok.followers' };
+  const checks = new RateLimiter(6, 60_000);
   guildRouter.get('/accounts', (req, res) => res.json(accounts.list(req.params.gid)));
   guildRouter.post('/accounts/:provider/start', (req, res) => {
     const provider = providerOf(req);
@@ -315,11 +321,25 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
       throw err;
     }
   });
-  guildRouter.delete('/accounts/:provider', async (req, res) => {
+  guildRouter.delete('/accounts/:provider/:accountId', async (req, res) => {
     const provider = providerOf(req);
-    const removed = await accounts.disconnect(req.params.gid, provider);
+    const removed = await accounts.disconnect(req.params.gid, provider, accountIdOf(req));
     runtime.loadGuild(req.params.gid); // flows that used the account stop at once
     res.json({ ok: true, removed });
+  });
+  // “Check now”: one look at the platform for this account, so the person can see it works (nothing is announced)
+  guildRouter.post('/accounts/:provider/:accountId/check', async (req, res) => {
+    const { gid } = req.params;
+    const provider = providerOf(req);
+    const accountId = accountIdOf(req);
+    if (!checks.take(`${gid}|${provider}|${accountId}`)) throw new HttpError(429, 'Slow down a little: the platform is asked at most six times a minute.');
+    if (!accounts.list(gid).find((p) => p.provider === provider)?.accounts.some((a) => a.id === accountId)) throw new HttpError(404, 'That account is not connected.');
+    try {
+      await runtime.watchers.peek(COUNT_TRIGGERS[provider], `${gid}|${accountId}`);
+    } catch (err) {
+      throw new HttpError(502, String(err?.message || 'The platform could not be reached.').slice(0, 200));
+    }
+    res.json({ ok: true, accounts: accounts.list(gid) });
   });
 
   // ---- logs ---------------------------------------------------------------------------------

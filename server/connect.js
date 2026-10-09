@@ -50,7 +50,7 @@ export function createConnect({ config, auth, accounts, bot, runtime, logger, no
     try {
       const done = await accounts.complete(entry.guildId, provider, entry.userId, code);
       runtime.loadGuild(entry.guildId); // flows that were waiting for this account start now
-      logger.log(entry.guildId, 'info', `${accounts.list(entry.guildId).find((a) => a.provider === provider)?.label ?? provider} account “${done.account}” was connected.`);
+      logger.log(entry.guildId, 'info', `${accounts.list(entry.guildId).find((a) => a.provider === provider)?.label ?? provider} account “${done.account}” was ${done.added ? 'connected' : 'connected again'}.`);
       return back('ok');
     } catch (err) {
       const message = err instanceof AccountError ? err.message : 'Something went wrong while connecting. Try again.';

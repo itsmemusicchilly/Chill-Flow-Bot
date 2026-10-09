@@ -399,8 +399,8 @@ Three triggers run a flow when a count changes, with `{{…gained}}` (how many a
 | Trigger | Count | Where it comes from | Variables |
 | --- | --- | --- | --- |
 | *YouTube Subscribers Gained* | a channel's subscribers | YouTube's public count, through the operator's `YOUTUBE_API_KEY` (you give the channel ID) | `youtube.subscribers .gained .change .previous .channelTitle .channelId .url` |
-| *Twitch Followers* | the connected channel's followers | the streamer's own permission (*Accounts → Connect Twitch*) | `twitch.followers .gained .change .previous .name .login .url` |
-| *TikTok Followers* | the connected account's followers | the creator's own permission (*Accounts → Connect TikTok*) | `tiktok.followers .gained .change .previous .name` |
+| *Twitch Followers* | a connected channel's followers | the streamer's own permission (*Accounts → Connect Twitch*) | `twitch.followers .gained .change .previous .name .login .url .latest` |
+| *TikTok Followers* | a connected account's followers | the creator's own permission (*Accounts → Connect TikTok*) | `tiktok.followers .gained .change .previous .name` |
 
 Each has a **Run** setting: *Each time it goes up* (a thank-you message) or *Every time it changes* (a counter: it also runs when the count drops, and once when you switch the flow on so the number is right straight away).
 The ready-made **YouTube / Twitch / TikTok counter** flows keep a channel named `💜 Followers: 4,321` up to date (pick the channel in the last node; Discord allows a channel to be renamed twice every 10 minutes, so the bot
@@ -408,7 +408,10 @@ shows the newest number as soon as it may). The existing *YouTube Subscribers* t
 
 * **Counts, not people.** The platforms only tell us the total, so a look that finds 7 new followers runs the flow **once** with `{{twitch.gained}}` = 7, not seven times. The first look only remembers the count (except for *Every time it changes*).
 * **Connecting an account.** Open **Accounts** in the top bar and press **Connect Twitch** or **Connect TikTok**. You are sent to the platform to approve one permission — reading the follower count — and come back. The bot never sees a password.
-  One account per platform per server; connecting another replaces it. Anyone who can manage the server can connect or disconnect. **Disconnect** tells the platform to drop the permission, and a server the bot leaves loses its connections.
+  A server can connect **several accounts of each platform** (a community with a few streamers); a Followers trigger has an **Account** setting — leave it blank for the first account that works, or pick one. Each account shows its latest count and when it
+  was looked at, with a **Check now** button to look right away (at most six times a minute) — handy to see that a new connection works. If the first account is disconnected and another takes its place in a blank-account flow, the flow starts again
+  from the new account's count instead of announcing a jump. Anyone who can manage the server can connect or disconnect. **Disconnect** tells the platform to drop the permission, and a server the bot leaves loses its connections.
+* **`{{twitch.latest}}`** is the newest follower's name, so a thank-you can greet them. When several people follow between two looks, only the newest is named (the total still says how many).
 * **How the tokens are kept.** The access and refresh tokens are encrypted in the database (AES-256-GCM, bound to the server and platform) and are never sent to the browser or written to the log. They are renewed by themselves; if the platform stops
   accepting one (the creator removed the permission, changed their password…), the account shows **Connect again**, the flows using it pause, and the log says so.
 * **The bot operator sets up the apps once.** *Twitch*: the same free application as *Twitch Channel Live* (<https://dev.twitch.tv/console>) — add `BASE_URL/auth/twitch/callback` under *OAuth Redirect URLs*. *TikTok*: an app at
@@ -440,7 +443,7 @@ shows the newest number as soon as it may). The existing *YouTube Subscribers* t
 | `webhook.text .body.<field> .query.<name> .method .contentType` | *Webhook Received*: what was sent |
 | `youtube.subscribers .milestone .previous .channelTitle .channelId .url` | *YouTube Subscribers* |
 | `twitch.user .login .title .game .viewers .url .thumbnail .started .id` | *Twitch Channel Live* |
-| `youtube.gained .change`, `twitch.followers .gained .change .previous .name .login .url`, `tiktok.followers .gained .change .previous .name` | the count triggers (see [Counting subscribers and followers](#counting-subscribers-and-followers)) |
+| `youtube.gained .change`, `twitch.followers .gained .change .previous .name .login .url .latest`, `tiktok.followers .gained .change .previous .name` | the count triggers (see [Counting subscribers and followers](#counting-subscribers-and-followers)) |
 
 Filters: `default:x`, `upper`, `lower`, `trim`, `length`, `json`, plus the maths filters below. Filters chain left to right.
 Substituted text is never evaluated again, so member-supplied text cannot inject templates.

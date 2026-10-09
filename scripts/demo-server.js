@@ -35,10 +35,14 @@ const logger = new Logger({ console: false });
 const uploads = createUploads({ config, db, logger });
 const transcripts = createTranscripts({ config, db, logger });
 // the demo never goes on the internet: whatever a feed trigger wants to read simply cannot be read
-const offline = async () => { throw new Error('The demo has no internet connection.'); };
+const pretend = pretendProviders();
+const offline = async (url, options) => {
+  if (new URL(url).host === 'open.tiktokapis.com') return pretend.fetch(url, options); // the connected TikTok account (see below)
+  throw new Error('The demo has no internet connection.');
+};
 // connected accounts (TikTok here): the approval page is TikTok's, which the demo cannot reach — the browser check plays its part, and what
 // the bot asks TikTok for is answered by a pretend TikTok that accepts the code "good-code"
-const accounts = createAccounts({ config, db, logger, fetch: pretendProviders().fetch });
+const accounts = createAccounts({ config, db, logger, fetch: pretend.fetch });
 const runtime = new Runtime({ db, logger, intents: config.intents, uploads, transcripts, integrations: config.integrations, feedMinMinutes: config.feedMinMinutes, fetcher: offline, accounts });
 
 const guilds = new Map();

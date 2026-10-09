@@ -5,11 +5,12 @@ const json = (status, body) => ({ status, text: JSON.stringify(body), headers: n
 export function pretendProviders({ now = () => Date.now() } = {}) {
   const calls = [];
   const state = {
-    twitch: { followers: 100, user: { id: '555', login: 'streamer', display_name: 'Streamer' }, scope: ['moderator:read:followers'], accessLife: 3600, refreshes: 0, failRefresh: false, rejectAccess: false, status: null },
-    tiktok: { followers: 2000, user: { open_id: 'tt-open-1', display_name: 'Dancer' }, scope: 'user.info.basic,user.info.stats', accessLife: 86_400, refreshes: 0, failRefresh: false, rejectAccess: false, errorCode: null, status: null },
+    twitch: { followers: 100, counts: {}, latest: 'Newest Fan', user: { id: '555', login: 'streamer', display_name: 'Streamer' }, scope: ['moderator:read:followers'], accessLife: 3600, refreshes: 0, failRefresh: false, rejectAccess: false, status: null },
+    tiktok: { followers: 2000, counts: {}, user: { open_id: 'tt-open-1', display_name: 'Dancer' }, scope: 'user.info.basic,user.info.stats', accessLife: 86_400, refreshes: 0, failRefresh: false, rejectAccess: false, errorCode: null, status: null },
   };
   const live = { twitch: new Set(), tiktok: new Set() }; // access tokens that currently work
   const refreshTokens = { twitch: new Set(), tiktok: new Set() };
+  const owner = new Map(); // access or refresh token → the account it belongs to (a refresh keeps the account)
   let n = 0;
   const mint = (kind) => { n += 1; return `${kind}-${n}`; };
 
@@ -28,6 +29,7 @@ export function pretendProviders({ now = () => Date.now() } = {}) {
         if (body.code !== 'good-code') return json(400, { status: 400, message: 'Invalid authorization code' });
         const access = mint('tw-access'); const refresh = mint('tw-refresh');
         live.twitch.add(access); refreshTokens.twitch.add(refresh);
+        owner.set(access, t.user); owner.set(refresh, t.user);
         return json(200, { access_token: access, refresh_token: refresh, expires_in: t.accessLife, scope: t.scope, token_type: 'bearer' });
       }
       if (body.grant_type === 'refresh_token') {
@@ -36,18 +38,20 @@ export function pretendProviders({ now = () => Date.now() } = {}) {
         refreshTokens.twitch.delete(body.refresh_token); // a refresh token works once: the answer carries the next one
         const access = mint('tw-access'); const refresh = mint('tw-refresh');
         live.twitch.add(access); refreshTokens.twitch.add(refresh);
+        owner.set(access, owner.get(body.refresh_token)); owner.set(refresh, owner.get(body.refresh_token));
         return json(200, { access_token: access, refresh_token: refresh, expires_in: t.accessLife, scope: t.scope, token_type: 'bearer' });
       }
     }
     if (u.host === 'id.twitch.tv' && u.pathname === '/oauth2/revoke') { live.twitch.delete(body.token); return json(200, {}); }
     if (u.host === 'api.twitch.tv' && u.pathname === '/helix/users') {
       if (!live.twitch.has(bearer)) return json(401, { status: 401, message: 'Invalid OAuth token' });
-      return json(200, { data: [state.twitch.user] });
+      return json(200, { data: [owner.get(bearer) ?? state.twitch.user] });
     }
     if (u.host === 'api.twitch.tv' && u.pathname === '/helix/channels/followers') {
       if (state.twitch.status) return json(state.twitch.status, { message: 'nope' });
       if (state.twitch.rejectAccess || !live.twitch.has(bearer)) return json(401, { status: 401, message: 'Invalid OAuth token' });
-      return json(200, { total: state.twitch.followers, data: [], pagination: {} });
+      const total = state.twitch.counts[u.searchParams.get('broadcaster_id')] ?? state.twitch.followers;
+      return json(200, { total, data: state.twitch.latest ? [{ user_id: '9', user_login: 'newest_fan', user_name: state.twitch.latest, followed_at: '2026-01-01T00:00:00Z' }] : [], pagination: {} });
     }
 
     // ---- TikTok ----
@@ -57,6 +61,7 @@ export function pretendProviders({ now = () => Date.now() } = {}) {
         if (body.code !== 'good-code') return json(400, { error: 'invalid_grant', error_description: 'Authorization code is expired or invalid.' });
         const access = mint('tt-access'); const refresh = mint('tt-refresh');
         live.tiktok.add(access); refreshTokens.tiktok.add(refresh);
+        owner.set(access, t.user); owner.set(refresh, t.user);
         return json(200, { access_token: access, refresh_token: refresh, expires_in: t.accessLife, refresh_expires_in: 31_536_000, open_id: t.user.open_id, scope: t.scope, token_type: 'Bearer' });
       }
       if (body.grant_type === 'refresh_token') {
@@ -65,6 +70,7 @@ export function pretendProviders({ now = () => Date.now() } = {}) {
         refreshTokens.tiktok.delete(body.refresh_token);
         const access = mint('tt-access'); const refresh = mint('tt-refresh');
         live.tiktok.add(access); refreshTokens.tiktok.add(refresh);
+        owner.set(access, owner.get(body.refresh_token)); owner.set(refresh, owner.get(body.refresh_token));
         return json(200, { access_token: access, refresh_token: refresh, expires_in: t.accessLife, refresh_expires_in: 31_536_000, open_id: t.user.open_id, scope: t.scope, token_type: 'Bearer' });
       }
     }
@@ -75,10 +81,11 @@ export function pretendProviders({ now = () => Date.now() } = {}) {
       if (t.errorCode) return json(200, { data: {}, error: { code: t.errorCode, message: 'x', log_id: 'l' } });
       if (t.rejectAccess || !live.tiktok.has(bearer)) return json(401, { data: {}, error: { code: 'access_token_invalid', message: 'The access token is invalid or not found in the request.', log_id: 'l' } });
       const wanted = String(u.searchParams.get('fields') ?? '').split(',');
+      const who = owner.get(bearer) ?? t.user;
       const user = {};
-      if (wanted.includes('open_id')) user.open_id = t.user.open_id;
-      if (wanted.includes('display_name')) user.display_name = t.user.display_name;
-      if (wanted.includes('follower_count')) user.follower_count = t.followers;
+      if (wanted.includes('open_id')) user.open_id = who.open_id;
+      if (wanted.includes('display_name')) user.display_name = who.display_name;
+      if (wanted.includes('follower_count')) user.follower_count = t.counts[who.open_id] ?? t.followers;
       return json(200, { data: { user }, error: { code: 'ok', message: '', log_id: 'l' } });
     }
     return json(404, { message: `the pretend providers do not know ${url}` });

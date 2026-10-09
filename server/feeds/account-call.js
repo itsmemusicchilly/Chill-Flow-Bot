@@ -4,18 +4,18 @@ import { CONNECTIONS } from '../../shared/platforms.js';
 import { AccountError } from '../accounts/common.js';
 
 /**
- * @param {{accounts: object, guildId: string, provider: string, ask: (access: {token: string, accountId: string}) => Promise<{status: number, text: string}>, refused: (res: object) => boolean}} o
+ * @param {{accounts: object, guildId: string, provider: string, accountId?: string, ask: (access: {token: string, accountId: string}) => Promise<{status: number, text: string}>, refused: (res: object) => boolean}} o
  * @returns {Promise<{res: object, access: object}>}
  */
-export async function askWithAccount({ accounts, guildId, provider, ask, refused }) {
+export async function askWithAccount({ accounts, guildId, provider, accountId = '', ask, refused }) {
   if (!accounts) throw new AccountError(`${CONNECTIONS[provider]} accounts are not available here.`);
-  let access = await accounts.access(guildId, provider);
+  let access = await accounts.access(guildId, provider, { accountId });
   let res = await ask(access);
   if (refused(res)) {
-    access = await accounts.access(guildId, provider, { fresh: true });
+    access = await accounts.access(guildId, provider, { accountId: access.accountId, fresh: true });
     res = await ask(access);
     if (refused(res)) {
-      accounts.expire(guildId, provider, `${CONNECTIONS[provider]} no longer accepts the saved permission.`);
+      accounts.expire(guildId, provider, access.accountId, `${CONNECTIONS[provider]} no longer accepts the saved permission.`);
       throw new AccountError(`${CONNECTIONS[provider]} no longer accepts this connection. Open “Accounts” and connect it again.`, { expired: true });
     }
   }

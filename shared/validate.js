@@ -100,10 +100,17 @@ export function validateFlow(graph, { intents, integrations, accounts } = {}) {
     if (d.needs && integrations && !integrations[d.needs]) {
       add(n.id, 'error', 'intent', `This trigger needs ${INTEGRATIONS[d.needs]}, which the bot operator has not set up — it will not run.`);
     }
-    // `connect` = a creator account that someone must connect to this server (Connected accounts); `accounts` says which ones are.
+    // `connect` = a creator account that someone must connect to this server (Accounts); `accounts` says which ones are (see accountFlagsFrom).
+    // A trigger may name one of several accounts (`data.account`); blank = the first one that works.
     // Not said when the operator's app is missing too: that message already explains why nothing will run.
-    if (d.connect && accounts && !accounts[d.connect] && !(d.needs && integrations && !integrations[d.needs])) {
-      add(n.id, 'error', 'intent', `Connect a ${CONNECTIONS[d.connect]} account first: open “Accounts” in the top bar and press Connect ${CONNECTIONS[d.connect]} — it will not run until then.`);
+    if (d.connect && accounts && !(d.needs && integrations && !integrations[d.needs])) {
+      const wanted = String(n.data?.account ?? '').trim();
+      const label = CONNECTIONS[d.connect];
+      if (wanted && accounts.ids?.[d.connect]) {
+        if (!accounts.ids[d.connect].includes(wanted)) add(n.id, 'error', 'intent', `The ${label} account chosen here is not connected any more (or must be connected again): open “Accounts” in the top bar — it will not run until then.`);
+      } else if (!accounts[d.connect]) {
+        add(n.id, 'error', 'intent', `Connect a ${label} account first: open “Accounts” in the top bar and press Connect ${label} — it will not run until then.`);
+      }
     }
     // `wants` = works better with an intent but does not need it: warn, never block.
     if (d.wants && intents && !intents[d.wants]) {

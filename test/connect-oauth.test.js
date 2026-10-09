@@ -11,7 +11,7 @@ const cookieOf = (res) => (res.res.headers.getSetCookie?.() ?? []).find((c) => c
 
 describe('connecting an account from the dashboard', () => {
   let h; let net;
-  const boot = async (integrations = KEYS) => { net = pretendProviders(); h = await startHarness({ config: { integrations, accountsFetch: net.fetch } }); };
+  const boot = async (integrations = KEYS) => { net = pretendProviders(); h = await startHarness({ config: { integrations, accountsFetch: net.fetch, fetcher: net.fetch } }); };
   beforeEach(async () => { resetLimits(); await boot(); });
   afterEach(async () => { resetLimits(); mock.timers.reset(); await h.close(); });
 
@@ -81,8 +81,11 @@ describe('connecting an account from the dashboard', () => {
 
       const list = await h.call('GET', `/api/guilds/${A}/accounts`);
       assert.equal(list.status, 200);
-      assert.deepEqual(list.json.find((x) => x.provider === 'twitch'), { provider: 'twitch', label: 'Twitch', configured: true, connected: true, status: 'ok', account: 'Streamer', connectedAt: list.json[0].connectedAt });
-      assert.deepEqual(list.json.find((x) => x.provider === 'tiktok').connected, false);
+      assert.deepEqual(list.json.find((x) => x.provider === 'twitch'), {
+        provider: 'twitch', label: 'Twitch', configured: true,
+        accounts: [{ id: '555', name: 'Streamer', login: 'streamer', status: 'ok', connectedAt: list.json[0].accounts[0].connectedAt, count: null, checkedAt: null }],
+      });
+      assert.deepEqual(list.json.find((x) => x.provider === 'tiktok').accounts, []);
       assert.ok(!/tw-access|tw-refresh|v1\./.test(list.text), 'no token in the answer');
       assert.ok(h.logger.recent(A, 10).some((l) => l.level === 'info' && /Twitch account “Streamer” was connected/.test(l.message)));
     });
@@ -97,8 +100,8 @@ describe('connecting an account from the dashboard', () => {
 
     it('is another server\'s business only for that server', async () => {
       await (await approve('twitch', A)).done();
-      assert.equal((await h.call('GET', `/api/guilds/${B}/accounts`)).json.find((x) => x.provider === 'twitch').connected, false);
-      assert.deepEqual(h.accounts.flags(B), { twitch: false, tiktok: false });
+      assert.deepEqual((await h.call('GET', `/api/guilds/${B}/accounts`)).json.find((x) => x.provider === 'twitch').accounts, []);
+      assert.deepEqual(h.accounts.flags(B), { twitch: false, tiktok: false, ids: { twitch: [], tiktok: [] } });
     });
 
     it('does nothing without the matching cookie (someone else\'s link, or a forged callback)', async () => {
@@ -121,7 +124,7 @@ describe('connecting an account from the dashboard', () => {
     it('works once: the same link cannot be used twice', async () => {
       const { state, done } = await approve();
       assert.match(location(await done()), /connect=ok/);
-      h.db.deleteAccount(A, 'twitch');
+      h.db.deleteAccount(A, 'twitch', '555');
       const again = await back('twitch', { code: 'good-code', state }, { cookieState: state });
       assert.equal(location(again), '/?connect=failed&provider=twitch');
       assert.deepEqual(h.db.listAccounts(A), []);
@@ -211,26 +214,101 @@ describe('connecting an account from the dashboard', () => {
     beforeEach(async () => { await (await approve('twitch')).done(); net.calls.length = 0; });
 
     it('asks the platform to drop the permission and forgets the account', async () => {
-      const r = await h.call('DELETE', `/api/guilds/${A}/accounts/twitch`);
+      const r = await h.call('DELETE', `/api/guilds/${A}/accounts/twitch/555`);
       assert.equal(r.status, 200, r.text);
       assert.deepEqual(r.json, { ok: true, removed: true });
       assert.equal(h.db.getAccount(A, 'twitch'), null);
       assert.ok(net.calls.some((c) => c.path === '/oauth2/revoke'));
-      assert.equal((await h.call('GET', `/api/guilds/${A}/accounts`)).json.find((x) => x.provider === 'twitch').connected, false);
+      assert.deepEqual((await h.call('GET', `/api/guilds/${A}/accounts`)).json.find((x) => x.provider === 'twitch').accounts, []);
+      assert.deepEqual((await h.call('DELETE', `/api/guilds/${A}/accounts/twitch/555`)).json, { ok: true, removed: false }, 'nothing left to remove');
     });
 
     it('needs the same rights as connecting', async () => {
-      assert.equal((await h.call('DELETE', `/api/guilds/${A}/accounts/twitch`, { origin: 'https://evil.example' })).status, 403);
-      assert.equal((await h.call('DELETE', `/api/guilds/${A}/accounts/twitch`, { sid: null })).status, 401);
-      assert.equal((await h.call('DELETE', `/api/guilds/${A}/accounts/twitch`, { sid: h.session([A], 'u2') })).status, 403);
-      assert.equal((await h.call('DELETE', `/api/guilds/${A}/accounts/myspace`)).status, 404);
+      assert.equal((await h.call('DELETE', `/api/guilds/${A}/accounts/twitch/555`, { origin: 'https://evil.example' })).status, 403);
+      assert.equal((await h.call('DELETE', `/api/guilds/${A}/accounts/twitch/555`, { sid: null })).status, 401);
+      assert.equal((await h.call('DELETE', `/api/guilds/${A}/accounts/twitch/555`, { sid: h.session([A], 'u2') })).status, 403);
+      assert.equal((await h.call('DELETE', `/api/guilds/${A}/accounts/myspace/555`)).status, 404);
+      assert.equal((await h.call('DELETE', `/api/guilds/${A}/accounts/twitch/a%20b`)).status, 404, 'an account id has a fixed shape');
       assert.equal(h.db.getAccount(A, 'twitch').status, 'ok');
     });
 
     it('only touches its own server', async () => {
       await (await approve('twitch', B)).done();
-      await h.call('DELETE', `/api/guilds/${A}/accounts/twitch`);
+      await h.call('DELETE', `/api/guilds/${A}/accounts/twitch/555`);
       assert.equal(h.db.getAccount(B, 'twitch').status, 'ok');
+      assert.equal((await h.call('DELETE', `/api/guilds/${A}/accounts/twitch/555`)).json.removed, false, 'server A has nothing of that name left; B was not touched');
+    });
+  });
+
+  describe('several accounts of one platform', () => {
+    it('can all be connected to a server, listed, and disconnected one by one', async () => {
+      await (await approve('twitch')).done();
+      net.state.twitch.user = { id: '999', login: 'other', display_name: 'Other' };
+      const second = await approve('twitch');
+      assert.match(location(await second.done()), /connect=ok&provider=twitch/);
+      const group = (await h.call('GET', `/api/guilds/${A}/accounts`)).json.find((x) => x.provider === 'twitch');
+      assert.deepEqual(group.accounts.map((a) => [a.id, a.name]), [['555', 'Streamer'], ['999', 'Other']]);
+      assert.ok(h.logger.recent(A, 10).some((l) => /Twitch account “Other” was connected\./.test(l.message)));
+      await h.call('DELETE', `/api/guilds/${A}/accounts/twitch/555`);
+      assert.deepEqual((await h.call('GET', `/api/guilds/${A}/accounts`)).json.find((x) => x.provider === 'twitch').accounts.map((a) => a.id), ['999']);
+    });
+
+    it('connecting the same one again says so, and does not add a copy', async () => {
+      await (await approve('twitch')).done();
+      await (await approve('twitch')).done();
+      assert.equal((await h.call('GET', `/api/guilds/${A}/accounts`)).json.find((x) => x.provider === 'twitch').accounts.length, 1);
+      assert.ok(h.logger.recent(A, 10).some((l) => /Twitch account “Streamer” was connected again\./.test(l.message)));
+    });
+  });
+
+  describe('Check now', () => {
+    const check = (provider = 'twitch', id = '555', opts = {}) => h.call('POST', `/api/guilds/${A}/accounts/${provider}/${id}/check`, opts);
+    beforeEach(async () => { await (await approve('twitch')).done(); await (await approve('tiktok')).done(); net.calls.length = 0; });
+
+    it('looks at the platform once and shows the count and when it was found', async () => {
+      net.state.twitch.followers = 4321;
+      const r = await check();
+      assert.equal(r.status, 200, r.text);
+      const twitch = r.json.accounts.find((x) => x.provider === 'twitch').accounts[0];
+      assert.equal(twitch.count, 4321);
+      assert.ok(Math.abs(twitch.checkedAt - Date.now()) < 5000);
+      assert.deepEqual(net.calls.filter((c) => c.path === '/helix/channels/followers').map((c) => c.query.broadcaster_id), ['555']);
+    });
+
+    it('works for TikTok too, and never announces or remembers anything for a flow', async () => {
+      net.state.tiktok.followers = 8765;
+      const r = await check('tiktok', 'tt-open-1');
+      assert.equal(r.json.accounts.find((x) => x.provider === 'tiktok').accounts[0].count, 8765);
+      assert.ok(!h.logger.recent(A, 50).some((l) => /Now watching/.test(l.message)), 'a check is only a look: it starts no watching');
+    });
+
+    it('needs the same rights as everything else here, and an account that is really connected', async () => {
+      assert.equal((await check('twitch', '555', { sid: null })).status, 401);
+      assert.equal((await check('twitch', '555', { origin: 'https://evil.example' })).status, 403);
+      assert.equal((await check('twitch', '555', { sid: h.session([A], 'u2') })).status, 403);
+      assert.equal((await check('myspace', '555')).status, 404);
+      assert.equal((await check('twitch', '31337')).status, 404, 'not one of this server\'s accounts');
+      assert.equal(net.calls.length, 0, 'nothing was asked of the platform for any of those');
+    });
+
+    it('is limited, so it cannot be used to hammer the platform', async () => {
+      let last;
+      for (let i = 0; i < 7; i += 1) last = await check();
+      assert.equal(last.status, 429);
+      assert.equal(net.calls.filter((c) => c.path === '/helix/channels/followers').length, 6);
+    });
+
+    it('says what is wrong when the platform will not answer, and a refused account is marked “connect again”', async () => {
+      net.state.twitch.status = 500;
+      const down = await check();
+      assert.equal(down.status, 502);
+      assert.match(down.json.error, /Twitch answered with an error \(500\)/);
+      net.state.twitch.status = null;
+      net.state.twitch.rejectAccess = true;
+      const refused = await check();
+      assert.equal(refused.status, 502);
+      assert.match(refused.json.error, /no longer accepts this connection/);
+      assert.equal((await h.call('GET', `/api/guilds/${A}/accounts`)).json.find((x) => x.provider === 'twitch').accounts[0].status, 'expired');
     });
   });
 });

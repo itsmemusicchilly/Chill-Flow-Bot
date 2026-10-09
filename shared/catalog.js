@@ -3,7 +3,7 @@
 import { CronError, nextRuns, scheduleOf, timeZoneNames, WEEKDAYS } from './cron.js';
 import { DEFAULT_FEED_MINUTES, FEED_SOURCES, FeedSettingError, MIN_FEED_MINUTES, feedUrlOf, parsePublicHttpsUrl } from './feeds.js';
 import {
-  COUNT_MODES, countSettings, DEFAULT_TIKTOK_MINUTES, DEFAULT_TWITCH_FOLLOWER_MINUTES, DEFAULT_TWITCH_MINUTES, DEFAULT_YOUTUBE_COUNT_MINUTES, DEFAULT_YOUTUBE_MINUTES,
+  accountOf, COUNT_MODES, countSettings, DEFAULT_TIKTOK_MINUTES, DEFAULT_TWITCH_FOLLOWER_MINUTES, DEFAULT_TWITCH_MINUTES, DEFAULT_YOUTUBE_COUNT_MINUTES, DEFAULT_YOUTUBE_MINUTES,
   MIN_TIKTOK_MINUTES, MIN_TWITCH_FOLLOWER_MINUTES, MIN_TWITCH_MINUTES, MIN_YOUTUBE_MINUTES, twitchSettings, youtubeCountSettings, youtubeSettings,
 } from './platforms.js';
 import { area, bool, color, idField, image, isVisible, list, multi, num, select, text, VAR_NAME_RE, when, whenNot } from './fields.js';
@@ -405,7 +405,8 @@ trigger('trigger.twitch.live', {
   },
 });
 // ---- counts: subscribers and followers ----------------------------------------------------------------------------------------------
-const COUNT_FIELDS = (min, def) => [
+const COUNT_FIELDS = (min, def, accountKind) => [
+  ...(accountKind ? [idField('account', 'Account', accountKind, { placeholder: 'blank = the first connected account', help: 'Which connected account to count, when this server has connected more than one (top bar → Accounts).' })] : []),
   select('fire', 'Run', COUNT_MODES, { default: 'gain', help: '“Each time it goes up” suits a thank-you message. “Every time it changes” also runs when the count drops and once when you switch the flow on, so a counter channel is right straight away.' }),
   num('minutes', 'Check every (minutes)', { default: def, min, required: true }),
   idField('channelId', 'Channel for context (optional)', 'channel'),
@@ -433,27 +434,28 @@ trigger('trigger.youtube.gained', {
 });
 trigger('trigger.twitch.followers', {
   label: 'Twitch Followers', icon: '💜', needs: 'twitch', connect: 'twitch',
-  description: 'Runs when the Twitch channel connected to this server gets new followers (or, for a counter, whenever its follower count changes). Connect the channel once under “Accounts” in the top bar: the streamer approves it on Twitch. You get the number gained since the last check, not one run per follower. The count that is there when you switch the flow on is only noted. Needs the bot operator’s Twitch application.',
-  fields: COUNT_FIELDS(MIN_TWITCH_FOLLOWER_MINUTES, DEFAULT_TWITCH_FOLLOWER_MINUTES),
+  description: 'Runs when a Twitch channel connected to this server gets new followers (or, for a counter, whenever its follower count changes). Connect the channel once under “Accounts” in the top bar: the streamer approves it on Twitch. You get the number gained since the last check, not one run per follower. The count that is there when you switch the flow on is only noted. Needs the bot operator’s Twitch application.',
+  fields: COUNT_FIELDS(MIN_TWITCH_FOLLOWER_MINUTES, DEFAULT_TWITCH_FOLLOWER_MINUTES, 'twitch-account'),
   provides: () => [
     ...GUILD, ...CHANNEL,
     ...COUNT_VARS('twitch', 'followers'),
     ['twitch.name', 'Streamer name'], ['twitch.login', 'Channel name (lowercase)'], ['twitch.url', 'Link to the channel'],
+    ['twitch.latest', 'Name of the newest follower (when several arrive between two checks, only the newest)'],
   ],
   summary: (d) => (d.fire === 'change' ? 'every change' : 'each gain'),
-  check: countCheck((d) => countSettings(d, { min: MIN_TWITCH_FOLLOWER_MINUTES })),
+  check: countCheck((d) => { accountOf(d); return countSettings(d, { min: MIN_TWITCH_FOLLOWER_MINUTES }); }),
 });
 trigger('trigger.tiktok.followers', {
   label: 'TikTok Followers', icon: '🎵', needs: 'tiktok', connect: 'tiktok',
-  description: 'Runs when the TikTok account connected to this server gets new followers (or, for a counter, whenever its follower count changes). Connect the account once under “Accounts” in the top bar: the creator approves it on TikTok. You get the number gained since the last check, not one run per follower. The count that is there when you switch the flow on is only noted. Needs the bot operator’s TikTok developer app.',
-  fields: COUNT_FIELDS(MIN_TIKTOK_MINUTES, DEFAULT_TIKTOK_MINUTES),
+  description: 'Runs when a TikTok account connected to this server gets new followers (or, for a counter, whenever its follower count changes). Connect the account once under “Accounts” in the top bar: the creator approves it on TikTok. You get the number gained since the last check, not one run per follower. The count that is there when you switch the flow on is only noted. Needs the bot operator’s TikTok developer app.',
+  fields: COUNT_FIELDS(MIN_TIKTOK_MINUTES, DEFAULT_TIKTOK_MINUTES, 'tiktok-account'),
   provides: () => [
     ...GUILD, ...CHANNEL,
     ...COUNT_VARS('tiktok', 'followers'),
     ['tiktok.name', 'Account name'],
   ],
   summary: (d) => (d.fire === 'change' ? 'every change' : 'each gain'),
-  check: countCheck((d) => countSettings(d, { min: MIN_TIKTOK_MINUTES })),
+  check: countCheck((d) => { accountOf(d); return countSettings(d, { min: MIN_TIKTOK_MINUTES }); }),
 });
 trigger('trigger.manual', {
   label: 'Manual (Run button)', icon: '▶️',

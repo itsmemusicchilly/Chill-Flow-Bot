@@ -377,26 +377,28 @@ tell nodes apart; it is never sent to Discord.
 
 ### 💜 Twitch Followers
 
-`trigger.twitch.followers` — Runs when the Twitch channel connected to this server gets new followers (or, for a counter, whenever its follower count changes). Connect the channel once under “Accounts” in the top bar: the streamer approves it on Twitch. You get the number gained since the last check, not one run per follower. The count that is there when you switch the flow on is only noted. Needs the bot operator’s Twitch application.
+`trigger.twitch.followers` — Runs when a Twitch channel connected to this server gets new followers (or, for a counter, whenever its follower count changes). Connect the channel once under “Accounts” in the top bar: the streamer approves it on Twitch. You get the number gained since the last check, not one run per follower. The count that is there when you switch the flow on is only noted. Needs the bot operator’s Twitch application.
 
 > Needs a Twitch application (TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET) — the bot operator must set it up (see `.env.example`).
 
 | Field | Type | Notes |
 | --- | --- | --- |
+| Account | twitch-account | Which connected account to count, when this server has connected more than one (top bar → Accounts). |
 | Run | select | options: Each time it goes up, Every time it changes (for counters); “Each time it goes up” suits a thank-you message. “Every time it changes” also runs when the count drops and once when you switch the flow on, so a counter channel is right straight away. |
 | Check every (minutes) | number | required; range 1–… |
 | Channel for context (optional) | channel |  |
 
-**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{twitch.followers}}`, `{{twitch.gained}}`, `{{twitch.change}}`, `{{twitch.previous}}`, `{{twitch.name}}`, `{{twitch.login}}`, `{{twitch.url}}`
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{twitch.followers}}`, `{{twitch.gained}}`, `{{twitch.change}}`, `{{twitch.previous}}`, `{{twitch.name}}`, `{{twitch.login}}`, `{{twitch.url}}`, `{{twitch.latest}}`
 
 ### 🎵 TikTok Followers
 
-`trigger.tiktok.followers` — Runs when the TikTok account connected to this server gets new followers (or, for a counter, whenever its follower count changes). Connect the account once under “Accounts” in the top bar: the creator approves it on TikTok. You get the number gained since the last check, not one run per follower. The count that is there when you switch the flow on is only noted. Needs the bot operator’s TikTok developer app.
+`trigger.tiktok.followers` — Runs when a TikTok account connected to this server gets new followers (or, for a counter, whenever its follower count changes). Connect the account once under “Accounts” in the top bar: the creator approves it on TikTok. You get the number gained since the last check, not one run per follower. The count that is there when you switch the flow on is only noted. Needs the bot operator’s TikTok developer app.
 
 > Needs a TikTok developer app (TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET) — the bot operator must set it up (see `.env.example`).
 
 | Field | Type | Notes |
 | --- | --- | --- |
+| Account | tiktok-account | Which connected account to count, when this server has connected more than one (top bar → Accounts). |
 | Run | select | options: Each time it goes up, Every time it changes (for counters); “Each time it goes up” suits a thank-you message. “Every time it changes” also runs when the count drops and once when you switch the flow on, so a counter channel is right straight away. |
 | Check every (minutes) | number | required; range 5–… |
 | Channel for context (optional) | channel |  |
