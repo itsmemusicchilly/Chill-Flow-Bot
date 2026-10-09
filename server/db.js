@@ -79,7 +79,8 @@ const toFlow = (r) => (r ? {
   createdAt: r.created_at, updatedAt: r.updated_at, updatedBy: r.updated_by ? JSON.parse(r.updated_by) : null,
 } : null);
 
-export class SlugTakenError extends Error {}
+import { SlugTakenError } from './db/errors.js';
+export { SlugTakenError };
 
 // `title`, `theme` and `blocks` are the DRAFT (what the editor saves). `live` is the snapshot visitors see: null until the page is
 // published; `published` is true exactly when there is one. `access`/`roleIds` are not versioned: they apply as soon as they are saved.
@@ -532,4 +533,11 @@ export class Database {
   setSyncHash(guildId, hash) {
     this.#stmt('INSERT INTO command_sync (guild_id, hash) VALUES (?,?) ON CONFLICT(guild_id) DO UPDATE SET hash = excluded.hash').run(guildId, hash);
   }
+}
+
+/** Local SQLite unless a cloud database was configured. The cloud drivers keep this class's synchronous calls. */
+export async function openDatabase(config) {
+  if (!config.database || config.database.driver === 'sqlite') return new Database(path.join(config.dataDir, 'flowbot.sqlite'));
+  const { openRemoteDatabase } = await import('./db/remote.js');
+  return openRemoteDatabase(config.database);
 }

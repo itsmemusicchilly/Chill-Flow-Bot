@@ -1,9 +1,9 @@
-# Runs on every push to master and on every pull request: lint, build, the unit tests, the generated docs, and the browser checks.
+# Runs on every push to main/master and on every pull request: lint, build, the unit tests, the generated docs, and the browser checks.
 name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [main, master]
   pull_request:
 
 concurrency:

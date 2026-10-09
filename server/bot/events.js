@@ -5,6 +5,39 @@ import { executorData } from '../engine/serialize.js';
 const AUDIT_WINDOW_MS = 15000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function userFromSnapshot(author) {
+  if (!author?.id) return undefined;
+  return {
+    id: author.id, username: author.username, globalName: author.globalName, tag: author.tag, bot: author.bot,
+    displayAvatarURL: () => author.avatar,
+  };
+}
+
+/** Fill the delete flow from the message Discord sent, and from the snapshot when that message is only an id. */
+function deletedFlowArgs(m, snap) {
+  const live = m.partial !== true;
+  const channelId = m.channelId ?? m.channel?.id ?? snap?.channelId ?? '';
+  const guildId = m.guild?.id ?? m.guildId ?? snap?.guildId ?? '';
+  const content = live ? (m.content ?? '') : (snap?.content ?? '');
+  const url = (m.url) || snap?.url || (guildId && channelId && m.id ? `https://discord.com/channels/${guildId}/${channelId}/${m.id}` : '');
+  let createdAt = snap?.createdAt ?? '';
+  if (live && typeof m.createdAt?.toISOString === 'function') createdAt = m.createdAt.toISOString();
+  else if (live && m.createdTimestamp) createdAt = new Date(m.createdTimestamp).toISOString();
+  const files = live && m.attachments?.values
+    ? [...m.attachments.values()].map((file) => file.url).filter(Boolean)
+    : (live ? [] : (snap?.attachments ?? []));
+  const channel = m.channel?.name
+    ? m.channel
+    : (channelId ? { id: channelId, name: snap?.channelName ?? '', type: m.channel?.type, parentId: m.channel?.parentId ?? '' } : m.channel);
+  return {
+    guild: m.guild, channel, user: m.author ?? userFromSnapshot(snap?.author), message: m,
+    data: {
+      message: { content, url, authorId: m.author?.id || snap?.author?.id || '', createdAt, attachments: files.join('\n'), attachmentCount: files.length },
+    },
+    info: { channelId },
+  };
+}
+
 export function wireEvents({ client, runtime, logger, sync, accounts = null, auditDelayMs = 1000 }) {
   const { selfActions, components, db } = runtime.services;
   const warned = new Map();
@@ -45,20 +78,33 @@ export function wireEvents({ client, runtime, logger, sync, accounts = null, aud
 
   // ---- messages -------------------------------------------------------------------------------
   client.on(Events.MessageCreate, safe('message', async (m) => {
+    // Remember it only while a delete flow is on, so a later delete can quote the text Discord no longer sends.
+    if (m.guild && m.partial !== true && has(m.guild, 'trigger.message.deleted')) runtime.services.messageMemory.remember(m);
     if (!m.guild || !m.author || !has(m.guild, 'trigger.message.received')) return;
     runtime.fire('trigger.message.received', {
       guild: m.guild, channel: m.channel, user: m.author, member: m.member, message: m,
       info: { content: m.content, channelId: m.channelId, isBot: m.author.bot, byBot: m.author.id === client.user.id },
     });
   }));
+  client.on(Events.MessageUpdate, safe('messageUpdate', async (_old, m) => {
+    // A partial update has no text. Storing it would wipe the copy we already have.
+    if (!m?.guild || m.partial === true || !has(m.guild, 'trigger.message.deleted')) return;
+    runtime.services.messageMemory.remember(m);
+  }));
   client.on(Events.MessageDelete, safe('messageDelete', async (m) => {
-    components.forget(m.guildId ?? m.guild?.id, m.id); // a deleted panel no longer needs its remembered variables
+    const guildId = m.guildId ?? m.guild?.id;
+    components.forget(guildId, m.id); // a deleted panel no longer needs its remembered variables
+    const snap = guildId ? runtime.services.messageMemory.take(guildId, m.id) : null;
     if (!m.guild || !has(m.guild, 'trigger.message.deleted')) return;
-    runtime.fire('trigger.message.deleted', { guild: m.guild, channel: m.channel, user: m.author ?? undefined, message: m, info: { channelId: m.channelId } });
+    runtime.fire('trigger.message.deleted', deletedFlowArgs(m, snap));
   }));
 
   client.on(Events.MessageBulkDelete, safe('messageBulkDelete', async (messages, channel) => {
-    for (const id of messages.keys()) components.forget(channel?.guildId ?? channel?.guild?.id, id);
+    const guildId = channel?.guildId ?? channel?.guild?.id;
+    for (const id of messages.keys()) {
+      components.forget(guildId, id);
+      if (guildId) runtime.services.messageMemory.forget(guildId, id);
+    }
   }));
 
   // ---- members --------------------------------------------------------------------------------
@@ -160,6 +206,7 @@ export function wireEvents({ client, runtime, logger, sync, accounts = null, aud
     if (!ch.guild) return;
     components.forgetChannel(ch.guild.id, ch.id); // e.g. a closed ticket: its messages are gone too
     db.deleteVarsForScope(ch.guild.id, 'channel', ch.id); // …and so is what was remembered for the channel
+    runtime.services.messageMemory.forgetChannel(ch.guild.id, ch.id);
     runtime.fire('trigger.channel.deleted', { guild: ch.guild, channel: ch, info: { byBot: selfActions.consume(`channelDelete:${ch.id}`) } });
   }));
   client.on(Events.ChannelUpdate, safe('channelUpdate', async (o, n) => {

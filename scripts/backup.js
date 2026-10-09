@@ -1,4 +1,4 @@
-// Backs up the bot's data while it is running:   npm run backup   (or: node scripts/backup.js [--keep 7] [--out folder])
+// Backs up the bot's data while it is running (with the local database; with MongoDB, Firebase or Cloudflare D1 only the pictures and transcripts):   npm run backup   (or: node scripts/backup.js [--keep 7] [--out folder])
 //
 // Each run makes one new folder with a consistent copy of the database (safe to take while the bot is running) plus the uploaded pictures and
 // saved transcripts, then deletes the oldest backups beyond the newest N (default 7). Put it on a schedule (cron on Linux/macOS, Task
@@ -10,31 +10,37 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { databaseOf } from '../server/config.js';
 
 const STAMP = /^\d{8}-\d{6}$/;
 const pad = (n) => String(n).padStart(2, '0');
 export const stampOf = (d) => `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}-${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`;
 
 /**
- * @param {{dataDir: string, outDir?: string, keep?: number, now?: Date}} o
+ * @param {{dataDir: string, outDir?: string, keep?: number, now?: Date, includeDatabase?: boolean}} o
+ *   `includeDatabase: false` is for a bot whose data lives in MongoDB, Firebase or Cloudflare D1: only the folders are copied.
  * @returns {{folder: string, removed: string[], copied: string[]}}
  */
-export function runBackup({ dataDir, outDir = path.join(dataDir, 'backups'), keep = 7, now = new Date() }) {
+export function runBackup({ dataDir, outDir = path.join(dataDir, 'backups'), keep = 7, now = new Date(), includeDatabase = true }) {
   if (!Number.isInteger(keep) || keep < 1) throw new Error('--keep must be a whole number, 1 or more.');
   const source = path.join(dataDir, 'flowbot.sqlite');
-  if (!fs.existsSync(source)) throw new Error(`There is no database at ${source}. Run this where the bot runs (or set DATA_DIR).`);
+  if (includeDatabase && !fs.existsSync(source)) throw new Error(`There is no database at ${source}. Run this where the bot runs (or set DATA_DIR).`);
+  if (!includeDatabase && !['uploads', 'transcripts'].some((sub) => fs.existsSync(path.join(dataDir, sub)))) throw new Error(`There are no uploaded pictures or saved transcripts in ${dataDir} to back up.`);
   const stamp = stampOf(now);
   const folder = path.join(outDir, stamp);
   if (fs.existsSync(folder)) throw new Error(`${folder} already exists (a backup was made this second). Try again in a moment.`);
   fs.mkdirSync(folder, { recursive: true });
   try {
-    // VACUUM INTO writes a complete, consistent copy even while the bot is writing; the bot is never stopped or blocked for long
-    const db = new DatabaseSync(source, { readOnly: true });
-    try {
-      db.exec('PRAGMA busy_timeout = 5000;');
-      db.exec(`VACUUM INTO '${path.join(folder, 'flowbot.sqlite').replace(/'/g, "''")}'`);
-    } finally { db.close(); }
-    const copied = ['flowbot.sqlite'];
+    const copied = [];
+    if (includeDatabase) {
+      // VACUUM INTO writes a complete, consistent copy even while the bot is writing; the bot is never stopped or blocked for long
+      const db = new DatabaseSync(source, { readOnly: true });
+      try {
+        db.exec('PRAGMA busy_timeout = 5000;');
+        db.exec(`VACUUM INTO '${path.join(folder, 'flowbot.sqlite').replace(/'/g, "''")}'`);
+      } finally { db.close(); }
+      copied.push('flowbot.sqlite');
+    }
     for (const sub of ['uploads', 'transcripts']) {
       const from = path.join(dataDir, sub);
       if (fs.existsSync(from)) { fs.cpSync(from, path.join(folder, sub), { recursive: true }); copied.push(`${sub}/`); }
@@ -68,8 +74,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (args.help) {
       console.log('npm run backup [-- --keep 7] [-- --out /path/to/folder]\nBacks up the database, uploaded pictures and saved transcripts of the bot (DATA_DIR) into a new dated folder, and keeps the newest 7.');
     } else {
-      const result = runBackup({ dataDir: path.resolve(process.env.DATA_DIR || 'data'), ...(args.keep !== undefined ? { keep: args.keep } : {}), ...(args.outDir ? { outDir: args.outDir } : {}) });
+      const database = databaseOf(process.env);
+      const own = database.driver === 'sqlite';
+      const result = runBackup({ dataDir: path.resolve(process.env.DATA_DIR || 'data'), includeDatabase: own, ...(args.keep !== undefined ? { keep: args.keep } : {}), ...(args.outDir ? { outDir: args.outDir } : {}) });
       console.log(`Backup saved: ${result.folder}\n  contains: ${result.copied.join(', ')}`);
+      if (!own) console.log(`  NOT included: the bot's data lives in ${database.label}. Back that up with ${database.label}'s own tools (this command only copies the pictures and transcripts).`);
       if (result.removed.length) console.log(`  removed ${result.removed.length} older backup${result.removed.length === 1 ? '' : 's'}: ${result.removed.join(', ')}`);
       console.log('Copy it to another disk or computer now and then. Connected Twitch/TikTok accounts need the same TOKEN_ENCRYPTION_KEY (or DISCORD_CLIENT_SECRET) when restored.');
     }

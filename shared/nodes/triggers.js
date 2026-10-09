@@ -77,9 +77,12 @@ trigger('trigger.message.received', {
 });
 trigger('trigger.message.deleted', {
   label: 'Message Deleted', icon: '🗑️',
-  description: 'Runs when a message is deleted. Text and author are only known if the bot had seen the message.',
+  description: 'Runs when a message is deleted. The text, author and attachments are filled in when the bot has seen the message (it remembers recent messages while this flow is on). The text needs the Message Content intent.',
   fields: [idField('channelId', 'Only in channel (optional)', 'channel')],
-  provides: () => [...GUILD, ...CHANNEL, ...MESSAGE, ...USER],
+  provides: () => [...GUILD, ...CHANNEL, ...MESSAGE, ...USER,
+    ['message.createdAt', 'When it was posted (ISO)'],
+    ['message.attachments', 'Attachment links, one per line'],
+    ['message.attachmentCount', 'Number of attachments']],
   summary: (d) => (d.channelId ? `in ${d.channelId}` : 'any channel'),
 });
 const memberTrigger = (type, label, icon, description, extra = {}) => trigger(type, {

@@ -44,9 +44,9 @@ channel, remember a variable…), press **Save** — it is live. No code.
 
 ## Quick start
 
-Requires **Node 22.13+** (uses the built-in `node:sqlite`; no native dependencies).
+Requires **Node 22.13+** (the local database uses the built-in `node:sqlite`). Leave the database variables unset and that local file is what the bot uses. MongoDB, Firebase and Cloudflare D1 are optional.
 
-> **Step-by-step guides for Windows, Linux, macOS, Raspberry Pi, a home-lab NAS (Docker), a VPS, Heroku and Pterodactyl / game panels: [docs/SETUP.md](docs/SETUP.md).** The short version is below.
+> **Step-by-step guides for Windows, Linux, macOS, Raspberry Pi, a home-lab NAS (Docker), a VPS, Render, Cloudflare, Heroku and Pterodactyl / game panels: [docs/SETUP.md](docs/SETUP.md).** Vercel cannot run this bot; the guide says why. The short version is below.
 
 1. **Create the application** at <https://discord.com/developers/applications> → *New Application*.
    * *General Information* → copy **Application ID** → `DISCORD_CLIENT_ID`.
@@ -78,7 +78,11 @@ real dashboard and API against a fake in-memory Discord — useful for developme
 | `BASE_URL` | `http://localhost:PORT` | Public URL of the dashboard. Also used for the redirect URI and the CSRF `Origin` check, and as the address in ticket-transcript links (those need a public address) |
 | `PORT` / `HOST` | `3000` / `127.0.0.1` | Listen address. Use `HOST=0.0.0.0` only behind HTTPS |
 | `TRUST_PROXY` | off | Number of reverse proxies in front (or `true`) so client IPs and `https` are detected correctly |
-| `DATA_DIR` | `data` | Where `flowbot.sqlite`, the `uploads/` folder (uploaded pictures) and the `transcripts/` folder (saved ticket transcripts) live. Back them up |
+| `DATA_DIR` | `data` | Where `flowbot.sqlite`, the `uploads/` folder (uploaded pictures) and the `transcripts/` folder (saved ticket transcripts) live. Back them up. With a cloud database configured, the rows live there instead of `flowbot.sqlite`; the two folders are still files |
+| `DB_DRIVER` | local SQLite | `sqlite` (the default when nothing else is set), `mongodb`, `firebase` or `cloudflare`. One cloud database is used automatically when its variables are the only ones set |
+| `MONGODB_URI` / `MONGODB_DB` | — | Optional. A `mongodb://` or `mongodb+srv://` address. The database name defaults to `chillflow` |
+| `FIREBASE_SERVICE_ACCOUNT` | — | Optional. Firestore service-account JSON on one line. Or set `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL` and `FIREBASE_PRIVATE_KEY` instead. `FIREBASE_DATABASE_ID` defaults to `(default)` |
+| `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_D1_DATABASE_ID` | — | Optional. Cloudflare D1, reached over the HTTP API. All three, or none |
 | `TRANSCRIPT_RETENTION_DAYS` | `0` | How many days a transcript saved for a web link is kept (whole days, 0–3650). `0` keeps them forever; otherwise older ones are deleted (checked every hour) and their links stop working. Counted from when it was saved, so changing it applies to transcripts already stored |
 | `DASHBOARD_MIN_PERMISSION` | `Administrator` | Or `ManageGuild`. Flows run with the **bot's** permissions, so the default is the safe one |
 | `ENABLE_MEMBERS_INTENT` | `false` | Needed by *Member Joined / Left / Kicked / Timed Out*, *Member Boosted Server / Stopped Boosting* and *Role Given/Removed* triggers |
@@ -639,7 +643,7 @@ Full walkthroughs per platform (systemd, Docker, Caddy, panels…): [docs/SETUP.
 
 * Put HTTPS in front (Caddy/nginx), set `BASE_URL=https://…` and `TRUST_PROXY=1`. Cookies become `Secure` automatically.
 * One process, no sharding — fine up to a couple of thousand servers. The bot caches everything discord.js caches by default.
-* Back up `DATA_DIR/flowbot.sqlite`, `DATA_DIR/uploads/` **and** `DATA_DIR/transcripts/` together (a database row without its file shows a missing picture, or a transcript page that “isn't available”).
+* Back up `DATA_DIR/flowbot.sqlite`, `DATA_DIR/uploads/` **and** `DATA_DIR/transcripts/` together (a database row without its file shows a missing picture, or a transcript page that “isn't available”). With MongoDB, Firebase or Cloudflare D1 configured, back up that database and still back up the two folders: the pictures and transcripts are not stored in it.
   **`npm run backup`** does exactly that while the bot is running: it makes a dated folder under `DATA_DIR/backups/` with a consistent copy of the database plus the pictures and transcripts, and keeps the newest 7
   (`npm run backup -- --keep 14 --out /mnt/other-disk/flowbot`). Run it from cron / Task Scheduler, and copy the folder to another disk now and then. To restore, stop the bot and put the three things back in `DATA_DIR`.
   Connected Twitch/TikTok accounts are sealed with `TOKEN_ENCRYPTION_KEY` (or `DISCORD_CLIENT_SECRET`): restore with the same key, or those accounts show “Connect again” (nothing else is affected).
@@ -658,7 +662,7 @@ npm run backup    # copy the database, pictures and transcripts into a dated fol
 
 ```
 shared/   catalog.js (the registry of every node; the definitions live in nodes/: triggers, messages, members, channels, roles, variables, logic) · blocks.js (page blocks) · forms.js · render-page.js · page-meta.js (link previews) · validate.js · templates — used by the editor AND server
-server/   app/api/auth/public (the /s pages) · hooks (the /hooks webhook addresses) · uploads + images (the /i pictures) · db (node:sqlite) · engine/ (runner, templates, executors, responder, watchers) · net/ (the guarded fetcher) · feeds/ (feed parser, YouTube, Twitch, TikTok, the shared count logic) · accounts (connected Twitch / TikTok accounts, sealed tokens) + connect (the approval round trip) · bot/ (events, commands)
+server/   app/api/auth/public (the /s pages) · hooks (the /hooks webhook addresses) · uploads + images (the /i pictures) · db (node:sqlite, or MongoDB / Firebase / Cloudflare D1) · engine/ (runner, templates, executors, responder, watchers) · net/ (the guarded fetcher) · feeds/ (feed parser, YouTube, Twitch, TikTok, the shared count logic) · accounts (connected Twitch / TikTok accounts, sealed tokens) + connect (the approval round trip) · bot/ (events, commands)
 web/      React + @xyflow/react editor
 test/     node:test suites · e2e/ (Playwright) · helpers/fakes.js
 ```

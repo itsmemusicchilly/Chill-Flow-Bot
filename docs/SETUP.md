@@ -10,11 +10,15 @@ How to run Chill Flow Bot on your own machine or server. Pick the section that m
 | a Raspberry Pi | [Raspberry Pi](#raspberry-pi) | yes (cheap and quiet) |
 | a home-lab NAS (Synology, QNAP, Unraid, TrueNAS, OpenMediaVault…) | [Home-lab NAS](#home-lab-nas-docker) | yes |
 | a rented server (VPS) | [VPS](#vps-ubuntu--debian) | yes (recommended for most people) |
+| Render | [Render](#render) | yes, on a paid instance with a disk |
+| Cloudflare | [Cloudflare](#cloudflare) | yes, on a Workers Paid container that is kept awake |
+| Vercel | [Vercel](#vercel) | no |
 | Heroku | [Heroku](#heroku) | read the warning first |
 | a game panel such as Pterodactyl | [Pterodactyl](#pterodactyl-and-other-game-panels) | yes |
 
 > **What was tested.** The steps for Linux were run from a fresh copy of the project (install, build, start, health check), and the Dockerfile's steps were run the same way by hand
 > (the image itself could not be built where this guide was written, because there was no Docker engine). The other platforms follow each platform's standard procedure but were **not run on that platform**.
+> The Render steps follow Render's docs for web services, persistent disks, the free tier and the Node.js version. The Vercel section follows Vercel's own note that an always-on Discord bot does not fit Vercel. The Cloudflare section follows Cloudflare's docs for Containers (deploying, environment variables and secrets, the container lifecycle and pricing). None of those three was deployed from this project.
 > If a step does not match what you see, the [common problems](#common-problems) table at the end is the place to look first.
 
 ---
@@ -41,7 +45,8 @@ Every platform below ends up with the same settings, either in a file called **`
 | `DISCORD_CLIENT_SECRET` | the Client Secret | required |
 | `BASE_URL` | the address people type to open the dashboard, e.g. `https://bot.example.com` | no trailing slash. Must be a **public** address if you want transcript links or uploaded pictures in messages to work |
 | `PORT` | `3000` (default) | the port the dashboard listens on |
-| `HOST` | `127.0.0.1` (default) = only this machine; `0.0.0.0` = reachable from other machines | **must be `0.0.0.0`** inside Docker, Heroku and game panels |
+| `HOST` | `127.0.0.1` (default) = only this machine; `0.0.0.0` = reachable from other machines | **must be `0.0.0.0`** inside Docker, Render, Cloudflare, Heroku and game panels |
+| Database | local SQLite file in `DATA_DIR` | optional. MongoDB, Firebase or Cloudflare D1 replace that file when configured. See [The database](#5-the-database) |
 | `TRUST_PROXY` | `1` when a reverse proxy (Caddy, nginx, a NAS's proxy) sits in front | lets the app see the real visitor address and use secure cookies |
 | `YOUTUBE_API_KEY`, `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET`, `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` | keys from those platforms | optional: only for the YouTube / Twitch / TikTok triggers. For Twitch and TikTok *follower* counters, also add `BASE_URL/auth/twitch/callback` / `BASE_URL/auth/tiktok/callback` as redirect addresses in their developer consoles (TikTok needs `https`). See the README's *Counting subscribers and followers* |
 | `TOKEN_ENCRYPTION_KEY` | a long random string | optional: seals the tokens of connected Twitch/TikTok accounts. Left out, `DISCORD_CLIENT_SECRET` is used |
@@ -54,7 +59,7 @@ The program reads `.env` by itself when it starts, so you never *have* to set re
 * **Node.js 22.13 or newer** is required (check with `node -v`). Older versions fail with an error about `node:sqlite`.
 * `npm run build` must be run once after you download the project (and after every update). Without it the dashboard says *"The web UI has not been built yet"*.
 * The address in the browser, `BASE_URL` and the Discord redirect must all agree.
-* Only the three secrets are required. Everything else has a sensible default.
+* Only the three secrets are required. Everything else has a sensible default, including the database: with no cloud database configured, the bot uses the local SQLite file.
 
 ### 4. After it is running (every platform)
 
@@ -62,6 +67,47 @@ The program reads `.env` by itself when it starts, so you never *have* to set re
 2. Pick a server → **Add bot** (opens Discord; choose the server and accept the permissions) → back in the dashboard press **refresh**.
 3. **+ New flow** → try the *Support tickets* template, fill the highlighted fields, switch it **On**.
 4. **Set up a backup.** Everything the bot knows lives in `DATA_DIR` (the database, uploaded pictures, saved transcripts). `npm run backup` (in the bot's folder) makes a dated copy of all three under `DATA_DIR/backups/` while the bot is running, and keeps the newest 7 (`npm run backup -- --keep 14 --out /another/disk`). Run it once a day from cron (Linux/macOS: `crontab -e` → `30 3 * * * cd /path/to/bot && npm run backup`) or Task Scheduler (Windows), and copy the folder to another disk or computer now and then — a backup on the same disk does not survive the disk. Restoring: stop the bot, put the three things back in `DATA_DIR`, start it. (Connected Twitch/TikTok accounts need the same `TOKEN_ENCRYPTION_KEY`, or `DISCORD_CLIENT_SECRET` when that is not set, or they show “Connect again”.)
+
+### 5. The database
+
+With nothing else set, the bot stores its rows in `DATA_DIR/flowbot.sqlite`. That is the right choice on a machine, a Pi, a NAS or a VPS. Set a cloud database only when you want the rows kept somewhere that is not that disk. Uploaded pictures and saved transcripts are still files under `DATA_DIR` (`uploads/` and `transcripts/`). A cloud database does not hold those files.
+
+Set **one** of the following. If more than one is filled in, the bot stops at startup and asks you to set `DB_DRIVER` to the one you want. `DB_DRIVER=sqlite` forces the local file even if the other variables are present. The names `local`, `localdb`, `mongo`, `firestore` and `d1` are accepted too.
+
+**MongoDB** (including Atlas). Create a database user and a connection string, then:
+
+```ini
+MONGODB_URI=mongodb+srv://USER:PASSWORD@cluster.example.net
+MONGODB_DB=chillflow
+```
+
+`MONGODB_DB` is optional and defaults to `chillflow`. The address must start with `mongodb://` or `mongodb+srv://`.
+
+**Firebase (Firestore).** In the Firebase console, create a project and turn on Firestore. In Google Cloud, create a service account that can use Cloud Datastore, and download its JSON key. Either paste that JSON on one line:
+
+```ini
+FIREBASE_SERVICE_ACCOUNT={"type":"service_account","project_id":"...","client_email":"...@....iam.gserviceaccount.com","private_key":"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"}
+```
+
+or set `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL` and `FIREBASE_PRIVATE_KEY` (the key's line breaks written as `\n`). `FIREBASE_DATABASE_ID` is optional and defaults to `(default)`. One Firestore record can be at most 1 MB, so a single flow cannot be larger than that.
+
+**Cloudflare D1.** In the project folder, with Wrangler logged in (`npx wrangler login`):
+
+```bash
+npx wrangler d1 create chill-flow-bot
+```
+
+The output includes the database id. The account id is on the Cloudflare dashboard overview. Create an API token (My Profile → API Tokens) that is allowed to edit D1, then:
+
+```ini
+CLOUDFLARE_ACCOUNT_ID=your-account-id
+CLOUDFLARE_API_TOKEN=your-token
+CLOUDFLARE_D1_DATABASE_ID=the-id-wrangler-printed
+```
+
+The bot talks to D1 over Cloudflare's HTTP API. It does not need to run on Cloudflare to use this database. One D1 record can be at most 1 MB.
+
+On startup the log line `Database:` says `local sqlite`, `MongoDB`, `Firebase` or `Cloudflare D1`. Rows already in `flowbot.sqlite` are not copied for you. Each read waits for the cloud database, so pick a region near the machine that runs the bot. Keep a single copy of the bot running: two copies would log in with the same Discord token and fight each other.
 
 ---
 
@@ -296,7 +342,7 @@ The best home for a bot that must always be online: a small server (1 GB of memo
 
 ## Heroku
 
-> **Read this first.** Heroku's disk is **temporary**: it is wiped every time the app restarts, is redeployed, or at least once a day. The bot keeps its flows, variables, uploaded pictures and saved transcripts in files on disk, so on Heroku **you would lose them regularly**. Use Heroku only to try the editor out. For a real bot use a [VPS](#vps-ubuntu--debian), a [NAS/Docker host](#home-lab-nas-docker), a Pi, or a [panel with persistent storage](#pterodactyl-and-other-game-panels).
+> **Read this first.** Heroku's disk is **temporary**: it is wiped every time the app restarts, is redeployed, or at least once a day. The bot keeps its flows, variables, uploaded pictures and saved transcripts in files on disk, so on Heroku **you would lose them regularly**. A [cloud database](#5-the-database) keeps the rows (flows, variables, pages) across those wipes. Pictures and transcripts are still files, and a sleeping dyno still takes the bot offline. For a real bot use a [VPS](#vps-ubuntu--debian), [Render](#render) (a paid instance with a disk), [Cloudflare](#cloudflare) with a cloud database, a [NAS/Docker host](#home-lab-nas-docker), a Pi, or a [panel with persistent storage](#pterodactyl-and-other-game-panels).
 > Also, free-tier and Eco dynos **go to sleep** when nobody visits the web page, which takes the bot offline. You need at least a *Basic* dyno for the bot to stay connected.
 
 If you still want to try it:
@@ -315,6 +361,202 @@ If you still want to try it:
    (`git push heroku main` if your branch is called `main`.) The included `Procfile` starts the bot; Heroku supplies `PORT` by itself, and runs `npm run build` for you because the project has a `build` script.
 3. Add `https://my-flowbot.herokuapp.com/auth/callback` as a Redirect in the Discord portal.
 4. There is no `.env` on Heroku (it is not part of the Git repository), so every setting goes in `heroku config:set`.
+
+---
+
+## Render
+
+Render runs the bot as one web service: a public `https://….onrender.com` address, and, on a paid instance, a disk that keeps the database, pictures and transcripts.
+
+> **Read this first.** A **free** Render web service sleeps after 15 minutes with nobody opening the site, and it cannot keep a disk. The bot's own connection to Discord does not count as a visitor, so the bot goes offline in Discord and the next start has an empty `DATA_DIR` (flows and pictures are gone). Use a **paid** instance — the smallest is enough for one bot — and attach a persistent disk. Keep it at **one** instance: a second copy would log in with the same token and fight the first, and a disk can only be attached to one instance.
+
+1. Sign up at <https://dashboard.render.com> and click **New → Web Service**.
+2. Connect `https://github.com/itsmemusicchilly/Chill-Flow-Bot`. Use your Git provider if the repo is yours, or **Public Git Repository** if you are deploying the public repo. Branch: `master`.
+3. Fill in the form:
+   * **Language:** Node
+   * **Build Command:** `npm ci && npm run build`
+   * **Start Command:** `npm start`
+   * **Instance type:** a paid instance, not Free
+4. Open **Advanced**:
+   * **Health Check Path:** `/healthz`
+   * **Disk:** mount path `/var/data`, size 1 GB to start. You can make the disk larger later; you cannot make it smaller. Only files under this path survive a deploy or a restart.
+   * **Environment variables.** Render has no `.env` file (that file is not in the Git repository). Add these keys:
+
+   ```ini
+   NODE_VERSION=22.22.0
+   HOST=0.0.0.0
+   DATA_DIR=/var/data
+   TRUST_PROXY=1
+   BASE_URL=https://YOUR-SERVICE.onrender.com
+   DISCORD_TOKEN=your-bot-token
+   DISCORD_CLIENT_ID=your-application-id
+   DISCORD_CLIENT_SECRET=your-client-secret
+   ```
+
+   Use the `onrender.com` address Render shows for this service, with no trailing slash. Leave `PORT` unset: Render sets it (it defaults to `10000`) and the program reads that value.
+
+   `NODE_VERSION` matters. The project needs Node **22.13 or newer** because it uses `node:sqlite`. `package.json` says `>=22.13`, and Render reads a range with no upper limit as "the newest Node there is", which can be a later major version. `22.22.0` stays on Node 22.
+5. Click **Create Web Service** and watch the deploy log. You want a line `Dashboard: https://…` and no error. Then open that address.
+6. In the Discord portal, add `https://YOUR-SERVICE.onrender.com/auth/callback` as a Redirect. For Twitch or TikTok follower counters, also add `…/auth/twitch/callback` and `…/auth/tiktok/callback` (TikTok requires `https`, which this address already is).
+7. Log in and add the bot (see *After it is running* above).
+
+**Your own domain.** On the service, open **Settings → Custom Domains** and add it. Then set `BASE_URL` to `https://bot.example.com` (no trailing slash), update the Discord redirect to match, and save the variables with **Save and deploy**.
+
+**Updates.** A repo connected through your Git provider deploys on every push to `master`. A **Public Git Repository** connection does not: use **Manual Deploy**. A service with a disk stops the old copy before the new one starts, so the bot is offline for a few seconds on each deploy. The disk is kept.
+
+**Backups.** Render snapshots the disk once a day and keeps those snapshots for at least seven days. Restore from the service's **Disk** page; a restore replaces the whole disk. The files that matter, and that must be copied together, are `flowbot.sqlite`, `uploads/` and `transcripts/`, all under `/var/data`.
+
+**Using the included Dockerfile instead.** Set **Language** to Docker and leave the build and start commands empty so the `Dockerfile` is used. It already runs `npm start` and sets `HOST=0.0.0.0` and `DATA_DIR=/data`. Mount the disk at `/data`. Still set the three Discord secrets, `BASE_URL` and `TRUST_PROXY=1`. Do not set `PORT`, `HOST`, `DATA_DIR` or `NODE_VERSION` (the image is Node 22). The image runs as user `node`. If the log says it cannot write `/data`, use the Node steps above.
+
+---
+
+## Vercel
+
+> **This bot cannot run on Vercel.** Vercel starts a function when a request arrives, then stops it. Chill Flow Bot is one program that has to stay running: it holds a live connection to Discord, checks feeds and schedules on a timer, and stores flows, uploaded pictures and transcripts as files in `DATA_DIR`. Vercel does not keep that process running, and it does not keep those files. The dashboard is the same program, so it cannot be split off and hosted on Vercel by itself.
+>
+> Vercel's own guidance for an always-on Discord bot is to use a host that stays up. Use [Render](#render) (a paid instance with a disk), [Cloudflare](#cloudflare) (a container that stays awake, plus a cloud database), a [VPS](#vps-ubuntu--debian), a [NAS](#home-lab-nas-docker), or a [Raspberry Pi](#raspberry-pi).
+
+---
+
+## Cloudflare
+
+Cloudflare can run the bot as **one Container**: a Worker receives the dashboard traffic and forwards it to the included `Dockerfile`. Containers are part of the **Workers Paid** plan. They are not on the free plan.
+
+> **Read this first.** The container's disk is wiped whenever it stops, and Cloudflare can restart the machine under it. It does not promise that a container will keep running for any set length of time. Use a [cloud database](#5-the-database) so flows, variables and the other rows come back. Pictures and transcripts are files in `DATA_DIR` and do **not** come back. An always-on container is billed for the whole time it runs; the hours included with Workers Paid do not cover a bot that stays up all month. The rates are on [Cloudflare's Containers pricing page](https://developers.cloudflare.com/containers/platform/pricing/).
+>
+> The bot's connection to Discord is outbound. Nobody opening the website does not count as activity, so the steps below keep the container awake on purpose. Use **one** instance. A second copy would log in with the same token and fight the first.
+
+1. Install a current Node, and install Docker if you will deploy from your own machine (`docker info` should succeed). Wrangler can also build the image with Workers Builds, which does not need Docker on your machine. From the project folder: `npm i -D wrangler` and `npx wrangler login`.
+2. Create two files.
+
+   `wrangler.jsonc`:
+
+   ```jsonc
+   {
+     "name": "chill-flow-bot",
+     "main": "cloudflare/worker.js",
+     "compatibility_date": "2026-10-09",
+     "observability": { "enabled": true },
+     "triggers": { "crons": ["*/5 * * * *"] },
+     "vars": {
+       "BASE_URL": "https://chill-flow-bot.YOUR-SUBDOMAIN.workers.dev",
+       "DB_DRIVER": "cloudflare"
+     },
+     "containers": [{
+       "class_name": "BotContainer",
+       "max_instances": 1,
+       "scheduling_policy": "durable_object",
+       "images": { "base": { "dockerfile": "./Dockerfile" } }
+     }],
+     "durable_objects": { "bindings": [{ "name": "BOT", "class_name": "BotContainer" }] },
+     "exports": { "BotContainer": { "type": "durable-object", "storage": "sqlite" } }
+   }
+   ```
+
+   Replace `BASE_URL` with the `workers.dev` address Wrangler prints on the first deploy (then deploy once more so the container receives it). `DB_DRIVER` and the matching database variables come from [The database](#5-the-database). `cloudflare` (D1) is the one that lives on the same account. MongoDB or Firebase work here too: set `DB_DRIVER` to `mongodb` or `firebase` instead.
+
+   `cloudflare/worker.js`:
+
+   ```js
+   import { DurableObject } from "cloudflare:workers";
+
+   // Nobody opening the dashboard is normal. Fifteen minutes is long enough that the
+   // five-minute cron below counts as activity before Cloudflare would stop the container.
+   const AWAKE_MS = 15 * 60 * 1000;
+
+   export class BotContainer extends DurableObject {
+     constructor(ctx, env) {
+       super(ctx, env);
+       const container = ctx.container;
+       if (container?.running) void ctx.blockConcurrencyWhile(() => container.setInactivityTimeout(AWAKE_MS));
+     }
+
+     async fetch(request) {
+       this.starting ??= this.#start().finally(() => { this.starting = undefined; });
+       await this.starting;
+       const url = new URL(request.url);
+       url.protocol = "http:";
+       url.host = "container";
+       const forwarded = new Request(url, request);
+       forwarded.headers.delete("host");
+       return this.ctx.container.getTcpPort(3000).fetch(forwarded);
+     }
+
+     async #start() {
+       const container = this.ctx.container;
+       if (!container.running) {
+         container.start({
+           image: container.images.base,
+           instance: "basic",
+           enableInternet: true,
+           env: {
+             NODE_ENV: "production",
+             HOST: "0.0.0.0",
+             PORT: "3000",
+             DATA_DIR: "/data",
+             TRUST_PROXY: "1",
+             BASE_URL: this.env.BASE_URL,
+             DB_DRIVER: this.env.DB_DRIVER,
+             DISCORD_TOKEN: this.env.DISCORD_TOKEN,
+             DISCORD_CLIENT_ID: this.env.DISCORD_CLIENT_ID,
+             DISCORD_CLIENT_SECRET: this.env.DISCORD_CLIENT_SECRET,
+             MONGODB_URI: this.env.MONGODB_URI || "",
+             MONGODB_DB: this.env.MONGODB_DB || "",
+             FIREBASE_SERVICE_ACCOUNT: this.env.FIREBASE_SERVICE_ACCOUNT || "",
+             CLOUDFLARE_ACCOUNT_ID: this.env.CLOUDFLARE_ACCOUNT_ID || "",
+             CLOUDFLARE_API_TOKEN: this.env.CLOUDFLARE_API_TOKEN || "",
+             CLOUDFLARE_D1_DATABASE_ID: this.env.CLOUDFLARE_D1_DATABASE_ID || "",
+           },
+         });
+       }
+       await container.setInactivityTimeout(AWAKE_MS);
+       const port = container.getTcpPort(3000);
+       let lastError;
+       for (let attempt = 0; attempt < 150; attempt++) {
+         try {
+           const response = await port.fetch("http://container/healthz", { signal: AbortSignal.timeout(1000) });
+           await response.body?.cancel();
+           if (!response.ok) throw new Error(`Health check returned ${response.status}`);
+           return;
+         } catch (error) {
+           lastError = error;
+           await scheduler.wait(400);
+         }
+       }
+       throw new Error("The bot did not open port 3000 in time", { cause: lastError });
+     }
+   }
+
+   export default {
+     fetch(request, env) {
+       return env.BOT.getByName("bot").fetch(request);
+     },
+     scheduled(_event, env, ctx) {
+       ctx.waitUntil(env.BOT.getByName("bot").fetch("https://bot.internal/healthz"));
+     },
+   };
+   ```
+
+   `enableInternet` has to be on: the bot connects out to Discord. `instance: "basic"` is 1 GB of memory. `lite` is 256 MB, which is tight for this program. The cron hits `/healthz` every five minutes so an idle website does not look like an idle bot.
+3. Put the secrets in Wrangler, not in the file. From the project folder, once each (it prompts for the value):
+
+   ```bash
+   npx wrangler secret put DISCORD_TOKEN
+   npx wrangler secret put DISCORD_CLIENT_ID
+   npx wrangler secret put DISCORD_CLIENT_SECRET
+   npx wrangler secret put CLOUDFLARE_ACCOUNT_ID
+   npx wrangler secret put CLOUDFLARE_API_TOKEN
+   npx wrangler secret put CLOUDFLARE_D1_DATABASE_ID
+   ```
+
+   For MongoDB, put `MONGODB_URI` (and `MONGODB_DB` if you set it) instead of the three Cloudflare lines. For Firebase, put `FIREBASE_SERVICE_ACCOUNT`. A running container keeps the environment it started with. After you change a secret, the next request that finds the container stopped is what picks the new value up. Changing a secret does not restart a container that is already running.
+4. `npx wrangler deploy`. The first deploy builds the image (Docker has to be running if you are not using Workers Builds) and can take several minutes. Cloudflare's own note: the Worker address may answer before the container is ready, and a call into the container can fail until provisioning finishes. Wait, then open `BASE_URL`. The log you want, under **Workers & Pages → Containers**, includes `Database: Cloudflare D1` (or MongoDB / Firebase) and `Dashboard: https://…`.
+5. In the Discord portal, add `https://chill-flow-bot.YOUR-SUBDOMAIN.workers.dev/auth/callback` as a Redirect. For Twitch or TikTok follower counters, also add the `…/auth/twitch/callback` and `…/auth/tiktok/callback` addresses (TikTok requires `https`).
+6. Log in and add the bot (see *After it is running* above).
+
+**Your own domain.** On the worker, add the domain under **Settings → Domains & Routes**. Set `BASE_URL` to `https://bot.example.com` (no trailing slash), update the Discord redirect, put the new `BASE_URL` with `npx wrangler secret` or by editing `vars`, and deploy again.
+
+**Updates.** `npx wrangler deploy` again. The old container is stopped (it is sent SIGTERM) and a new one starts. With a cloud database the rows are still there. Files under `DATA_DIR` are not.
 
 ---
 
@@ -418,7 +660,10 @@ A home network (Pi, NAS, PC) usually has no address that Discord and your member
 | `No such built-in module: node:sqlite` or a `SyntaxError` on start | Node is older than 22.13. Update Node (`node -v`). |
 | You are logged out all the time behind a proxy | Set `TRUST_PROXY=1` and make sure the proxy passes `X-Forwarded-Proto` (Caddy does this automatically). |
 | Transcript links or uploaded pictures do not work | `BASE_URL` is not a public address (it is `localhost`, a private IP, or has no dot). Use your real domain. |
-| Everything was reset after a restart | `DATA_DIR` is on a disk that is wiped (Heroku, a container without a volume). Put it on persistent storage. |
+| Everything was reset after a restart | `DATA_DIR` is on a disk that is wiped (Heroku, a free Render service, Vercel, a Cloudflare container, or a container without a volume). Put it on persistent storage, or set a [cloud database](#5-the-database). Pictures and transcripts are files either way, so they still need a disk that survives a restart. |
+| `More than one database is configured` | MongoDB, Firebase and Cloudflare D1 are all partly set. Set `DB_DRIVER` to the one you want, or clear the others. Leave them all unset to use the local SQLite file. |
+| `Could not open the database` | The cloud address, token or service account was refused, or the database is still being created. The line under the message is the reason from that service. |
+| `The database took too long` | A cloud call sat for more than 30 seconds. The bot stops that worker so the next call does not use a half-finished reply. Check that the database is reachable from the machine running the bot. |
 
 ---
 

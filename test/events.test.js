@@ -233,6 +233,100 @@ describe('slash command registration', () => {
   });
 });
 
+describe('a deleted message the bot had seen', () => {
+  const line = 'id={{message.id}} text={{message.content}} author={{user.id}} name={{user.name}} link={{message.url}} at={{message.createdAt}} files={{message.attachmentCount}}:{{message.attachments}} channel={{channel.id}}/{{channel.name}}';
+  const posted = (over = {}) => {
+    const ch = over.channel ?? guild.addChannel({ id: over.channelId ?? 'c1', name: over.channelName ?? 'general' });
+    const { channel: _c, channelId: _i, channelName: _n, ...rest } = over;
+    return {
+      id: 'm1', guild, guildId: guild.id, channel: ch, channelId: ch.id, partial: false, url: '',
+      content: 'secret words', createdTimestamp: 1_700_000_000_000,
+      author: fakeUser({ id: 'u9', username: 'ada', globalName: 'Ada' }),
+      attachments: new Map([['a', { url: 'https://cdn/pic.png' }]]),
+      ...rest,
+    };
+  };
+  const gone = (full) => ({ id: full.id, guild: full.guild, guildId: full.guildId, channelId: full.channelId, channel: { id: full.channelId }, partial: true });
+
+  it('fills the log from memory when Discord sends only the id', async () => {
+    install([node('t', 'trigger.message.deleted'), log(line)], [edge('t', 'l')]);
+    const full = posted();
+    client.emit(Events.MessageCreate, full);
+    client.emit(Events.MessageDelete, gone(full));
+    await tick(40);
+    assert.ok(logs().includes(`id=m1 text=secret words author=u9 name=ada link=https://discord.com/channels/${guild.id}/c1/m1 at=${new Date(1_700_000_000_000).toISOString()} files=1:https://cdn/pic.png channel=c1/general`));
+  });
+
+  it('logs the edited text, not the original', async () => {
+    install([node('t', 'trigger.message.deleted'), log('text={{message.content}}')], [edge('t', 'l')]);
+    const full = posted();
+    client.emit(Events.MessageCreate, full);
+    client.emit(Events.MessageUpdate, full, { ...full, content: 'edited words' });
+    client.emit(Events.MessageDelete, gone(full));
+    await tick(40);
+    assert.ok(logs().includes('text=edited words'));
+  });
+
+  it('keeps a blank text when the cached message really was empty', async () => {
+    install([node('t', 'trigger.message.deleted'), log('text=[{{message.content}}] author={{user.id}}')], [edge('t', 'l')]);
+    const full = posted({ content: 'secret words' });
+    client.emit(Events.MessageCreate, full);
+    client.emit(Events.MessageDelete, { ...full, content: '', partial: false });
+    await tick(40);
+    assert.ok(logs().includes('text=[] author=u9'));
+  });
+
+  it('still runs for a message it never saw, with the id and an empty text and author', async () => {
+    install([node('t', 'trigger.message.deleted'), log(line)], [edge('t', 'l')]);
+    const ch = guild.addChannel({ id: 'c1', name: 'general' });
+    client.emit(Events.MessageDelete, { id: 'm9', guild, guildId: guild.id, channel: ch, channelId: ch.id, partial: true });
+    await tick(40);
+    assert.ok(logs().includes('id=m9 text= author= name= link=https://discord.com/channels/' + guild.id + '/c1/m9 at= files=0: channel=c1/general'));
+  });
+
+  it('a partial edit does not wipe the text it already saw', async () => {
+    install([node('t', 'trigger.message.deleted'), log('text={{message.content}}')], [edge('t', 'l')]);
+    const full = posted();
+    client.emit(Events.MessageCreate, full);
+    client.emit(Events.MessageUpdate, full, { id: full.id, guild, guildId: guild.id, channelId: full.channelId, partial: true, content: '' });
+    client.emit(Events.MessageDelete, gone(full));
+    await tick(40);
+    assert.ok(logs().includes('text=secret words'));
+  });
+
+  it('does not remember messages while no Message Deleted flow is on', async () => {
+    const full = posted();
+    client.emit(Events.MessageCreate, full);
+    install([node('t', 'trigger.message.deleted'), log('text={{message.content}}')], [edge('t', 'l')]);
+    client.emit(Events.MessageDelete, gone(full));
+    await tick(40);
+    assert.deepEqual(logs().filter((m) => m.startsWith('text=')), ['text=']);
+  });
+
+  it('forgets the text once that server no longer has a Message Deleted flow', async () => {
+    install([node('t', 'trigger.message.deleted'), log('text={{message.content}}')], [edge('t', 'l')]);
+    const full = posted();
+    client.emit(Events.MessageCreate, full);
+    for (const flow of db.listFlows(guild.id)) db.deleteFlow(guild.id, flow.id);
+    runtime.loadGuild(guild.id);
+    install([node('t', 'trigger.message.deleted'), log('text={{message.content}}')], [edge('t', 'l')]);
+    client.emit(Events.MessageDelete, gone(full));
+    await tick(40);
+    assert.deepEqual(logs().filter((m) => m.startsWith('text=')), ['text=']);
+  });
+
+  it('does not use a snapshot from another server', async () => {
+    install([node('t', 'trigger.message.deleted'), log('text={{message.content}}')], [edge('t', 'l')]);
+    const other = fakeGuild({ id: '222222' });
+    db.createFlow({ guildId: other.id, name: 'other', graph: { nodes: [node('t', 'trigger.message.deleted'), log('text={{message.content}}')], edges: [edge('t', 'l')] } });
+    runtime.loadGuild(other.id);
+    client.emit(Events.MessageCreate, posted({ guild: other, guildId: other.id, content: 'theirs' }));
+    client.emit(Events.MessageDelete, gone(posted({ content: 'ours' })));
+    await tick(40);
+    assert.deepEqual(logs().filter((m) => m.startsWith('text=')), ['text=']);
+  });
+});
+
 describe('cleaning up what buttons remembered', () => {
   const remember = (messageId, channelId, guildId = guild.id) => runtime.services.components.remember(messageId, { guild: { id: guildId }, vars: { a: 1 }, data: { user: { id: '1' } } }, { channelId });
 

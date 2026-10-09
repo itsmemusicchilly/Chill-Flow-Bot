@@ -3,6 +3,7 @@ import {
 } from '@xyflow/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { defaultsFor, getOutputs, isTriggerType, NODE_TYPES, nodeTitle } from '@shared/catalog.js';
+import { classifyNodeChanges, edgeChangeMatters, redo as redoHistory, remember, removedWithNode, sameSnap, snapFrom, undo as undoHistory } from '../history.js';
 import { localTimeZone } from '@shared/cron.js';
 import { PHONE, useMediaQuery } from '../hooks/useMediaQuery.js';
 import { toggleConnection } from '@shared/connections.js';
@@ -56,8 +57,16 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
   const [name, setName] = useState(flow.name);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [steps, setSteps] = useState({ undo: 0, redo: 0 });
   const graphRef = useRef(graph);
+  const nameRef = useRef(name);
+  const historyRef = useRef({ past: [], future: [] });
+  const savedRef = useRef(null);
+  const dragBaseline = useRef(null);
+  const nameBaseline = useRef(null);
   graphRef.current = graph;
+  nameRef.current = name;
+  if (savedRef.current === null) savedRef.current = snapFrom(flow.name, graph);
 
   // Fit the whole flow into view once every node has been measured (the `fitView` prop can fire too early).
   const initialized = useNodesInitialized();
@@ -76,6 +85,66 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
   }, [initialized, rf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const markDirty = useCallback(() => { setDirty(true); dirtyRef.current = true; }, [dirtyRef]);
+  const capture = () => snapFrom(nameRef.current, graphRef.current);
+  const syncSteps = () => setSteps({ undo: historyRef.current.past.length, redo: historyRef.current.future.length });
+  const setDirtyTo = (snap) => {
+    const on = !sameSnap(snap, savedRef.current);
+    setDirty(on);
+    dirtyRef.current = on;
+  };
+  const showSnap = (snap) => {
+    const selected = new Set(graphRef.current.nodes.filter((n) => n.selected).map((n) => n.id));
+    const nodes = snap.nodes.map((n) => ({ ...n, position: { ...n.position }, data: n.data, selected: selected.has(n.id) }));
+    const edges = snap.edges.map((e) => ({ ...e }));
+    graphRef.current = { nodes, edges };
+    nameRef.current = snap.name;
+    setGraph(graphRef.current);
+    setName(snap.name);
+    setDirtyTo(snap);
+  };
+  // The name and a drag each count as one step, finished on blur or when the pointer goes up.
+  const commitName = () => {
+    if (!nameBaseline.current) return;
+    const before = nameBaseline.current;
+    nameBaseline.current = null;
+    if (!sameSnap(before, capture())) {
+      historyRef.current = remember(historyRef.current, before);
+      syncSteps();
+    }
+  };
+  const commitDrag = () => {
+    if (!dragBaseline.current) return;
+    const before = dragBaseline.current;
+    dragBaseline.current = null;
+    if (!sameSnap(before, capture())) {
+      historyRef.current = remember(historyRef.current, before);
+      syncSteps();
+    }
+  };
+  const checkpoint = () => {
+    commitName();
+    commitDrag();
+    historyRef.current = remember(historyRef.current, capture());
+    syncSteps();
+  };
+  const undo = () => {
+    commitName();
+    commitDrag();
+    const step = undoHistory(historyRef.current, capture());
+    historyRef.current = step.history;
+    if (step.changed) showSnap(step.current);
+    syncSteps();
+  };
+  const redo = () => {
+    commitName();
+    commitDrag();
+    const step = redoHistory(historyRef.current, capture());
+    historyRef.current = step.history;
+    if (step.changed) showSnap(step.current);
+    syncSteps();
+  };
+  const edit = useRef({});
+  edit.current = { checkpoint, undo, redo, commitDrag, commitName };
   useEffect(() => { dirtyRef.current = false; return () => { dirtyRef.current = false; }; }, [dirtyRef]);
   useEffect(() => {
     const warn = (e) => { if (dirtyRef.current) { e.preventDefault(); e.returnValue = ''; } };
@@ -94,17 +163,41 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
 
   // ---- graph editing ---------------------------------------------------------------------------
   const onNodesChange = useCallback((changes) => {
-    setGraph((g) => ({ ...g, nodes: applyNodeChanges(changes, g.nodes) }));
-    if (changes.some((c) => ['position', 'remove', 'add', 'replace'].includes(c.type))) markDirty();
+    const { structural, positioning, dragging } = classifyNodeChanges(changes);
+    const nextNodes = applyNodeChanges(changes, graphRef.current.nodes);
+    if (dragging && !dragBaseline.current) {
+      edit.current.commitName();
+      dragBaseline.current = snapFrom(nameRef.current, graphRef.current);
+    } else if (!dragging && (structural || positioning)) {
+      const baseline = dragBaseline.current;
+      dragBaseline.current = null;
+      if (!baseline) edit.current.commitName();
+      const before = baseline ?? snapFrom(nameRef.current, graphRef.current);
+      const next = { ...graphRef.current, nodes: nextNodes };
+      if (!sameSnap(before, snapFrom(nameRef.current, next))) {
+        historyRef.current = remember(historyRef.current, before);
+        setSteps({ undo: historyRef.current.past.length, redo: historyRef.current.future.length });
+      }
+    }
+    graphRef.current = { ...graphRef.current, nodes: nextNodes };
+    setGraph(graphRef.current);
+    if (structural || positioning) markDirty();
   }, [markDirty]);
   const onEdgesChange = useCallback((changes) => {
-    setGraph((g) => ({ ...g, edges: applyEdgeChanges(changes, g.edges) }));
-    if (changes.some((c) => ['remove', 'add', 'replace'].includes(c.type))) markDirty();
+    const nextEdges = applyEdgeChanges(changes, graphRef.current.edges);
+    const nodeIds = new Set(graphRef.current.nodes.map((n) => n.id));
+    const record = edgeChangeMatters(changes) && !removedWithNode(changes, graphRef.current.edges, nodeIds);
+    if (record) edit.current.checkpoint();
+    graphRef.current = { ...graphRef.current, edges: nextEdges };
+    setGraph(graphRef.current);
+    if (record) markDirty();
   }, [markDirty]);
   // Dragging a connection between two things that are already connected removes it: connecting twice undoes the first.
   const onConnect = useCallback((c) => {
     const { edges, removed } = toggleConnection(graphRef.current.edges, c);
-    setGraph((g) => ({ ...g, edges }));
+    edit.current.checkpoint();
+    graphRef.current = { ...graphRef.current, edges };
+    setGraph(graphRef.current);
     markDirty();
     if (removed) toast('Connection removed.', 'info');
   }, [markDirty, toast]);
@@ -114,13 +207,16 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
   }, []);
 
   const patchNode = useCallback((id, patch) => {
-    setGraph((g) => {
-      const nodes = g.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n));
-      const target = nodes.find((n) => n.id === id);
-      const valid = new Set(getOutputs(target.type, target.data).map((o) => o.id));
-      // a removed button/option must not leave a dangling connection behind
-      return { nodes, edges: g.edges.filter((e) => e.source !== id || valid.has(e.sourceHandle || 'out')) };
-    });
+    const g = graphRef.current;
+    const nodes = g.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n));
+    const target = nodes.find((n) => n.id === id);
+    const valid = new Set(getOutputs(target.type, target.data).map((o) => o.id));
+    // a removed button/option must not leave a dangling connection behind
+    const next = { nodes, edges: g.edges.filter((e) => e.source !== id || valid.has(e.sourceHandle || 'out')) };
+    if (sameSnap(snapFrom(nameRef.current, g), snapFrom(nameRef.current, next))) return;
+    edit.current.checkpoint();
+    graphRef.current = next;
+    setGraph(next);
     markDirty();
   }, [markDirty]);
 
@@ -142,7 +238,9 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
     const data = defaultsFor(type);
     if (type === 'trigger.schedule') data.timezone = localTimeZone(); // a new schedule starts on the clock of the person setting it up
     const node = { id: freshId(), type, position: { x: Math.round(pos.x), y: Math.round(pos.y) }, data, selected: true };
-    setGraph((g) => ({ ...g, nodes: [...g.nodes.map((n) => ({ ...n, selected: false })), node] }));
+    edit.current.checkpoint();
+    graphRef.current = { ...graphRef.current, nodes: [...graphRef.current.nodes.map((n) => ({ ...n, selected: false })), node] };
+    setGraph(graphRef.current);
     markDirty();
   }, [rf, markDirty, toast]);  
 
@@ -151,7 +249,9 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
     if (!src || graphRef.current.nodes.length >= LIMITS.nodesPerFlow) return;
     const copy = { ...structuredClone({ id: src.id, type: src.type, position: src.position, data: src.data }), id: freshId(), selected: true };
     copy.position = { x: src.position.x + 40, y: src.position.y + 40 };
-    setGraph((g) => ({ ...g, nodes: [...g.nodes.map((n) => ({ ...n, selected: false })), copy] }));
+    edit.current.checkpoint();
+    graphRef.current = { ...graphRef.current, nodes: [...graphRef.current.nodes.map((n) => ({ ...n, selected: false })), copy] };
+    setGraph(graphRef.current);
     markDirty();
   }, [markDirty]);  
 
@@ -171,6 +271,7 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
     setSaving(true);
     try {
       const res = await api(`/guilds/${gid}/flows/${flow.id}`, { method: 'PUT', body: { name: name.trim() || flow.name, graph: plain(graphRef.current) } });
+      savedRef.current = snapFrom(nameRef.current, graphRef.current);
       setDirty(false);
       dirtyRef.current = false;
       onSaved(res.flow, res.sync);
@@ -182,7 +283,16 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
   }, [gid, flow.id, flow.name, name, onSaved, toast, dirtyRef]);
 
   useEffect(() => {
-    const onKey = (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); } };
+    const onKey = (e) => {
+      const meta = e.ctrlKey || e.metaKey;
+      if (!meta) return;
+      const key = e.key.toLowerCase();
+      if (key === 's') { e.preventDefault(); save(); return; }
+      const typing = e.target instanceof Element && (e.target.closest('input, textarea, [contenteditable="true"]'));
+      if (typing) return;
+      if (key === 'z' && !e.shiftKey) { e.preventDefault(); edit.current.undo(); }
+      else if ((key === 'z' && e.shiftKey) || key === 'y') { e.preventDefault(); edit.current.redo(); }
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [save]);
@@ -220,7 +330,7 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
       <div className="workspace">
         <div className="canvas-col">
           <div className="flowbar">
-            <input className="flow-name" aria-label="Flow name" value={name} maxLength={60} onChange={(e) => { setName(e.target.value); markDirty(); }} />
+            <input className="flow-name" aria-label="Flow name" value={name} maxLength={60} onChange={(e) => { edit.current.commitDrag(); if (!nameBaseline.current) nameBaseline.current = snapFrom(nameRef.current, graphRef.current); nameRef.current = e.target.value; setName(e.target.value); markDirty(); }} onBlur={() => edit.current.commitName()} />
             <label className="switch" title={flow.enabled ? 'This flow is live' : 'This flow is switched off'}>
               <input type="checkbox" checked={flow.enabled} onChange={(e) => onToggle(e.target.checked)} />
               <span className="track" /><span className="switch-label">{flow.enabled ? 'On' : 'Off'}</span>
@@ -242,6 +352,8 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
               )}
             </details>
             <span className="spacer" />
+            <button className="btn ghost small" disabled={!steps.undo} onClick={undo} title="Undo (Ctrl+Z)">Undo</button>
+            <button className="btn ghost small" disabled={!steps.redo} onClick={redo} title="Redo (Ctrl+Shift+Z)">Redo</button>
             <button className="btn ghost small" onClick={exportFlow}>Export</button>
             <button className="btn primary" disabled={saving || !dirty} onClick={save} title="Ctrl+S">
               {saving ? 'Saving…' : dirty ? 'Save changes' : 'Saved'}

@@ -84,6 +84,17 @@ describe('backing up the data folder', () => {
     } finally { fs.rmSync(bad, { recursive: true, force: true }); }
   });
 
+  it('with the data in a cloud database, copies only the folders — and says there is nothing to copy when there are none', () => {
+    const r = runBackup({ dataDir: dir, includeDatabase: false, now: at(5) });
+    assert.deepEqual(r.copied, ['uploads/', 'transcripts/']);
+    assert.equal(fs.existsSync(path.join(r.folder, 'flowbot.sqlite')), false);
+    const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'flowbot-backup-bare-'));
+    try {
+      assert.throws(() => runBackup({ dataDir: bare, includeDatabase: false }), /no uploaded pictures or saved transcripts/);
+      assert.equal(fs.existsSync(path.join(bare, 'backups')), false, 'nothing is created for nothing');
+    } finally { fs.rmSync(bare, { recursive: true, force: true }); }
+  });
+
   it('stamps are in UTC and sort in time order', () => {
     assert.equal(stampOf(new Date(Date.UTC(2026, 0, 2, 3, 4, 5))), '20260102-030405');
   });
@@ -116,6 +127,19 @@ describe('npm run backup (the command)', () => {
     const empty = run([], { DATA_DIR: path.join(dir, 'nowhere') });
     assert.equal(empty.status, 1);
     assert.match(empty.stderr, /There is no database/);
+  });
+
+  it('tells a bot that uses MongoDB, Firebase or Cloudflare D1 what is and is not in the backup', () => {
+    fs.mkdirSync(path.join(dir, 'uploads'));
+    fs.writeFileSync(path.join(dir, 'uploads', 'a.webp'), 'x');
+    const r = run([], { MONGODB_URI: 'mongodb://localhost:27017' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /contains: uploads\//);
+    assert.match(r.stdout, /NOT included: the bot's data lives in MongoDB\. Back that up with MongoDB's own tools/);
+    assert.equal(run([], { MONGODB_URI: 'mongodb://localhost:27017', DB_DRIVER: 'sqlite' }).stdout.includes('NOT included'), false, 'DB_DRIVER=sqlite keeps the local database');
+    const bad = run([], { MONGODB_URI: 'http://not-mongo' });
+    assert.equal(bad.status, 1);
+    assert.match(bad.stderr, /MONGODB_URI must/);
   });
 
   it('prints help', () => {
