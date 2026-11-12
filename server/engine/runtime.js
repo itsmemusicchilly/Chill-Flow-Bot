@@ -1,6 +1,7 @@
 // The runtime turns Discord events into flow runs. It owns the per-server trigger index and every limit that
 // keeps one server from hurting the others (run rate, concurrency, action rate, step count).
-import { MessageFlags } from 'discord.js';
+import { ApplicationCommandOptionType, MessageFlags } from 'discord.js';
+import { commandKey, menuKey, parseChoices, subOf, suggestChoices } from '../../shared/commands.js';
 import { getOutputs, isTriggerType, NODE_TYPES } from '../../shared/catalog.js';
 import { cronMatches, scheduleOf, zonedParts } from '../../shared/cron.js';
 import { LIMITS } from '../../shared/limits.js';
@@ -25,6 +26,7 @@ import { autoDefer, finalize, newAck } from './responder.js';
 import { MessageMemory } from './message-memory.js';
 import { channelData, guildData, memberData, messageData, roleData, userData } from './serialize.js';
 import { matches } from './triggers.js';
+import { toList } from './template.js';
 
 export const DEFER_AFTER_MS = 2200;
 const MINUTE = 60_000;
@@ -65,7 +67,9 @@ export class Runtime {
       // a “Called by Another Flow” trigger of this server that is switched on, by its name (the Run Flow block)
       findCallable: (guildId, name) => this.index.get(guildId)?.callables.get(name),
     };
-    this.index = new Map(); // guildId -> { flows, triggers: Map<type, {flow,node}[]>, commands: Map<name, {flow,node}>, buttons: Map<buttonId, {flow,node}> }
+    // guildId -> { flows, triggers: Map<type, {flow,node}[]>, commands: Map<"name" | "name sub", {flow,node}>, menus: Map<"kind|name", {flow,node}>,
+    //              buttons: Map<buttonId, {flow,node}>, callables: Map<name, {flow,node}> }
+    this.index = new Map();
     this.flowsById = new Map();
     this.active = new Map();
     this.live = new Set();
@@ -87,7 +91,8 @@ export class Runtime {
   // ---- index ------------------------------------------------------------------------------------
   loadGuild(guildId) {
     for (const id of this.index.get(guildId)?.flows.keys() ?? []) this.flowsById.delete(id);
-    const entry = { flows: new Map(), triggers: new Map(), commands: new Map(), buttons: new Map(), callables: new Map() };
+    const entry = { flows: new Map(), triggers: new Map(), commands: new Map(), menus: new Map(), buttons: new Map(), callables: new Map() };
+    const commandKinds = new Map(); // command name -> whether it is used on its own or has sub-commands (Discord allows one or the other)
     for (const flow of this.db.listEnabledFlows(guildId)) {
       const graph = normalizeGraph(flow.graph);
       const active = { ...flow, graph };
@@ -103,11 +108,30 @@ export class Runtime {
           continue;
         }
         if (node.type === 'trigger.command') {
-          if (entry.commands.has(node.data.name)) {
-            this.logger.log(guildId, 'warn', `Command /${node.data.name} is defined twice; “${flow.name}” is ignored for it.`, { flowId: flow.id, flowName: flow.name, nodeId: node.id });
+          const sub = subOf(node.data);
+          const key = commandKey(node.data.name, sub);
+          const meta = { flowId: flow.id, flowName: flow.name, nodeId: node.id };
+          const kind = commandKinds.get(node.data.name);
+          if (kind && kind !== (sub ? 'sub' : 'plain')) {
+            this.logger.log(guildId, 'warn', sub
+              ? `Command /${key} is ignored: /${node.data.name} is already a command on its own, and a command cannot be both (“${flow.name}”).`
+              : `Command /${key} is ignored: /${node.data.name} already has sub-commands, so it cannot also be used on its own (“${flow.name}”).`, meta);
             continue;
           }
-          entry.commands.set(node.data.name, { flow: active, node });
+          if (entry.commands.has(key)) {
+            this.logger.log(guildId, 'warn', `Command /${key} is defined twice; “${flow.name}” is ignored for it.`, meta);
+            continue;
+          }
+          commandKinds.set(node.data.name, sub ? 'sub' : 'plain');
+          entry.commands.set(key, { flow: active, node });
+        }
+        if (node.type === 'trigger.contextMenu') {
+          const key = menuKey(node.data.kind, node.data.name);
+          if (entry.menus.has(key)) {
+            this.logger.log(guildId, 'warn', `The right-click command “${String(node.data.name).trim()}” is defined twice; “${flow.name}” is ignored for it.`, { flowId: flow.id, flowName: flow.name, nodeId: node.id });
+            continue;
+          }
+          entry.menus.set(key, { flow: active, node });
         }
         if (node.type === 'trigger.button.clicked') {
           // A press can only be answered once, so a Button ID has exactly one handler: the first flow (oldest) wins.
@@ -174,7 +198,11 @@ export class Runtime {
   hasTrigger(guildId, type) { return Boolean(this.index.get(guildId)?.triggers.get(type)?.length); }
   /** Recent messages are kept in memory only while a flow needs them: to quote a deleted message, or the text before an edit. */
   remembersMessages(guildId) { return this.hasTrigger(guildId, 'trigger.message.deleted') || this.hasTrigger(guildId, 'trigger.message.edited'); }
-  commandsFor(guildId) { return [...(this.index.get(guildId)?.commands.values() ?? [])]; }
+  /** Every trigger Discord has to know about: slash commands (with their sub-commands) and right-click commands. */
+  commandsFor(guildId) {
+    const entry = this.index.get(guildId);
+    return entry ? [...entry.commands.values(), ...entry.menus.values()] : [];
+  }
 
   // ---- starting runs ----------------------------------------------------------------------------
   createContext(flow, base) {
@@ -285,7 +313,9 @@ export class Runtime {
   // ---- interactions -----------------------------------------------------------------------------
   async handleInteraction(interaction) {
     try {
-      if (interaction.isChatInputCommand()) await this.#handleCommand(interaction);
+      if (interaction.isAutocomplete?.()) await this.#handleAutocomplete(interaction);
+      else if (interaction.isChatInputCommand()) await this.#handleCommand(interaction);
+      else if (interaction.isContextMenuCommand?.()) await this.#handleMenu(interaction);
       else if (interaction.isMessageComponent()) await this.#handleComponent(interaction);
     } catch (err) {
       this.logger.log(interaction.guildId, 'error', `Interaction failed: ${friendlyError(err)}`);
@@ -301,17 +331,73 @@ export class Runtime {
   async #handleCommand(interaction) {
     const guild = interaction.guild;
     if (!guild) return;
-    const cmd = this.index.get(guild.id)?.commands.get(interaction.commandName);
+    const { key, given } = this.#commandParts(interaction);
+    const cmd = this.index.get(guild.id)?.commands.get(key);
     if (!cmd) {
       await interaction.reply({ content: 'This command is not set up (any more).', flags: EPHEMERAL }).catch(() => {});
       return;
     }
     const option = {};
-    for (const o of interaction.options.data) option[o.name] = o.value ?? '';
+    for (const o of given) option[o.name] = o.value ?? '';
     const { member, channel } = await this.#memberAndChannel(guild, interaction);
     const started = this.start(cmd.flow, cmd.node, {
       guild, channel, member, user: interaction.user, interaction, data: { option }, deferEphemeral: cmd.node.data.deferEphemeral,
-    }, { label: `/${interaction.commandName} by ${interaction.user.username}` });
+    }, { label: `/${key} by ${interaction.user.username}` });
+    if (started) await started;
+    else await interaction.reply({ content: 'Too many requests right now — try again in a moment.', flags: EPHEMERAL }).catch(() => {});
+  }
+
+  /** Which trigger a command interaction is for ("ticket", or "ticket open" for a sub-command) and the options that were given to it. */
+  #commandParts(interaction) {
+    const data = interaction.options?.data ?? [];
+    const sub = data[0]?.type === ApplicationCommandOptionType.Subcommand ? data[0].name : '';
+    return { key: commandKey(interaction.commandName, sub), given: sub ? data[0].options ?? [] : data };
+  }
+
+  /**
+   * Someone is typing into an option that has suggestions: answer with the entries of its list (and of the server variable it names)
+   * that fit what was typed. No flow runs. Discord wants an answer within three seconds, so anything unexpected answers with nothing.
+   */
+  async #handleAutocomplete(interaction) {
+    let choices = [];
+    try {
+      const guild = interaction.guild;
+      const { key, given } = this.#commandParts(interaction);
+      const focused = given.find((o) => o.focused);
+      const def = guild && focused ? this.index.get(guild.id)?.commands.get(key)?.node.data.options?.find((o) => o.name === focused.name) : null;
+      if (def?.choiceMode === 'suggest') {
+        const list = parseChoices(def.choices);
+        const seen = new Set(list.map((c) => c.name));
+        const name = String(def.choicesVar ?? '').trim();
+        for (const item of name ? toList(this.db.getVar(guild.id, 'guild', '', name)) : []) {
+          const text = String(typeof item === 'object' ? JSON.stringify(item) : item).trim().slice(0, 100);
+          if (text && !seen.has(text)) { seen.add(text); list.push({ name: text, value: text }); }
+        }
+        choices = suggestChoices(list, focused.value, def.type);
+      }
+    } catch (err) {
+      this.logger.log(interaction.guildId, 'warn', `Could not suggest values for /${interaction.commandName}: ${friendlyError(err)}`);
+    }
+    await interaction.respond(choices).catch(() => {});
+  }
+
+  /** A right-click command (Apps menu) on a member or on a message. */
+  async #handleMenu(interaction) {
+    const guild = interaction.guild;
+    if (!guild) return;
+    const onMessage = Boolean(interaction.isMessageContextMenuCommand?.());
+    const menu = this.index.get(guild.id)?.menus.get(menuKey(onMessage ? 'message' : 'user', interaction.commandName));
+    if (!menu) {
+      await interaction.reply({ content: 'This command is not set up (any more).', flags: EPHEMERAL }).catch(() => {});
+      return;
+    }
+    const message = onMessage ? interaction.targetMessage : undefined;
+    const target = onMessage ? message?.author : interaction.targetUser;
+    const targetMember = onMessage ? message?.member : interaction.targetMember;
+    const { member, channel } = await this.#memberAndChannel(guild, interaction);
+    const started = this.start(menu.flow, menu.node, {
+      guild, channel, member, user: interaction.user, interaction, message, data: { target: userData(target, targetMember) ?? {} }, deferEphemeral: menu.node.data.deferEphemeral,
+    }, { label: `“${interaction.commandName}” used by ${interaction.user.username}` });
     if (started) await started;
     else await interaction.reply({ content: 'Too many requests right now — try again in a moment.', flags: EPHEMERAL }).catch(() => {});
   }

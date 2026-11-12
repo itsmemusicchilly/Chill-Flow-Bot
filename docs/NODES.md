@@ -13,21 +13,38 @@ tell nodes apart; it is never sent to Discord.
 
 ### ⌨️ Slash Command
 
-`trigger.command` — Runs when someone uses a /command. Add options to collect input.
+`trigger.command` — Runs when someone uses a /command. Add options to collect input — typed freely, picked from a list, or suggested while typing. Give it a sub-command to make “/ticket open” and “/ticket close” out of several triggers.
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | Command name | text | required; Lowercase letters, numbers, - and _ (max 32). |
+| Sub-command (optional) | text | Makes this “/ticket open”. Give several Slash Command triggers the same command name and a different sub-command each. A command that has sub-commands cannot also be used on its own. |
 | Description | text | required |
 | Options | list | up to 25 items |
 | ↳ Name | text | required |
 | ↳ Description | text | required |
 | ↳ Type | select | options: Text, Whole number, Decimal number, True / False, User, Channel, Role, User or role |
 | ↳ Required | boolean |  |
-| Who can use it | select | options: Everyone, Administrators, Manage Server, Manage Roles, Manage Channels, Manage Messages, Kick Members, Ban Members, Timeout Members; Discord's default permission for the command. Server admins can still change it in Integrations. |
+| ↳ How it is filled in | select | shown when `type` is `string` / `integer` / `number`; options: Typed freely, Picked from a list (up to 25), Typed, with suggestions (autocomplete); A list only lets people pick what is on it. Suggestions help while typing, but people can still type something else. |
+| ↳ List | textarea | shown when `choiceMode` is `choices` / `suggest`; One per line. “Label = value” shows the label and gives the flow the value; without “=” they are the same. |
+| ↳ Also suggest from this server variable | text | shown when `choiceMode` is `suggest`; A remembered server variable that holds a list (Set Variable → Append to list, scope Server). The suggestions follow it as it changes. |
+| Who can use it | select | options: Everyone, Administrators, Manage Server, Manage Roles, Manage Channels, Manage Messages, Kick Members, Ban Members, Timeout Members; Discord's default permission for the command. Server admins can still change it in Integrations. Sub-commands share one setting: if they differ, all of the permissions are needed. |
 | Make the "thinking…" reply private | boolean | Used when a flow takes longer than ~2 s to answer. |
 
 **Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+
+### 🖱️ Right-Click Command
+
+`trigger.contextMenu` — Adds an entry under “Apps” in the menu that opens when someone right-clicks (on a phone: long-presses) a member or a message, and runs when it is picked. {{user.*}} is whoever used it, {{target.*}} the member it was used on; on a message, {{message.*}} is that message, so “blank = the triggering message” in other blocks means it.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Shown on | select | options: A member (right-click a person → Apps), A message (right-click a message → Apps) |
+| Name in the menu | text | required; 1–32 characters. Capital letters and spaces are fine. Discord allows 5 of each kind per server. |
+| Who can use it | select | options: Everyone, Administrators, Manage Server, Manage Roles, Manage Channels, Manage Messages, Kick Members, Ban Members, Timeout Members; Discord's default permission for the command. Server admins can still change it in Integrations. |
+| Make the "thinking…" reply private | boolean | Used when a flow takes longer than ~2 s to answer. |
+
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{target.id}}`, `{{target.name}}`, `{{target.displayName}}`, `{{target.mention}}`, `{{target.avatar}}`, `{{target.isBot}}`
 
 ### 🔘 Button Clicked
 

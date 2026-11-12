@@ -29,7 +29,7 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **Subscriber / follower counters.** Run a flow each time a YouTube channel gains subscribers or a Twitch or TikTok account gains followers — or keep a
   channel named “💜 Followers: 4,321” up to date with a ready-made counter flow. Twitch and TikTok are connected from the dashboard (*Accounts*): the
   creator approves it on the platform itself (see [Counting subscribers and followers](#counting-subscribers-and-followers)).
-* **75 nodes**: 37 triggers (commands, buttons, messages sent, edited and deleted, joins/leaves/kicks/bans/timeouts, server boosts, role, channel and thread events,
+* **76 nodes**: 38 triggers (slash commands with sub-commands and suggestions, right-click commands, buttons, messages sent, edited and deleted, joins/leaves/kicks/bans/timeouts, server boosts, role, channel and thread events,
   reactions, voice, schedule, new feed item, webhook, YouTube subscribers (milestones and gains), Twitch live and followers, TikTok followers, manual, form submitted, called by another flow) and 38 actions/logic nodes (messages with buttons/menus/forms, changing the buttons of a sent message, pinning and bulk-deleting messages, member moderation and voice,
   channels, threads, forum posts and ticket transcripts, roles, variables, maths and leaderboards, conditions, loops, cooldowns, waits, running another flow, and — if the operator allows it — HTTP requests). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
 * **Remembers things**: run, per-server, per-channel and per-user variables, usable everywhere as `{{templates}}` — with maths, text and date filters built in,
@@ -128,7 +128,7 @@ loop iterations, steps per run and as long a wait as you like. On a private bot 
 `.env.example` contains a commented **public-host preset** with sensible caps.
 
 **What cannot be unlimited** — these are physical or Discord's own rules, not ours: 25 buttons / menu options / embed fields,
-10 embeds and 6000 embed characters per message, 25 options per slash command, 5 form inputs, 2000 characters per message, 8 MB per ticket transcript (its `.html` and `.txt` together; Discord's upload limit), 100 slash commands per server,
+10 embeds and 6000 embed characters per message, 25 options, 25 choices and 25 sub-commands per slash command, 5 right-click commands on members and 5 on messages, 5 form inputs, 2000 characters per message, 8 MB per ticket transcript (its `.html` and `.txt` together; Discord's upload limit), 100 slash commands per server,
 memory and CPU, `setTimeout`'s maximum (~24.8 days), the form wait (10 min: Discord's interaction tokens expire), and the
 login/API/public-site rate limits that protect the site itself (10 form submissions per minute per visitor, 60 per IP, 600 page views
 per IP; a form answer is at most 10 000 characters and a public request 256 KB; an uploaded picture is at most 32 MB and 64 megapixels
@@ -175,6 +175,29 @@ Development with hot reload: `npm run dev` (server + Vite). Set `BASE_URL=http:/
   tick *Also run for changes made by this bot*.
 * **Kick vs leave, who banned whom**: read from the audit log — give the bot *View Audit Log* or kicks look like leaves.
 * **Slash commands** are registered per server when you save (instant, no global propagation delay).
+
+### Slash commands: sub-commands, lists and suggestions
+
+* **Sub-commands.** Fill in **Sub-command** on a *Slash Command* trigger to make `/ticket open`. Give several triggers — in one flow or in different flows — the same command name and a different
+  sub-command each (`open`, `close`, `add`): Discord shows them as one command, and each runs its own flow with its own options. A command that has sub-commands **cannot also be used on its own**
+  (Discord's rule): whichever came first decides, and the log names the trigger that is ignored. Up to 25 sub-commands per command.
+  Discord has **one** “who can use it” setting per command, so if sub-commands ask for different permissions a member needs **all** of them — a sub-command meant for moderators never opens up
+  because another one was for everyone.
+* **Pick from a list.** For a text or number option choose **Picked from a list** and write up to 25 choices, one per line. `Green = g` shows “Green” and gives the flow `g` as `{{option.<name>}}`.
+  People can only pick what is on the list.
+* **Suggestions while typing (autocomplete).** Choose **Typed, with suggestions** for a list longer than 25, or one that changes. The suggestions come from the list you write and, if you name one,
+  from a **server variable that holds a list** (*Set Variable → Append to list*, scope *Server*) — so `/buy` can suggest whatever is in the shop right now. What starts with the typed text comes first,
+  then what contains it; at most 25 are shown. People can still type something that is not suggested, so check the value in the flow if it matters. No flow runs for a suggestion.
+
+### Right-click commands
+
+The **Right-Click Command** trigger adds an entry under **Apps** in the menu that opens when someone right-clicks (on a phone: long-presses) a **member** or a **message**. No typing, no options —
+handy for *Report message*, *Warn*, *Pin this*, *Give a cookie*.
+
+* `{{user.*}}` is whoever used it and `{{target.*}}` (`.id .name .displayName .mention .avatar .isBot`) the member it was used on — for a message, its author.
+* On a message, `{{message.*}}` is that message and it counts as “the triggering message”: *Pin Message*, *Delete Message*, *Add Reaction* and *Create Thread → On a message* with a blank ID act on it.
+* The name is 1–32 characters and may have capitals and spaces. Discord allows **5 on members and 5 on messages** per server; a member command and a message command may share a name.
+* Like a slash command it can open a form (*Show Form*) as its first step, reply privately, and has a “who can use it” setting.
 
 ### Reusable panels (tickets, role menus)
 
@@ -509,6 +532,7 @@ An operator who hosts the bot for other people can also limit it to certain webs
 | `user.vars.<name>`, `channel.vars.<name>`, `guild.vars.<name>` | remembered per-user / per-channel / per-server variables (`channel` is where the run happened) |
 | `loop.index .item`, `error.message`, `cooldown.remaining`, `now.iso .date .time .timestamp` | misc |
 | `leaderboard.text .rank .value .count .total .top.*` | after *Leaderboard* (see [Leaderboards](#leaderboards)) |
+| `target.id .name .displayName .mention .avatar .isBot` | *Right-Click Command*: the member it was used on (for a message: its author) |
 | `arg.<name>` | in the steps behind *Called by Another Flow*: the values the *Run Flow* block passed |
 | `http.status .ok .text .body.<field> .type` | after *HTTP Request* |
 | `thread.id .mention .name`, `purge.count`, `message.before` | after *Create Thread*, after *Delete Messages (bulk)*, and in a *Message Edited* flow |
@@ -846,6 +870,10 @@ Not yet automated — please run through this once on a test server:
       *Create Private Threads* / *Send Messages in Threads* / *Manage Threads*.
 - [ ] Moderation extras: edit a message → *Message Edited* gives the old and the new text (with the Message Content intent), and pasting a link (the preview appears) does not run it. *Pin Message* pins and unpins.
       *Delete Messages (bulk)* removes the last N, only one member's, keeps pinned ones, and leaves 15-day-old messages. *Voice: Move or Disconnect* moves, disconnects and server-mutes a member in voice.
+- [ ] Sub-commands: two triggers `/ticket open` and `/ticket close` show up as one command in Discord and each runs its own flow; an option with **Picked from a list** only offers the list; one with
+      **Typed, with suggestions** suggests while you type, including entries of the server variable it names (add one with a flow and type again).
+- [ ] Right-click commands: one on a member and one on a message appear under Apps (desktop right-click, phone long-press), run with the right `{{target.*}}` / `{{message.*}}`, and a *Pin Message* with a blank ID
+      pins the right-clicked message.
 - [ ] Run Flow: a command flow runs a *Called by Another Flow* trigger in another flow with a value passed; the reply uses a `{{var.…}}` the called steps stored. Switch the called flow off → the block follows On error.
 - [ ] HTTP Request (set `ENABLE_HTTP_REQUEST=true` first, needs the real internet): `GET https://api.github.com/zen` answers with text; a JSON API fills `{{http.body.…}}`; `https://localhost/` and an `http://` address
       are refused; with the variable unset the block shows 🔒 and a flow using it follows On error.
@@ -871,7 +899,7 @@ Not yet automated — please run through this once on a test server:
 
 ## Ideas not done yet
 
-Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, watching X/Instagram/Facebook posts directly (needs each account's own consent), instant Twitch follower alerts (Twitch can push them, but that needs a public address and a subscription to keep alive; the bot checks every few minutes instead), exact YouTube subscriber counts (needs the channel owner's Google login), autocomplete options, sub-commands, embed preview, flow version history,
+Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, watching X/Instagram/Facebook posts directly (needs each account's own consent), instant Twitch follower alerts (Twitch can push them, but that needs a public address and a subscription to keep alive; the bot checks every few minutes instead), exact YouTube subscriber counts (needs the channel owner's Google login), sub-command groups, embed preview, flow version history,
 sharding.
 
 ---

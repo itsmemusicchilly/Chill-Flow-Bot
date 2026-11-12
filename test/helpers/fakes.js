@@ -177,6 +177,23 @@ export function fakeCommand({ guild, channel, user, member, commandName, options
   return i;
 }
 
+/** Someone typing into a command option that has suggestions: `options` as Discord sends them, the one being typed marked `focused: true`. */
+export function fakeAutocomplete({ guild, channel, user, member, commandName, options = [] }) {
+  const i = { ...baseInteraction(guild, channel, user, member), commandName, options: { data: options }, isAutocomplete: () => true };
+  i.respond = async (choices) => { i.calls.push(['respond', choices]); };
+  return i;
+}
+
+/** A right-click (Apps menu) command used on a member (`targetUser`, `targetMember`) or on a message (`targetMessage`). */
+export function fakeMenu({ guild, channel, user, member, commandName, targetUser, targetMember, targetMessage }) {
+  const i = {
+    ...fakeCommand({ guild, channel, user, member, commandName }), isChatInputCommand: () => false, isContextMenuCommand: () => true,
+    isUserContextMenuCommand: () => !targetMessage, isMessageContextMenuCommand: () => Boolean(targetMessage),
+    targetUser, targetMember, targetMessage,
+  };
+  return i;
+}
+
 export function fakeComponent({ guild, channel, user, member, customId, messageId = 'MSG1', values, label = '' }) {
   const i = { ...baseInteraction(guild, channel, user, member), customId, values, component: { label }, isMessageComponent: () => true,
     message: { id: messageId, edit: async (p) => { i.calls.push(['messageEdit', p]); } } };

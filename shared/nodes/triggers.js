@@ -1,45 +1,92 @@
 // Triggers: what starts a flow (commands, buttons, server events, schedules, other platforms, counts, forms).
-import { bool, idField, list, multi, num, select, text, when, whenNot } from '../fields.js';
+import { area, bool, idField, list, multi, num, select, text, when, whenNot } from '../fields.js';
+import { CHOICE_TYPES, COMMAND_NAME_RE, MAX_CHOICES, parseChoices, subOf, typedChoice } from '../commands.js';
 import { CronError, nextRuns, scheduleOf, timeZoneNames, WEEKDAYS } from '../cron.js';
 import { DEFAULT_FEED_MINUTES, FEED_SOURCES, FeedSettingError, feedUrlOf, MIN_FEED_MINUTES, parsePublicHttpsUrl } from '../feeds.js';
 import { accountOf, COUNT_MODES, countSettings, DEFAULT_TIKTOK_MINUTES, DEFAULT_TWITCH_FOLLOWER_MINUTES, DEFAULT_TWITCH_MINUTES, DEFAULT_YOUTUBE_COUNT_MINUTES, DEFAULT_YOUTUBE_MINUTES, MIN_TIKTOK_MINUTES, MIN_TWITCH_FOLLOWER_MINUTES, MIN_TWITCH_MINUTES, MIN_YOUTUBE_MINUTES, twitchSettings, youtubeCountSettings, youtubeSettings } from '../platforms.js';
 import { BUTTON_ID_RE, CHANNEL, EXECUTOR, GUILD, ignoreBots, includeSelf, MEMBER, MESSAGE, ROLE, trigger, USER } from './core.js';
 
 // ---- triggers -----------------------------------------------------------------------------------
+const COMMAND_PERMISSION_CHOICES = [['', 'Everyone'], ['Administrator', 'Administrators'], ['ManageGuild', 'Manage Server'], ['ManageRoles', 'Manage Roles'], ['ManageChannels', 'Manage Channels'], ['ManageMessages', 'Manage Messages'], ['KickMembers', 'Kick Members'], ['BanMembers', 'Ban Members'], ['ModerateMembers', 'Timeout Members']];
+const deferEphemeral = () => bool('deferEphemeral', 'Make the "thinking…" reply private', { help: 'Used when a flow takes longer than ~2 s to answer.' });
 trigger('trigger.command', {
   label: 'Slash Command', icon: '⌨️',
-  description: 'Runs when someone uses a /command. Add options to collect input.',
+  description: 'Runs when someone uses a /command. Add options to collect input — typed freely, picked from a list, or suggested while typing. Give it a sub-command to make “/ticket open” and “/ticket close” out of several triggers.',
   fields: [
     text('name', 'Command name', { required: true, placeholder: 'ticket', help: 'Lowercase letters, numbers, - and _ (max 32).' }),
+    text('sub', 'Sub-command (optional)', {
+      placeholder: 'open',
+      help: 'Makes this “/ticket open”. Give several Slash Command triggers the same command name and a different sub-command each. A command that has sub-commands cannot also be used on its own.',
+    }),
     text('description', 'Description', { required: true, default: 'A custom command', placeholder: 'What does it do?' }),
     list('options', 'Options', {
-      create: () => ({ name: 'option', description: 'An option', type: 'string', required: false }),
+      create: () => ({ name: 'option', description: 'An option', type: 'string', required: false, choiceMode: '', choices: '', choicesVar: '' }),
       label: (o) => o.name,
       fields: [
         text('name', 'Name', { required: true }),
         text('description', 'Description', { required: true }),
         select('type', 'Type', [['string', 'Text'], ['integer', 'Whole number'], ['number', 'Decimal number'], ['boolean', 'True / False'], ['user', 'User'], ['channel', 'Channel'], ['role', 'Role'], ['mentionable', 'User or role']]),
         bool('required', 'Required'),
+        select('choiceMode', 'How it is filled in', [['', 'Typed freely'], ['choices', `Picked from a list (up to ${MAX_CHOICES})`], ['suggest', 'Typed, with suggestions (autocomplete)']], {
+          showIf: when('type', ...CHOICE_TYPES),
+          help: 'A list only lets people pick what is on it. Suggestions help while typing, but people can still type something else.',
+        }),
+        area('choices', 'List', {
+          showIf: when('choiceMode', 'choices', 'suggest'), rows: 4, placeholder: 'Red\nGreen = g\nBlue = b',
+          help: 'One per line. “Label = value” shows the label and gives the flow the value; without “=” they are the same.',
+        }),
+        text('choicesVar', 'Also suggest from this server variable', {
+          showIf: when('choiceMode', 'suggest'), pattern: 'var', placeholder: 'items',
+          help: 'A remembered server variable that holds a list (Set Variable → Append to list, scope Server). The suggestions follow it as it changes.',
+        }),
       ],
     }, { max: 25 }),
-    select('permission', 'Who can use it', [['', 'Everyone'], ['Administrator', 'Administrators'], ['ManageGuild', 'Manage Server'], ['ManageRoles', 'Manage Roles'], ['ManageChannels', 'Manage Channels'], ['ManageMessages', 'Manage Messages'], ['KickMembers', 'Kick Members'], ['BanMembers', 'Ban Members'], ['ModerateMembers', 'Timeout Members']],
-      { help: 'Discord\'s default permission for the command. Server admins can still change it in Integrations.' }),
-    bool('deferEphemeral', 'Make the "thinking…" reply private', { help: 'Used when a flow takes longer than ~2 s to answer.' }),
+    select('permission', 'Who can use it', COMMAND_PERMISSION_CHOICES,
+      { help: 'Discord\'s default permission for the command. Server admins can still change it in Integrations. Sub-commands share one setting: if they differ, all of the permissions are needed.' }),
+    deferEphemeral(),
   ],
   provides: (d) => [...USER, ...MEMBER, ...GUILD, ...CHANNEL, ...(d.options || []).filter((o) => o.name).map((o) => [`option.${o.name}`, `Option “${o.name}”`])],
-  summary: (d) => `/${d.name || '?'}`,
+  summary: (d) => `/${d.name || '?'}${subOf(d) ? ` ${subOf(d)}` : ''}`,
   check(d) {
     const e = [];
-    if (d.name && !/^[a-z0-9_-]{1,32}$/.test(d.name)) e.push('Command name must be 1–32 lowercase letters, numbers, - or _.');
+    if (d.name && !COMMAND_NAME_RE.test(d.name)) e.push('Command name must be 1–32 lowercase letters, numbers, - or _.');
+    if (subOf(d) && !COMMAND_NAME_RE.test(subOf(d))) e.push('Sub-command must be 1–32 lowercase letters, numbers, - or _.');
     if (d.description && d.description.length > 100) e.push('Description can be at most 100 characters.');
     const seen = new Set();
     for (const o of d.options || []) {
-      if (o.name && !/^[a-z0-9_-]{1,32}$/.test(o.name)) e.push(`Option “${o.name}”: name must be 1–32 lowercase letters, numbers, - or _.`);
+      if (o.name && !COMMAND_NAME_RE.test(o.name)) e.push(`Option “${o.name}”: name must be 1–32 lowercase letters, numbers, - or _.`);
       if (o.description && o.description.length > 100) e.push(`Option “${o.name}”: description can be at most 100 characters.`);
       if (seen.has(o.name)) e.push(`Duplicate option name “${o.name}”.`);
       seen.add(o.name);
+      if (!CHOICE_TYPES.includes(o.type) || !o.choiceMode) continue;
+      const list = parseChoices(o.choices);
+      const unusable = list.filter((c) => !typedChoice(c, o.type));
+      if (unusable.length) e.push(`Option “${o.name}”: “${unusable[0].value}” is not a ${o.type === 'integer' ? 'whole number' : 'number'}, which this option needs as the value.`);
+      if (o.choiceMode === 'choices') {
+        if (!list.length) e.push(`Option “${o.name}”: write the list to pick from, one per line.`);
+        if (list.length > MAX_CHOICES) e.push(`Option “${o.name}”: Discord shows at most ${MAX_CHOICES} choices — use “Typed, with suggestions” for a longer list.`);
+      } else if (!list.length && !String(o.choicesVar ?? '').trim()) {
+        e.push(`Option “${o.name}”: write a list to suggest from, or name a server variable that holds one.`);
+      }
     }
     return e;
+  },
+});
+const TARGET = [['target.id', 'ID of the member that was right-clicked (for a message: its author)'], ['target.name', 'Their username'], ['target.displayName', 'Their display name'], ['target.mention', 'Their mention'], ['target.avatar', 'Their avatar URL'], ['target.isBot', 'Whether they are a bot']];
+trigger('trigger.contextMenu', {
+  label: 'Right-Click Command', icon: '🖱️',
+  description: 'Adds an entry under “Apps” in the menu that opens when someone right-clicks (on a phone: long-presses) a member or a message, and runs when it is picked. {{user.*}} is whoever used it, {{target.*}} the member it was used on; on a message, {{message.*}} is that message, so “blank = the triggering message” in other blocks means it.',
+  fields: [
+    select('kind', 'Shown on', [['user', 'A member (right-click a person → Apps)'], ['message', 'A message (right-click a message → Apps)']]),
+    text('name', 'Name in the menu', { required: true, placeholder: 'Report message', help: '1–32 characters. Capital letters and spaces are fine. Discord allows 5 of each kind per server.' }),
+    select('permission', 'Who can use it', COMMAND_PERMISSION_CHOICES, { help: 'Discord\'s default permission for the command. Server admins can still change it in Integrations.' }),
+    deferEphemeral(),
+  ],
+  provides: (d) => [...USER, ...MEMBER, ...GUILD, ...CHANNEL, ...TARGET, ...(d.kind === 'message' ? MESSAGE : [])],
+  summary: (d) => `${d.kind === 'message' ? 'message' : 'member'} → ${d.name || '?'}`,
+  check(d) {
+    const name = String(d.name ?? '').trim();
+    return name.length > 32 ? ['The name can be at most 32 characters.'] : [];
   },
 });
 trigger('trigger.button.clicked', {
