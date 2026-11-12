@@ -6,7 +6,8 @@ import { FlowError } from '../errors.js';
 import { buildQuestion, readAnswer } from '../form.js';
 import { buildButton, buildEmbeds, buildPayload, cut, parseEmoji } from '../payload.js';
 import { newAck, respond } from '../responder.js';
-import { cleanId, resolveChannel, resolveMember, SNOWFLAKE } from '../resolve.js';
+import { cleanId, reasonFor, resolveChannel, resolveMember, SNOWFLAKE } from '../resolve.js';
+import { PURGE_MAX } from '../../../shared/nodes/messages.js';
 
 async function fetchMessage(ctx, channelValue, messageValue) {
   const channel = await resolveChannel(ctx, channelValue, { textBased: true });
@@ -202,6 +203,31 @@ async function react({ ctx, d }) {
   await message.react(typeof emoji === 'string' ? emoji : `${emoji.name}:${emoji.id}`);
 }
 
+async function pin({ ctx, d }) {
+  const message = await fetchMessage(ctx, d.channelId, d.messageId);
+  if (d.mode === 'unpin') await message.unpin(reasonFor(ctx, d));
+  else await message.pin(reasonFor(ctx, d));
+}
+
+const BULK_DELETE_MAX_AGE_MS = 14 * 86400000 - 60000; // Discord's limit, less a minute so a message on the edge is not refused
+
+/** Looks at the last `count` messages of a channel and deletes the ones that pass the node's choices. */
+async function purge({ ctx, d }) {
+  const channel = await resolveChannel(ctx, d.channelId, { textBased: true });
+  if (typeof channel.bulkDelete !== 'function') throw new FlowError(`Messages in #${channel.name} cannot be deleted in bulk.`);
+  const count = Math.trunc(Number(d.count));
+  if (!Number.isFinite(count) || count < 1 || count > PURGE_MAX) throw new FlowError(`The number of messages must be between 1 and ${PURGE_MAX}.`);
+  const only = cleanId(d.userId);
+  if (only && !SNOWFLAKE.test(only)) throw new FlowError(`“${only}” is not a user ID (use a mention or numeric ID).`);
+  const recent = await channel.messages.fetch({ limit: count });
+  const oldest = Date.now() - BULK_DELETE_MAX_AGE_MS;
+  const targets = [...recent.values()].filter((m) => (!only || m.author?.id === only) && !(d.keepPinned && m.pinned) && m.createdTimestamp > oldest);
+  let deleted = 0;
+  if (targets.length === 1) { await targets[0].delete(); deleted = 1; } // Discord's bulk delete needs at least two
+  else if (targets.length) deleted = (await channel.bulkDelete(targets, true))?.size ?? targets.length;
+  ctx.data.purge = { count: deleted };
+}
+
 async function showModal({ ctx, d, node }) {
   const i = ctx.interaction;
   if (!i?.showModal) throw new FlowError('A form can only be shown in response to a command or a button press.');
@@ -231,5 +257,7 @@ export const messageExecutors = {
   'action.message.buttons': changeButtons,
   'action.message.delete': remove,
   'action.message.react': react,
+  'action.message.pin': pin,
+  'action.message.purge': purge,
   'action.modal.show': showModal,
 };

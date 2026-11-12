@@ -188,6 +188,30 @@ def('action.message.react', {
   ],
   outputs: ACTION_OUTS, summary: (d) => d.emoji || '',
 });
+def('action.message.pin', {
+  category: 'message', label: 'Pin Message', icon: '📌', description: 'Pin a message to its channel, or unpin it. Leave the ID blank for the message that triggered the flow. Discord allows 50 pins per channel.',
+  fields: [
+    select('mode', 'What to do', [['pin', 'Pin'], ['unpin', 'Unpin']]),
+    idField('channelId', 'Channel', 'channel', { placeholder: 'blank = current channel' }),
+    idField('messageId', 'Message ID', 'message', { placeholder: 'blank = the triggering message' }),
+    text('reason', 'Reason (audit log)'),
+  ],
+  outputs: ACTION_OUTS, summary: (d) => `${d.mode === 'unpin' ? 'unpin' : 'pin'} ${d.messageId || 'triggering message'}`,
+});
+export const PURGE_MAX = 100;
+def('action.message.purge', {
+  category: 'message', label: 'Delete Messages (bulk)', icon: '🧹',
+  description: 'Delete several recent messages of a channel at once — everyone\'s, or only one member\'s. Discord cannot bulk-delete messages older than 14 days: those are left alone. {{purge.count}} says how many were deleted.',
+  fields: [
+    idField('channelId', 'Channel', 'channel', { placeholder: 'blank = current channel' }),
+    num('count', 'Look at the last … messages', { default: 10, min: 1, max: PURGE_MAX, required: true, help: `Up to ${PURGE_MAX}. With the choices below, fewer than this many may be deleted.` }),
+    idField('userId', 'Only messages from (optional)', 'user', { placeholder: 'a member ID or {{option.member}}' }),
+    bool('keepPinned', 'Keep pinned messages', { default: true }),
+  ],
+  outputs: ACTION_OUTS,
+  provides: () => [['purge.count', 'How many messages were deleted']],
+  summary: (d) => `last ${d.count || '?'}${d.userId ? ` from ${d.userId}` : ''}`,
+});
 // Show Form: one question per item. A question saved before there were question types has no `kind`, and is a text question.
 const FORM_KINDS = [['text', 'Text'], ['select', 'Dropdown (pick from your list)'], ['user', 'Member picker'], ['role', 'Role picker'], ['channel', 'Channel picker'], ['file', 'File upload']];
 const FORM_PICKERS = ['select', 'user', 'role', 'channel', 'file'];

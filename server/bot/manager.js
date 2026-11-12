@@ -4,6 +4,7 @@ import { wireEvents } from './events.js';
 const INVITE_PERMISSIONS = [
   'ViewChannel', 'SendMessages', 'EmbedLinks', 'ReadMessageHistory', 'AddReactions', 'AttachFiles', 'UseExternalEmojis',
   'ManageChannels', 'ManageRoles', 'ManageMessages', 'ManageNicknames', 'KickMembers', 'BanMembers', 'ModerateMembers', 'ViewAuditLog',
+  'SendMessagesInThreads', 'CreatePublicThreads', 'CreatePrivateThreads', 'ManageThreads', 'MoveMembers', 'MuteMembers', // threads and the voice block
 ];
 const LISTED_CHANNEL_TYPES = new Set([ChannelType.GuildText, ChannelType.GuildVoice, ChannelType.GuildCategory, ChannelType.GuildAnnouncement, ChannelType.GuildStageVoice, ChannelType.GuildForum]);
 const PERM_CACHE_MS = 60_000;

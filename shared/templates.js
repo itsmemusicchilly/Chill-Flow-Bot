@@ -315,6 +315,21 @@ export const TEMPLATES = [
     },
   },
   {
+    id: 'edit-log',
+    name: 'Edited message log',
+    description: 'Posts what a message said before and after someone edited it. Pick the log channel in the Send Message node. The text needs the Message Content intent.',
+    build: () => ({
+      nodes: [
+        n('t1', 'trigger.message.edited', 0, 60),
+        n('m1', 'action.message.send', 340, 40, {
+          target: 'channel', useEmbed: true, embedTitle: '✏️ Message edited', embedColor: '#f59e0b', embedTimestamp: true,
+          embedDescription: '{{user.mention}} edited [a message]({{message.url}}) in {{channel.mention}}.\n\n**Before**\n{{message.before | truncate:1500 | default:(not seen)}}\n\n**After**\n{{message.content | truncate:1500 | default:(no text)}}',
+        }),
+      ],
+      edges: [e('t1', 'm1')],
+    }),
+  },
+  {
     id: 'mod-log',
     name: 'Ban log',
     description: 'Posts an embed in a log channel whenever someone is banned.',

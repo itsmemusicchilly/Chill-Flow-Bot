@@ -29,9 +29,9 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **Subscriber / follower counters.** Run a flow each time a YouTube channel gains subscribers or a Twitch or TikTok account gains followers — or keep a
   channel named “💜 Followers: 4,321” up to date with a ready-made counter flow. Twitch and TikTok are connected from the dashboard (*Accounts*): the
   creator approves it on the platform itself (see [Counting subscribers and followers](#counting-subscribers-and-followers)).
-* **65 nodes**: 34 triggers (commands, buttons, messages, joins/leaves/kicks/bans/timeouts, server boosts, role and channel events,
-  reactions, voice, schedule, new feed item, webhook, YouTube subscribers (milestones and gains), Twitch live and followers, TikTok followers, manual, form submitted) and 31 actions/logic nodes (messages with buttons/menus/forms, changing the buttons of a sent message, member moderation,
-  channels and ticket transcripts, roles, variables, maths and leaderboards, conditions, loops, cooldowns, waits). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
+* **72 nodes**: 36 triggers (commands, buttons, messages sent, edited and deleted, joins/leaves/kicks/bans/timeouts, server boosts, role, channel and thread events,
+  reactions, voice, schedule, new feed item, webhook, YouTube subscribers (milestones and gains), Twitch live and followers, TikTok followers, manual, form submitted) and 36 actions/logic nodes (messages with buttons/menus/forms, changing the buttons of a sent message, pinning and bulk-deleting messages, member moderation and voice,
+  channels, threads, forum posts and ticket transcripts, roles, variables, maths and leaderboards, conditions, loops, cooldowns, waits). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
 * **Remembers things**: run, per-server, per-channel and per-user variables, usable everywhere as `{{templates}}` — with maths, text and date filters built in,
   and a **Leaderboard** block for points and levels (see [Remembered variables](#remembered-variables), [Leaderboards](#leaderboards) and [Doing maths](#doing-maths)).
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
@@ -63,7 +63,8 @@ Requires **Node 22.13+** (the local database uses the built-in `node:sqlite`). L
    npm start                 # → http://localhost:3000
    ```
 3. Open the dashboard, **Log in with Discord**, and use **Add bot** next to your server (the link requests a sensible
-   permission set: manage channels/roles/messages/nicknames, kick/ban/timeout, view audit log, embeds, reactions).
+   permission set: manage channels/roles/messages/nicknames/threads, kick/ban/timeout, move and mute in voice, view audit log, embeds, reactions).
+   A bot that was added before threads and the voice block existed needs those permissions given to its role by hand.
 4. Open the server → **+ New flow** → try the *Support tickets* template, fill the highlighted fields, switch it **On**.
 
 Try the editor without any Discord credentials: `npm run demo` (then open <http://localhost:4100/demo-login>). It runs the
@@ -238,6 +239,27 @@ Pick what to do:
 the bot posts the panel and stores its message ID in the channel variable `panel`. A second branch starts with **Message Deleted** and checks
 `{{message.id}}` equals `{{channel.vars.panel}}`; when it does, it posts the panel again and stores the new ID. Any other deleted message is ignored, and it keeps working after a restart.
 Change the text in both *Send Message* nodes (keep them the same), and add buttons there if you like.
+
+### Threads and forum posts
+
+* **Create Thread** (*Channels*) starts a thread **on its own** in a channel, **on a message** (the one that started the flow, or one by its ID), or makes a **post in a forum** — pick a forum as the
+  channel and write the **First message** (Discord does not allow an empty post). It can be **private** (text channels only), can **add a member**, and hides itself from the channel list after an
+  hour, a day, 3 days or a week without messages.
+* **A thread is a channel.** Save its ID (*Save thread ID as variable*, or `{{thread.id}}`) and use it as the **Channel** of *Send Message*, *Save Transcript*, *Delete Messages* or *Delete Channel*.
+  Variables remembered for a thread (scope *Channel*) are forgotten when it is deleted, like a channel's.
+* **Update Thread** renames, **locks**, **closes** (archives) or reopens a thread, and adds or removes a member; blank = the thread the flow is running in. Reopening happens first and closing last,
+  so one node can do both to a closed thread. A thread's name has the same Discord limit as a channel's (twice every 10 minutes): a third rename is held and the newest name is set when Discord allows.
+* **Thread Created** runs when someone starts a thread or a forum post: `{{channel.*}}` is the thread, `{{channel.parentId}}` the channel or forum, `{{user.*}}` whoever started it. Threads the
+  bot made itself are ignored unless you tick *Also run for changes made by this bot*.
+
+### Moderation extras
+
+| Block | What it does |
+| --- | --- |
+| **Message Edited** (trigger) | Runs when someone edits a message. `{{message.content}}` is the new text, `{{message.before}}` the old one when the bot had seen the message (it remembers recent messages while such a flow is on). A link preview appearing is not an edit, and the bot's own edits never run it. The *Edited message log* template posts both texts in a log channel. |
+| **Pin Message** | Pins or unpins a message (blank = the message that started the flow). Discord allows 50 pins per channel. |
+| **Delete Messages (bulk)** | Looks at the last 1–100 messages of a channel and deletes them — everyone's, or only one member's — keeping pinned ones unless you untick that. Discord cannot bulk-delete messages older than 14 days, so those are left alone. `{{purge.count}}` is how many were deleted. Needs *Manage Messages*. |
+| **Voice: Move or Disconnect** | Moves a member who is in voice to another voice channel, disconnects them, or sets / removes a server mute. Follows **On error** when they are not in voice. Needs *Move Members* (or *Mute Members*). |
 
 ### Ticket transcripts
 
@@ -444,6 +466,7 @@ shows the newest number as soon as it may). The existing *YouTube Subscribers* t
 | `user.vars.<name>`, `channel.vars.<name>`, `guild.vars.<name>` | remembered per-user / per-channel / per-server variables (`channel` is where the run happened) |
 | `loop.index .item`, `error.message`, `cooldown.remaining`, `now.iso .date .time .timestamp` | misc |
 | `leaderboard.text .rank .value .count .total .top.*` | after *Leaderboard* (see [Leaderboards](#leaderboards)) |
+| `thread.id .mention .name`, `purge.count`, `message.before` | after *Create Thread*, after *Delete Messages (bulk)*, and in a *Message Edited* flow |
 | `executor.*`, `reason`, `timeout.*` | moderator details for kick/ban/timeout triggers |
 | `feed.title .link .author .summary .published .image .id .name` | *New Feed Item*: the new post (`title` is blank for Mastodon and Bluesky posts) |
 | `webhook.text .body.<field> .query.<name> .method .contentType` | *Webhook Received*: what was sent |
@@ -768,6 +791,11 @@ Not yet automated — please run through this once on a test server:
       the first two renames appear at once, the log says the next is held back, and about ten minutes later the name settles on the
       correct member count. Repeat with the *Join counter* (server variable `joins`); check `{{guild.memberCount}}` is right at the
       moment of a real join, and that a held rename never triggers a *Channel Updated* flow.
+- [ ] Threads: *Create Thread* on its own, on a message, private with a member added, and as a forum post (with a first message); then *Send Message* into `{{var.thread}}`, *Update Thread* to rename,
+      lock, close and reopen it, and *Delete Channel* on it. *Thread Created* runs for a thread a person starts and for a forum post, not for one the bot made. The bot needs *Create Public Threads* /
+      *Create Private Threads* / *Send Messages in Threads* / *Manage Threads*.
+- [ ] Moderation extras: edit a message → *Message Edited* gives the old and the new text (with the Message Content intent), and pasting a link (the preview appears) does not run it. *Pin Message* pins and unpins.
+      *Delete Messages (bulk)* removes the last N, only one member's, keeps pinned ones, and leaves 15-day-old messages. *Voice: Move or Disconnect* moves, disconnects and server-mutes a member in voice.
 - [ ] Use one Button ID in two flows: the log warns that the newer flow is ignored for it.
 - [ ] Member Joined (with the Members intent) greets and gives a role; Kicked vs Left is told apart (with *View Audit Log*).
 - [ ] Reaction Added with message + emoji filter gives a role.

@@ -79,17 +79,29 @@ export function wireEvents({ client, runtime, logger, sync, accounts = null, aud
   // ---- messages -------------------------------------------------------------------------------
   client.on(Events.MessageCreate, safe('message', async (m) => {
     // Remember it only while a delete flow is on, so a later delete can quote the text Discord no longer sends.
-    if (m.guild && m.partial !== true && has(m.guild, 'trigger.message.deleted')) runtime.services.messageMemory.remember(m);
+    if (m.guild && m.partial !== true && runtime.remembersMessages(m.guild.id)) runtime.services.messageMemory.remember(m);
     if (!m.guild || !m.author || !has(m.guild, 'trigger.message.received')) return;
     runtime.fire('trigger.message.received', {
       guild: m.guild, channel: m.channel, user: m.author, member: m.member, message: m,
       info: { content: m.content, channelId: m.channelId, isBot: m.author.bot, byBot: m.author.id === client.user.id },
     });
   }));
-  client.on(Events.MessageUpdate, safe('messageUpdate', async (_old, m) => {
+  client.on(Events.MessageUpdate, safe('messageUpdate', async (old, m) => {
+    if (!m?.guild) return;
+    const memory = runtime.services.messageMemory;
+    // What it said before: Discord's own copy when it has one, else what the bot remembered (read before the new text replaces it).
+    const before = old && old.partial !== true && typeof old.content === 'string' ? old.content : memory.peek(m.guild.id, m.id)?.content ?? '';
     // A partial update has no text. Storing it would wipe the copy we already have.
-    if (!m?.guild || m.partial === true || !has(m.guild, 'trigger.message.deleted')) return;
-    runtime.services.messageMemory.remember(m);
+    if (m.partial !== true && runtime.remembersMessages(m.guild.id)) memory.remember(m);
+    if (!has(m.guild, 'trigger.message.edited')) return;
+    // A real edit carries the time of the edit. Discord also sends an update when a link preview appears under a message: that is not one.
+    if (!m.editedTimestamp || (old && old.partial !== true && old.editedTimestamp === m.editedTimestamp)) return;
+    if (m.partial === true) m = await m.fetch().catch(() => null);
+    if (!m?.author) return;
+    runtime.fire('trigger.message.edited', {
+      guild: m.guild, channel: m.channel, user: m.author, member: m.member, message: m, data: { message: { before } },
+      info: { channelId: m.channelId, isBot: m.author.bot, byBot: m.author.id === client.user.id },
+    });
   }));
   client.on(Events.MessageDelete, safe('messageDelete', async (m) => {
     const guildId = m.guildId ?? m.guild?.id;
@@ -216,6 +228,25 @@ export function wireEvents({ client, runtime, logger, sync, accounts = null, aud
     runtime.fire('trigger.channel.updated', {
       guild: n.guild, channel: n, data: { oldChannel: { name: o.name ?? '', topic: o.topic ?? '' } }, info: { byBot: selfActions.consume(`channelUpdate:${n.id}`) },
     });
+  }));
+
+  // ---- threads and forum posts -----------------------------------------------------------------
+  client.on(Events.ThreadCreate, safe('threadCreate', async (thread, newlyCreated) => {
+    if (!thread.guild || newlyCreated === false) return; // `false` = the bot was only added to a thread that already existed
+    const byBot = selfActions.consume(`threadCreate:${thread.guild.id}`);
+    if (!has(thread.guild, 'trigger.thread.created')) return;
+    const member = thread.ownerId ? await thread.guild.members.fetch(thread.ownerId).catch(() => null) : null;
+    runtime.fire('trigger.thread.created', {
+      guild: thread.guild, channel: thread, user: member?.user, member: member ?? undefined,
+      info: { channelId: thread.parentId, byBot },
+    });
+  }));
+  // A deleted thread takes its messages with it, like a deleted channel: forget what was remembered for it.
+  client.on(Events.ThreadDelete, safe('threadDelete', async (thread) => {
+    if (!thread.guild) return;
+    components.forgetChannel(thread.guild.id, thread.id);
+    db.deleteVarsForScope(thread.guild.id, 'channel', thread.id);
+    runtime.services.messageMemory.forgetChannel(thread.guild.id, thread.id);
   }));
 
   // ---- reactions & voice ----------------------------------------------------------------------

@@ -85,6 +85,22 @@ trigger('trigger.message.deleted', {
     ['message.attachmentCount', 'Number of attachments']],
   summary: (d) => (d.channelId ? `in ${d.channelId}` : 'any channel'),
 });
+trigger('trigger.message.edited', {
+  label: 'Message Edited', icon: '✏️',
+  description: 'Runs when someone edits a message. {{message.content}} is the new text and {{message.before}} the old one, when the bot had seen the message. The bot’s own edits never run it, and a link preview appearing under a message does not count as an edit. The text needs the Message Content intent.',
+  fields: [idField('channelId', 'Only in channel (optional)', 'channel'), ignoreBots],
+  provides: () => [...USER, ...MEMBER, ...GUILD, ...CHANNEL, ...MESSAGE, ['message.before', 'Text before the edit (blank if the bot had not seen the message)']],
+  wants: 'messageContent',
+  wantsNote: 'without the Message Content intent Discord hides other people\'s message text, so the flow runs but {{message.content}} and {{message.before}} are empty. Ask the bot operator to enable it.',
+  summary: (d) => (d.channelId ? `in ${d.channelId}` : 'any channel'),
+});
+trigger('trigger.thread.created', {
+  label: 'Thread Created', icon: '🧵',
+  description: 'Runs when someone starts a thread or makes a post in a forum. {{channel.*}} is the new thread, {{channel.parentId}} the channel or forum it is in, and {{user.*}} whoever started it.',
+  fields: [idField('channelId', 'Only in channel or forum (optional)', 'channel'), includeSelf],
+  provides: () => [...USER, ...MEMBER, ...GUILD, ...CHANNEL],
+  summary: (d) => (d.channelId ? `in ${d.channelId}` : 'any channel'),
+});
 const memberTrigger = (type, label, icon, description, extra = {}) => trigger(type, {
   label, icon, description, requires: extra.requires, fields: [ignoreBots, ...(extra.fields || [])],
   provides: () => [...USER, ...MEMBER, ...GUILD, ...(extra.provides || [])], summary: () => '',

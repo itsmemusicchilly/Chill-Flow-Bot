@@ -1,6 +1,6 @@
 import { ChannelType, OverwriteType, PermissionFlagsBits } from 'discord.js';
 import { FlowError } from '../errors.js';
-import { reasonFor, resolveChannel, resolveMember, resolveRole, withSelf } from '../resolve.js';
+import { cleanId, reasonFor, resolveChannel, resolveMember, resolveRole, SNOWFLAKE, withSelf } from '../resolve.js';
 
 const TYPES = {
   text: ChannelType.GuildText, voice: ChannelType.GuildVoice, category: ChannelType.GuildCategory,
@@ -42,7 +42,68 @@ async function buildOverwrites(ctx, d) {
   }));
 }
 
+const THREAD_TYPES = new Set([ChannelType.PublicThread, ChannelType.PrivateThread, ChannelType.AnnouncementThread]);
+const FORUM_TYPES = new Set([ChannelType.GuildForum, ChannelType.GuildMedia]);
+const ARCHIVE_MINUTES = [60, 1440, 4320, 10080];
+
 export const channelExecutors = {
+  /** A thread in a channel, a thread on a message, or a post in a forum (which is a thread with a first message). */
+  async 'action.thread.create'({ ctx, d }) {
+    const name = String(d.name || '').trim();
+    if (!name) throw new FlowError('The thread name is empty.');
+    const content = String(d.content ?? '').trim().slice(0, 2000);
+    const base = { name: name.slice(0, 100), autoArchiveDuration: ARCHIVE_MINUTES.includes(Number(d.autoArchive)) ? Number(d.autoArchive) : 1440, reason: reasonFor(ctx, d) };
+    const parent = await resolveChannel(ctx, d.channelId);
+    const forum = FORUM_TYPES.has(parent.type);
+    let create;
+    if (forum) {
+      if (!content) throw new FlowError('A forum post needs a first message — Discord does not allow an empty one.');
+      create = () => parent.threads.create({ ...base, message: { content } });
+    } else if (d.from === 'message') {
+      const id = cleanId(d.messageId) || ctx.data.message?.id;
+      if (!id || !SNOWFLAKE.test(id)) throw new FlowError('No message to start the thread on: give a message ID (for example {{var.msg}}).');
+      const message = typeof parent.messages?.fetch === 'function' ? await parent.messages.fetch(id).catch(() => null) : null;
+      if (!message) throw new FlowError(`Message ${id} was not found in #${parent.name}.`);
+      create = () => message.startThread(base);
+    } else {
+      if (typeof parent.threads?.create !== 'function') throw new FlowError(`#${parent.name} cannot have threads.`);
+      create = () => parent.threads.create({ ...base, type: d.privateThread ? ChannelType.PrivateThread : ChannelType.PublicThread });
+    }
+    const invited = String(d.addUserId ?? '').trim() ? await resolveMember(ctx, d.addUserId) : null; // only members of this server
+    const thread = await withSelf(ctx, [`threadCreate:${ctx.guild.id}`], create);
+    ctx.data.thread = { id: thread.id, mention: `<#${thread.id}>`, name: thread.name ?? base.name };
+    if (d.outputVar) ctx.vars[d.outputVar] = thread.id;
+    if (content && !forum) await thread.send({ content });
+    if (invited) await thread.members.add(invited.id, base.reason);
+  },
+
+  async 'action.thread.update'({ ctx, d }) {
+    const thread = await resolveChannel(ctx, d.channelId);
+    if (!THREAD_TYPES.has(thread.type)) throw new FlowError(`#${thread.name} is not a thread.`);
+    const reason = reasonFor(ctx, d);
+    const added = String(d.addUserId ?? '').trim() ? await resolveMember(ctx, d.addUserId) : null;
+    const removedId = String(d.removeUserId ?? '').trim() ? cleanId(d.removeUserId) : '';
+    if (removedId && !SNOWFLAKE.test(removedId)) throw new FlowError(`“${removedId}” is not a user ID (use a mention or numeric ID).`);
+    const edit = {};
+    if (d.archived === 'no') edit.archived = false; // a closed thread must be reopened before anything else can change
+    if (d.locked) edit.locked = d.locked === 'yes';
+    if (d.name) {
+      // A thread's name has the same limit as a channel's: two changes every 10 minutes. Past that the newest name is held, never the run.
+      const name = String(d.name).slice(0, 100);
+      const log = (level, message) => ctx.services.logger.log(ctx.guild.id, level, message, ctx.logMeta);
+      const held = ctx.services.channelEdits.request(ctx.guild.id, thread.id, { name }, (patch) => thread.edit({ ...patch, reason }), (err) => {
+        if (err) log('warn', `The held new name of the thread could not be set: ${err.message}`);
+        else log('info', 'The held new name of the thread was set.');
+      });
+      if (!held) edit.name = name;
+      else log('info', `Discord allows only two name changes per thread every 10 minutes, so this one is held back; the newest name is set in about ${Math.max(1, Math.round(held.wait / 60_000))} minute(s).`);
+    }
+    if (Object.keys(edit).length) await thread.edit({ ...edit, reason });
+    if (added) await thread.members.add(added.id, reason);
+    if (removedId) await thread.members.remove(removedId, reason);
+    if (d.archived === 'yes') await thread.edit({ archived: true, reason }); // last: nothing can be changed once it is closed
+  },
+
   async 'action.channel.create'({ ctx, d }) {
     const type = TYPES[d.type];
     if (type === undefined) throw new FlowError(`Unknown channel type “${d.type}”.`);

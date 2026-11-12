@@ -69,6 +69,12 @@ export class MessageMemory {
     return snap;
   }
 
+  /** The snapshot without forgetting it (what a message said before an edit). */
+  peek(guildId, messageId) {
+    const snap = this.guilds.get(String(guildId ?? ''))?.get(String(messageId ?? ''));
+    return snap && snap.seenAt >= this.now() - this.maxAgeMs ? snap : null;
+  }
+
   forget(guildId, messageId) {
     this.guilds.get(String(guildId ?? ''))?.delete(String(messageId ?? ''));
   }

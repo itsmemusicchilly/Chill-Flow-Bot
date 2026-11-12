@@ -115,7 +115,7 @@ export class Runtime {
       }
     }
     this.index.set(guildId, entry);
-    if (!entry.triggers.get('trigger.message.deleted')?.length) this.services.messageMemory.clear(guildId);
+    if (!this.remembersMessages(guildId)) this.services.messageMemory.clear(guildId);
     this.#stopRemovedRuns(guildId, entry);
     this.watchers.sync(guildId);
     this.syncSchedules(guildId); // also decides whether the one-minute ticker is needed (schedules AND watchers use it)
@@ -151,6 +151,8 @@ export class Runtime {
   }
 
   hasTrigger(guildId, type) { return Boolean(this.index.get(guildId)?.triggers.get(type)?.length); }
+  /** Recent messages are kept in memory only while a flow needs them: to quote a deleted message, or the text before an edit. */
+  remembersMessages(guildId) { return this.hasTrigger(guildId, 'trigger.message.deleted') || this.hasTrigger(guildId, 'trigger.message.edited'); }
   commandsFor(guildId) { return [...(this.index.get(guildId)?.commands.values() ?? [])]; }
 
   // ---- starting runs ----------------------------------------------------------------------------

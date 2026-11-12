@@ -1,5 +1,5 @@
 import { FlowError } from '../errors.js';
-import { reasonFor, resolveMember, resolveRole, resolveUserId, withSelf } from '../resolve.js';
+import { reasonFor, resolveChannel, resolveMember, resolveRole, resolveUserId, withSelf } from '../resolve.js';
 import { roleData } from '../serialize.js';
 
 const key = (ctx, kind, userId, extra = '') => `${kind}:${ctx.guild.id}:${userId}${extra}`;
@@ -47,6 +47,25 @@ export const memberExecutors = {
     if (!Number.isFinite(minutes) || minutes < 0 || minutes > 40320) throw new FlowError('Timeout minutes must be between 0 and 40320 (28 days).');
     const member = await resolveMember(ctx, d.userId);
     await withSelf(ctx, [key(ctx, 'timeout', member.id)], () => member.timeout(minutes === 0 ? null : minutes * 60000, reasonFor(ctx, d)));
+  },
+  /** Moves, disconnects or server-mutes someone who is in a voice channel right now. */
+  async 'action.member.voice'({ ctx, d }) {
+    const member = await resolveMember(ctx, d.userId);
+    if (!member.voice?.channelId) throw new FlowError('That member is not in a voice channel.');
+    const reason = reasonFor(ctx, d);
+    switch (d.mode) {
+      case 'move': {
+        if (!String(d.channelId ?? '').trim()) throw new FlowError('Choose the voice channel to move them to.');
+        const channel = await resolveChannel(ctx, d.channelId);
+        if (!channel.isVoiceBased?.()) throw new FlowError(`#${channel.name} is not a voice channel.`);
+        await member.voice.setChannel(channel, reason);
+        break;
+      }
+      case 'disconnect': await member.voice.disconnect(reason); break;
+      case 'mute': await member.voice.setMute(true, reason); break;
+      case 'unmute': await member.voice.setMute(false, reason); break;
+      default: throw new FlowError(`Unknown choice “${d.mode}”.`);
+    }
   },
   async 'action.member.nickname'({ ctx, d }) {
     const member = await resolveMember(ctx, d.userId);

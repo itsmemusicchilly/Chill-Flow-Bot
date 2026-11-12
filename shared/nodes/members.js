@@ -1,5 +1,5 @@
 // Members: give, take away and toggle a role on a member; kick, ban, unban, time out and rename a member.
-import { idField, num, text } from '../fields.js';
+import { idField, num, select, text, when } from '../fields.js';
 import { ACTION_OUTS, def, reasonField, ROLE } from './core.js';
 
 // ---- members ------------------------------------------------------------------------------------
@@ -44,4 +44,16 @@ def('action.member.nickname', {
   category: 'member', label: 'Set Nickname', icon: '🏷️', description: 'Change a member\'s nickname. Leave blank to reset it.',
   fields: [userField(), text('nickname', 'Nickname', { placeholder: 'blank = reset' }), reasonField()],
   outputs: ACTION_OUTS, summary: (d) => d.nickname || 'reset',
+});
+def('action.member.voice', {
+  category: 'member', label: 'Voice: Move or Disconnect', icon: '🔈',
+  description: 'Move a member who is in a voice channel to another one, disconnect them, or mute / unmute them for everyone. Follows On error when they are not in a voice channel.',
+  fields: [
+    userField(),
+    select('mode', 'What to do', [['move', 'Move to another voice channel'], ['disconnect', 'Disconnect from voice'], ['mute', 'Mute for everyone (server mute)'], ['unmute', 'Remove the server mute']]),
+    idField('channelId', 'Voice channel', 'channel', { showIf: when('mode', 'move'), required: true }),
+    reasonField(),
+  ],
+  outputs: ACTION_OUTS,
+  summary: (d) => ({ move: `move to ${d.channelId || '?'}`, disconnect: 'disconnect', mute: 'server mute', unmute: 'remove server mute' }[d.mode] || ''),
 });

@@ -34,6 +34,8 @@ export function matches(type, d, info = {}) {
       return m ? { data: { message: { after: m.after } } } : false;
     }
     case 'trigger.message.deleted':
+    case 'trigger.message.edited':
+    case 'trigger.thread.created': // `info.channelId` is the channel or forum the thread is in
     case 'trigger.voice.joined':
     case 'trigger.voice.left':
       return sameId(d.channelId, info.channelId) ? {} : false;

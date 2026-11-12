@@ -65,6 +65,30 @@ tell nodes apart; it is never sent to Discord.
 
 **Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{message.createdAt}}`, `{{message.attachments}}`, `{{message.attachmentCount}}`
 
+### ✏️ Message Edited
+
+`trigger.message.edited` — Runs when someone edits a message. {{message.content}} is the new text and {{message.before}} the old one, when the bot had seen the message. The bot’s own edits never run it, and a link preview appearing under a message does not count as an edit. The text needs the Message Content intent.
+
+> Works best with the **Message Content** privileged intent — without the Message Content intent Discord hides other people's message text, so the flow runs but {{message.content}} and {{message.before}} are empty. Ask the bot operator to enable it.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Only in channel (optional) | channel |  |
+| Ignore bots | boolean |  |
+
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{message.id}}`, `{{message.content}}`, `{{message.url}}`, `{{message.authorId}}`, `{{message.before}}`
+
+### 🧵 Thread Created
+
+`trigger.thread.created` — Runs when someone starts a thread or makes a post in a forum. {{channel.*}} is the new thread, {{channel.parentId}} the channel or forum it is in, and {{user.*}} whoever started it.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Only in channel or forum (optional) | channel |  |
+| Also run for changes made by this bot | boolean | Off by default so a flow cannot trigger itself in a loop. |
+
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`
+
 ### 👋 Member Joined
 
 `trigger.member.join` — Runs when someone joins the server.
@@ -563,6 +587,34 @@ tell nodes apart; it is never sent to Discord.
 
 **Outputs:** Next, On error
 
+### 📌 Pin Message
+
+`action.message.pin` — Pin a message to its channel, or unpin it. Leave the ID blank for the message that triggered the flow. Discord allows 50 pins per channel.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| What to do | select | options: Pin, Unpin |
+| Channel | channel |  |
+| Message ID | message |  |
+| Reason (audit log) | text |  |
+
+**Outputs:** Next, On error
+
+### 🧹 Delete Messages (bulk)
+
+`action.message.purge` — Delete several recent messages of a channel at once — everyone's, or only one member's. Discord cannot bulk-delete messages older than 14 days: those are left alone. {{purge.count}} says how many were deleted.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Channel | channel |  |
+| Look at the last … messages | number | required; range 1–100; Up to 100. With the choices below, fewer than this many may be deleted. |
+| Only messages from (optional) | user |  |
+| Keep pinned messages | boolean |  |
+
+**Outputs:** Next, On error
+
+**Adds variables:** `{{purge.count}}`
+
 ### 🧾 Show Form (Modal)
 
 `action.modal.show` — Pop up a form of up to 5 questions — text, a dropdown, a member / role / channel picker or a file upload. Must be the first thing the flow does with a command or button. Answers are {{input.<id>}}.
@@ -688,6 +740,19 @@ tell nodes apart; it is never sent to Discord.
 
 **Outputs:** Next, On error
 
+### 🔈 Voice: Move or Disconnect
+
+`action.member.voice` — Move a member who is in a voice channel to another one, disconnect them, or mute / unmute them for everyone. Follows On error when they are not in a voice channel.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Member | user |  |
+| What to do | select | options: Move to another voice channel, Disconnect from voice, Mute for everyone (server mute), Remove the server mute |
+| Voice channel | channel | required; shown when `mode` is `move` |
+| Reason (audit log) | text |  |
+
+**Outputs:** Next, On error
+
 ## Channels
 
 ### ➕ Create Channel
@@ -741,6 +806,43 @@ tell nodes apart; it is never sent to Discord.
 | ↳ Role / member ID | text | required |
 | ↳ Allow | multiselect | options: ViewChannel, SendMessages, SendMessagesInThreads, ReadMessageHistory, AddReactions, AttachFiles, EmbedLinks, UseExternalEmojis, MentionEveryone, ManageMessages, ManageChannels, ManageRoles, ManageThreads, CreatePublicThreads, CreatePrivateThreads, UseApplicationCommands, CreateInstantInvite, Connect, Speak, Stream, UseVAD, MuteMembers, DeafenMembers, MoveMembers |
 | ↳ Deny | multiselect | options: ViewChannel, SendMessages, SendMessagesInThreads, ReadMessageHistory, AddReactions, AttachFiles, EmbedLinks, UseExternalEmojis, MentionEveryone, ManageMessages, ManageChannels, ManageRoles, ManageThreads, CreatePublicThreads, CreatePrivateThreads, UseApplicationCommands, CreateInstantInvite, Connect, Speak, Stream, UseVAD, MuteMembers, DeafenMembers, MoveMembers |
+
+**Outputs:** Next, On error
+
+### 🧵 Create Thread
+
+`action.thread.create` — Start a thread in a channel or on a message, or make a post in a forum. Save its ID and use it as the channel of the next nodes (Send Message, Update Thread, Delete Channel) to work inside it.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Channel or forum | channel |  |
+| Thread name | text | required |
+| Start it | select | options: On its own, On a message; A forum post is always on its own. |
+| Message ID | message | shown when `from` is `message` |
+| First message | textarea | Needed for a forum post — Discord does not allow an empty one. Optional for a thread. |
+| Private thread | boolean | shown when `from` is `channel`; Only people who are added (below, or by mentioning them) and moderators see it. Text channels only. |
+| Add member | user |  |
+| Hide it from the channel list | select | options: After a day without messages, After an hour without messages, After 3 days without messages, After a week without messages |
+| Reason (audit log) | text |  |
+| Save thread ID as variable | text |  |
+
+**Outputs:** Next, On error
+
+**Adds variables:** `{{thread.id}}`, `{{thread.mention}}`, `{{thread.name}}`
+
+### 🗂️ Update Thread
+
+`action.thread.update` — Rename, lock, close or reopen a thread or forum post, and add or remove a member. Blank fields stay unchanged. To delete a thread use Delete Channel.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Thread | channel |  |
+| New name | text |  |
+| Lock | select | options: Unchanged, Lock (only moderators can write), Unlock |
+| Close | select | options: Unchanged, Close (archive), Reopen |
+| Add member | user |  |
+| Remove member | user |  |
+| Reason (audit log) | text |  |
 
 **Outputs:** Next, On error
 

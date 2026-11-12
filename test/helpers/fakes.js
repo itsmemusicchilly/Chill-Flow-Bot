@@ -47,6 +47,13 @@ export function fakeGuild(over = {}) {
       async timeout(ms, reason) { member.calls.push(['timeout', ms, reason]); },
       async setNickname(n, reason) { member.calls.push(['nick', n, reason]); },
       async send(p) { member.calls.push(['dm', p]); return { id: 'dm1' }; },
+      // where they are in voice (null = nowhere); a test puts them in a channel by setting `voice.channelId`
+      voice: {
+        channelId: null,
+        async setChannel(channel, reason) { member.calls.push(['voiceMove', channel?.id ?? null, reason]); member.voice.channelId = channel?.id ?? null; },
+        async disconnect(reason) { member.calls.push(['voiceDisconnect', reason]); member.voice.channelId = null; },
+        async setMute(mute, reason) { member.calls.push(['voiceMute', mute, reason]); },
+      },
       permissions: { toArray: () => [], has: () => false } };
     guild.members.cache.set(member.id, member);
     return member;
@@ -64,7 +71,8 @@ export function fakeGuild(over = {}) {
 
 export function fakeChannel(guild, o = {}) {
   const ch = {
-    id: o.id ?? nextId(), name: o.name ?? 'general', guild, guildId: guild.id, type: o.type ?? ChannelType.GuildText, parentId: null, topic: '',
+    id: o.id ?? nextId(), name: o.name ?? 'general', guild, guildId: guild.id, type: o.type ?? ChannelType.GuildText, parentId: o.parentId ?? null, topic: '',
+    ownerId: o.ownerId,
     sent: [], sentIds: [], calls: [],
     // fetch(id) → one message; fetch({ limit, after, before }) → a page, like Discord: `after` gives the OLDEST `limit` messages
     // after that id, anything else the NEWEST `limit`. `order` sets the order inside the page ('desc' = newest first, as Discord sends it).
@@ -82,7 +90,30 @@ export function fakeChannel(guild, o = {}) {
         return new Coll(list.map((m) => [m.id, m]));
       },
     },
-    isTextBased: () => [0, 5, 2, 13].includes(ch.type) === true && ch.type !== 2 && ch.type !== 13,
+    isTextBased: () => [0, 5, 10, 11, 12].includes(ch.type), // text, announcement and the three kinds of thread
+    isVoiceBased: () => [2, 13].includes(ch.type),
+    isThread: () => [10, 11, 12].includes(ch.type),
+    // threads started in this channel (a forum post is a thread whose first message comes with it); a thread is a channel of the server
+    threads: {
+      async create(options) {
+        ch.calls.push(['threadCreate', options]);
+        const thread = guild.addChannel({ name: options.name, type: options.type ?? ChannelType.PublicThread, parentId: ch.id, ownerId: 'BOT' });
+        if (options.message) await thread.send(options.message);
+        return thread;
+      },
+    },
+    // the people in a thread
+    members: {
+      async add(id, reason) { ch.calls.push(['threadMemberAdd', id, reason]); },
+      async remove(id, reason) { ch.calls.push(['threadMemberRemove', id, reason]); },
+    },
+    // like Discord: deletes the messages it is given and answers with the ones that are gone
+    async bulkDelete(list, filterOld) {
+      const ids = [...list].map((m) => m.id ?? m);
+      ch.calls.push(['bulkDelete', ids, filterOld]);
+      for (const id of ids) ch.messages.store.delete(id);
+      return new Coll(ids.map((id) => [id, { id }]));
+    },
     // what the bot posts is also part of the channel's history
     async send(p) {
       const m = { id: nextId(), ...p };
@@ -101,7 +132,7 @@ export function fakeChannel(guild, o = {}) {
         content: o.content ?? '', cleanContent: o.cleanContent ?? o.content ?? '',
         author: o.author ?? { id: '222222', username: 'mia', bot: false }, member: o.member,
         attachments: list(o.attachments), embeds: o.embeds ?? [], stickers: list(o.stickers), reference: o.reference ?? null,
-        system: o.system ?? false, type: o.type ?? 0,
+        system: o.system ?? false, type: o.type ?? 0, pinned: o.pinned ?? false,
         channelId: ch.id, components: o.components ?? [], // rows as Discord's API shapes them: { type: 1, components: [{ type: 2, custom_id, label, … }] }
       };
       // Like discord.js: an edit that names `components` replaces them, and one that leaves them out keeps them.
@@ -113,6 +144,12 @@ export function fakeChannel(guild, o = {}) {
         return msg;
       };
       msg.delete = async () => { ch.calls.push(['messageDelete', id]); ch.messages.store.delete(id); return msg; };
+      msg.pin = async (reason) => { ch.calls.push(['pin', id, reason]); msg.pinned = true; return msg; };
+      msg.unpin = async (reason) => { ch.calls.push(['unpin', id, reason]); msg.pinned = false; return msg; };
+      msg.startThread = async (options) => {
+        ch.calls.push(['startThread', id, options]);
+        return guild.addChannel({ name: options.name, type: ChannelType.PublicThread, parentId: ch.id, ownerId: 'BOT' });
+      };
       ch.messages.store.set(id, msg);
       return msg;
     },

@@ -47,6 +47,44 @@ def('action.channel.update', {
   ],
   outputs: ACTION_OUTS, summary: (d) => d.channelId || 'current channel',
 });
+// ---- threads and forum posts ---------------------------------------------------------------------
+const ARCHIVE_AFTER = [['1440', 'After a day without messages'], ['60', 'After an hour without messages'], ['4320', 'After 3 days without messages'], ['10080', 'After a week without messages']];
+def('action.thread.create', {
+  category: 'channel', label: 'Create Thread', icon: '🧵',
+  description: 'Start a thread in a channel or on a message, or make a post in a forum. Save its ID and use it as the channel of the next nodes (Send Message, Update Thread, Delete Channel) to work inside it.',
+  fields: [
+    idField('channelId', 'Channel or forum', 'channel', { placeholder: 'blank = current channel' }),
+    text('name', 'Thread name', { required: true, placeholder: 'Help for {{user.name}}' }),
+    select('from', 'Start it', [['channel', 'On its own'], ['message', 'On a message']], { help: 'A forum post is always on its own.' }),
+    idField('messageId', 'Message ID', 'message', { showIf: when('from', 'message'), placeholder: 'blank = the triggering message' }),
+    area('content', 'First message', { rows: 3, help: 'Needed for a forum post — Discord does not allow an empty one. Optional for a thread.' }),
+    bool('privateThread', 'Private thread', { showIf: when('from', 'channel'), help: 'Only people who are added (below, or by mentioning them) and moderators see it. Text channels only.' }),
+    idField('addUserId', 'Add member', 'user', { placeholder: 'optional, for example {{user.id}}' }),
+    select('autoArchive', 'Hide it from the channel list', ARCHIVE_AFTER),
+    reasonField(),
+    text('outputVar', 'Save thread ID as variable', { placeholder: 'thread', pattern: 'var' }),
+  ],
+  outputs: ACTION_OUTS,
+  provides: () => [['thread.id', 'ID of the new thread'], ['thread.mention', 'Mention of the new thread'], ['thread.name', 'Name of the new thread']],
+  summary: (d) => `“${d.name || '?'}”${d.from === 'message' ? ' on a message' : ''}`,
+});
+const UNCHANGED = ['', 'Unchanged'];
+def('action.thread.update', {
+  category: 'channel', label: 'Update Thread', icon: '🗂️',
+  description: 'Rename, lock, close or reopen a thread or forum post, and add or remove a member. Blank fields stay unchanged. To delete a thread use Delete Channel.',
+  fields: [
+    idField('channelId', 'Thread', 'channel', { placeholder: 'blank = the thread where this happened, or {{var.thread}}' }),
+    text('name', 'New name'),
+    select('locked', 'Lock', [UNCHANGED, ['yes', 'Lock (only moderators can write)'], ['no', 'Unlock']]),
+    select('archived', 'Close', [UNCHANGED, ['yes', 'Close (archive)'], ['no', 'Reopen']]),
+    idField('addUserId', 'Add member', 'user', { placeholder: 'optional' }),
+    idField('removeUserId', 'Remove member', 'user', { placeholder: 'optional' }),
+    reasonField(),
+  ],
+  outputs: ACTION_OUTS,
+  summary: (d) => [d.name && 'rename', d.locked === 'yes' && 'lock', d.locked === 'no' && 'unlock', d.archived === 'yes' && 'close', d.archived === 'no' && 'reopen', d.addUserId && 'add member', d.removeUserId && 'remove member'].filter(Boolean).join(', ') || 'nothing to change',
+  check: (d) => (d.name || d.locked || d.archived || d.addUserId || d.removeUserId ? [] : ['Nothing to change: fill in at least one field.']),
+});
 def('action.channel.transcript', {
   category: 'channel', label: 'Save Transcript', icon: '📄',
   description: 'Record everything said in a channel (for example a ticket that is being closed), post it in a log channel and optionally send it to someone by direct message — as a link to a web page the bot\'s server keeps, as an .html file (plus a plain .txt copy), or both. If it cannot be saved, follow On error and keep the channel.',

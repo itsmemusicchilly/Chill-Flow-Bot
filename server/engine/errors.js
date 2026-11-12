@@ -21,6 +21,13 @@ const DISCORD_HINTS = {
   30013: 'Maximum number of channels reached.',
   50035: 'Discord rejected a value (check lengths, colors and URLs).',
   40005: 'The file is too big for Discord to accept.',
+  40032: 'That member is not in a voice channel.',
+  30003: 'This channel already has the maximum number of pinned messages (50).',
+  50024: 'That cannot be done in this kind of channel.',
+  50034: 'Messages older than 14 days cannot be bulk-deleted.',
+  50083: 'The thread is closed (archived) — reopen it first.',
+  160004: 'That message already has a thread.',
+  160005: 'The thread is locked.',
 };
 
 /** Turn any thrown value into a short message for logs and `{{error.message}}`. */
