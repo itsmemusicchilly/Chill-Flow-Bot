@@ -28,6 +28,7 @@ export const LIMIT_ENV = {
   feedsPerGuild: 'LIMIT_FEEDS_PER_GUILD',
   webhookBytes: 'LIMIT_WEBHOOK_BYTES',
   webhooksPerMinute: 'LIMIT_WEBHOOKS_PER_MINUTE',
+  httpRequestsPerMinute: 'LIMIT_HTTP_REQUESTS_PER_MINUTE',
 };
 const DEFAULT_REQUEST_BYTES = 50 * 1024 * 1024;
 const MAX_REQUEST_BYTES = 1024 ** 3;
@@ -48,6 +49,17 @@ function readLimits(env) {
 }
 
 const flag = (v) => /^(1|true|yes|on)$/i.test(String(v ?? '').trim());
+
+/** HTTP_REQUEST_ALLOWED_HOSTS: the websites the HTTP Request block may reach — names, or `*.example.com` for a site and everything under it. Empty = any public site. */
+function readAllowedHosts(env) {
+  const hosts = String(env.HTTP_REQUEST_ALLOWED_HOSTS ?? '').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
+  for (const h of hosts) {
+    if (!/^(\*\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/.test(h)) {
+      throw new ConfigError(`HTTP_REQUEST_ALLOWED_HOSTS must be website names separated by commas, such as api.example.com or *.example.com (got "${h}").`);
+    }
+  }
+  return hosts;
+}
 
 export function loadConfig(env = process.env) {
   const missing = ['DISCORD_TOKEN', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET'].filter((k) => !env[k]);
@@ -91,6 +103,8 @@ export function loadConfig(env = process.env) {
       youtube: String(env.YOUTUBE_API_KEY ?? '').trim(),
       twitch: { clientId: String(env.TWITCH_CLIENT_ID ?? '').trim(), clientSecret: String(env.TWITCH_CLIENT_SECRET ?? '').trim() },
       tiktok: { clientKey: String(env.TIKTOK_CLIENT_KEY ?? '').trim(), clientSecret: String(env.TIKTOK_CLIENT_SECRET ?? '').trim() },
+      // the HTTP Request block: off unless the operator switches it on, optionally limited to some websites
+      http: { enabled: flag(env.ENABLE_HTTP_REQUEST), allowedHosts: readAllowedHosts(env) },
     },
     tokenKey,
     sessionTtlMs: 7 * 24 * 3600 * 1000,

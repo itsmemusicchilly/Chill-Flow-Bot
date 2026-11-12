@@ -31,6 +31,7 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
   const [tab, setTab] = useState(pageId ? 'pages' : 'flows');
   const [dialog, setDialog] = useState(null); // 'new' | 'newpage' | 'vars' | 'accounts'
   const [accounts, setAccounts] = useState(null); // the creator accounts (Twitch, TikTok) connected to this server — null until loaded
+  const [callables, setCallables] = useState([]); // the “Called by Another Flow” triggers of this server, for the Run Flow block
   const [showLogs, setShowLogs] = useState(() => !matches(PHONE)); // logs take a third of a phone screen: start closed there
   const [navOpen, setNavOpen] = useState(() => matches(PHONE) && !flowId && !pageId); // on a phone the sidebar is a drawer; open it when there is nothing else to show
 
@@ -73,6 +74,9 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
     setDialog('accounts');
   }, [toast]);
 
+  const reloadCallables = useCallback(() => { api(`/guilds/${gid}/callables`).then(setCallables).catch(() => {}); }, [gid]);
+  useEffect(() => { reloadCallables(); }, [reloadCallables]);
+
   // ---- initial load ---------------------------------------------------------------------------
   useEffect(() => {
     let alive = true;
@@ -111,7 +115,7 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
   }, [gid]);
 
   const accountChoices = useMemo(() => Object.fromEntries((accounts ?? []).map((g) => [g.provider, g.accounts.map((a) => ({ id: a.id, name: a.name }))])), [accounts]);
-  const guildData = useMemo(() => ({ channels, roles, forms: pagesApi.forms, accounts: accountChoices }), [channels, roles, pagesApi.forms, accountChoices]);
+  const guildData = useMemo(() => ({ channels, roles, forms: pagesApi.forms, accounts: accountChoices, callables }), [channels, roles, pagesApi.forms, accountChoices, callables]);
 
   const openFlow = (id) => { setNavOpen(false); if (id !== flowId && confirmLeave()) navigate(gid, id); };
 
@@ -120,7 +124,8 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
     setFlow(saved);
     setFlows((list) => list.map((f) => (f.id === saved.id ? summaryOf({ ...saved, issues: saved.issues }) : f)));
     if (sync) setInfo((i) => ({ ...i, commandSync: { ...(i?.commandSync || {}), ...sync } }));
-  }, []);
+    reloadCallables(); // a saved flow may have gained, renamed or lost a “Called by Another Flow” trigger
+  }, [reloadCallables]);
 
   const onToggle = async (enabled) => {
     try {
@@ -129,6 +134,7 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
       setFlows((list) => list.map((f) => (f.id === flow.id ? { ...f, enabled: res.flow.enabled } : f)));
       setInfo((i) => ({ ...i, commandSync: { ...(i?.commandSync || {}), ...res.sync } }));
       toast(enabled ? 'Flow switched on.' : 'Flow switched off.', 'ok');
+      reloadCallables();
     } catch (e) { toast(e.message, 'error'); }
   };
 
@@ -148,6 +154,7 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
       setFlows((l) => l.filter((x) => x.id !== f.id));
       setInfo((i) => ({ ...i, commandSync: { ...(i?.commandSync || {}), ...res.sync } }));
       if (f.id === flowId) { dirtyRef.current = false; setFlow(null); navigate(gid); }
+      reloadCallables();
     } catch (e) { toast(e.message, 'error'); }
   };
 

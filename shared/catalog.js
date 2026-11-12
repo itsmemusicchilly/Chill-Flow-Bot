@@ -9,6 +9,7 @@ import './nodes/channels.js';
 import './nodes/roles.js';
 import './nodes/variables.js';
 import './nodes/logic.js';
+import './nodes/connect.js';
 
 export { BUTTON_ID_RE, buttonKey, CATEGORIES, CHANNEL_PERMISSIONS, COMMAND_PERMISSIONS, nodeTitle, ROLE_PERMISSIONS, TITLE_KEY, TITLE_MAX } from './nodes/core.js';
 export { isVisible, VAR_NAME_RE } from './fields.js';
@@ -75,5 +76,7 @@ export function availableVariables(nodes, edges, nodeId, extra = {}) {
     for (const [p, l] of [['original.user.name', 'Original user name'], ['original.user.id', 'Original user ID'], ['original.user.mention', 'Original user mention'], ['original.channel.id', 'Original channel ID'], ['original.option.<name>', 'Original command option']]) add(p, l);
   }
   if (fromError) { add('error.message', 'Error message'); }
+  // a flow that can be run by another one also sees what that one knows (who started it, its {{var.…}}): only the caller can say what
+  if ([...seen].some((id) => byId.get(id)?.type === 'trigger.called')) add('var.<name>', 'A run variable of the flow that called this one');
   return [...out].map(([path, label]) => ({ path, label }));
 }

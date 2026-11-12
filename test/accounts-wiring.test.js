@@ -33,7 +33,7 @@ describe('the settings for connected accounts', () => {
     const h = await startHarness({ config: { integrations: { youtube: '', twitch: { clientId: '', clientSecret: '' }, tiktok: { clientKey: 'SECRET-TT-KEY', clientSecret: 'SECRET-TT-SECRET' } }, tokenKey: 'SECRET-TOKEN-KEY-1234' } });
     try {
       const me = await h.call('GET', '/api/me');
-      assert.deepEqual(me.json.meta.integrations, { youtube: false, twitch: false, tiktok: true });
+      assert.deepEqual(me.json.meta.integrations, { youtube: false, twitch: false, tiktok: true, http: false });
       for (const secret of ['SECRET-TT-KEY', 'SECRET-TT-SECRET', 'SECRET-TOKEN-KEY-1234']) assert.ok(!me.text.includes(secret), `${secret} leaked`);
     } finally { await h.close(); }
   });

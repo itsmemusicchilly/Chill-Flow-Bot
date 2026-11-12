@@ -18,6 +18,7 @@ export const INTEGRATIONS = {
   youtube: 'a YouTube API key (YOUTUBE_API_KEY)',
   twitch: 'a Twitch application (TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET)',
   tiktok: 'a TikTok developer app (TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET)',
+  http: 'outbound requests switched on (ENABLE_HTTP_REQUEST=true)',
 };
 
 /** Accounts a server owner can connect in the dashboard ("Connected accounts"): the creator approves on the platform itself. */
@@ -123,5 +124,6 @@ export function integrationFlags(integrations = {}) {
     youtube: Boolean(integrations?.youtube),
     twitch: Boolean(integrations?.twitch?.clientId && integrations?.twitch?.clientSecret),
     tiktok: Boolean(integrations?.tiktok?.clientKey && integrations?.tiktok?.clientSecret),
+    http: Boolean(integrations?.http?.enabled),
   };
 }

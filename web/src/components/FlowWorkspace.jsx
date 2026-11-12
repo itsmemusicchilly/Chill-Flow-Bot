@@ -2,7 +2,7 @@ import {
   applyEdgeChanges, applyNodeChanges, Background, Controls, MarkerType, MiniMap, ReactFlow, useNodesInitialized, useReactFlow,
 } from '@xyflow/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { defaultsFor, getOutputs, isTriggerType, NODE_TYPES, nodeTitle } from '@shared/catalog.js';
+import { CATEGORIES, defaultsFor, getOutputs, isTriggerType, NODE_TYPES, nodeTitle } from '@shared/catalog.js';
 import { classifyNodeChanges, edgeChangeMatters, redo as redoHistory, remember, removedWithNode, sameSnap, snapFrom, undo as undoHistory } from '../history.js';
 import { localTimeZone } from '@shared/cron.js';
 import { PHONE, useMediaQuery } from '../hooks/useMediaQuery.js';
@@ -369,7 +369,7 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
             >
               <Background gap={22} size={1.2} color="#3a3d44" />
               <Controls showInteractive={false} />
-              {!phone && <MiniMap pannable zoomable nodeColor={(n) => `${{ trigger: '#f59e0b', message: '#5865f2', member: '#3ba55d', channel: '#14b8a6', role: '#ec4899', data: '#a855f7', logic: '#f97316' }[NODE_TYPES[n.type]?.category] ?? '#888'}`} maskColor="rgba(20,21,24,.7)" />}
+              {!phone && <MiniMap pannable zoomable nodeColor={(n) => CATEGORIES[NODE_TYPES[n.type]?.category]?.color ?? '#888'} maskColor="rgba(20,21,24,.7)" />}
             </ReactFlow>
             {graph.nodes.length === 0 && (
               <div className="canvas-empty">

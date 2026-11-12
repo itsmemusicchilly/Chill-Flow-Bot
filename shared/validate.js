@@ -98,7 +98,7 @@ export function validateFlow(graph, { intents, integrations, accounts } = {}) {
     }
     // `needs` = something the bot operator must have set up (an API key); without it the trigger cannot work.
     if (d.needs && integrations && !integrations[d.needs]) {
-      add(n.id, 'error', 'intent', `This trigger needs ${INTEGRATIONS[d.needs]}, which the bot operator has not set up — it will not run.`);
+      add(n.id, 'error', 'intent', `This ${d.isTrigger ? 'trigger' : 'block'} needs ${INTEGRATIONS[d.needs]}, which the bot operator has not set up — it will not run.`);
     }
     // `connect` = a creator account that someone must connect to this server (Accounts); `accounts` says which ones are (see accountFlagsFrom).
     // A trigger may name one of several accounts (`data.account`); blank = the first one that works.

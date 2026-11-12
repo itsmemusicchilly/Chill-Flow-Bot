@@ -449,6 +449,16 @@ tell nodes apart; it is never sent to Discord.
 
 **Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{form.title}}`, `{{form.summary}}`, `{{response.id}}`, `{{page.title}}`, `{{page.url}}`
 
+### 📥 Called by Another Flow
+
+`trigger.called` — Runs when a “Run Flow” block names it — from this flow or any other flow of this server. Put steps here that several flows share. The values the caller passes are {{arg.<name>}}; it works in the caller’s run, so what it stores in {{var.…}} is still there when the caller carries on.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Name | text | required; What a “Run Flow” block calls it by. Letters, numbers, - _ and . (max 64). Use each name once per server. |
+
+**Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{arg.<name>}}`
+
 ## Messages
 
 ### 💬 Send Message
@@ -1055,4 +1065,40 @@ tell nodes apart; it is never sent to Discord.
 | Message | textarea | required |
 
 **Outputs:** Next
+
+## Connect
+
+### 📤 Run Flow
+
+`logic.call` — Run the steps behind a “Called by Another Flow” trigger, wait until they are done, then continue here. Everything the run knows (who started it, the channel, {{var.…}}) goes along, and what those steps store in {{var.…}} comes back. Follows On error when they fail.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Flow to run | callable | required; The flow it is in must be switched on. |
+| Values to pass | list |  |
+| ↳ Name | text | required; Read it there as {{arg.<name>}}. |
+| ↳ Value | text |  |
+
+**Outputs:** Next, On error
+
+### 🌐 HTTP Request
+
+`action.http.request` — Ask a website or an API for something, or send something to it, over https. The answer is {{http.status}}, {{http.text}} and — when it is JSON — {{http.body.<field>}}. Only public https addresses can be reached, and the bot operator must have switched this block on.
+
+> Needs outbound requests switched on (ENABLE_HTTP_REQUEST=true) — the bot operator must set it up (see `.env.example`).
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Method | select | options: GET, POST, PUT, PATCH, DELETE |
+| Address | text | required; A public https address. Private and internal addresses are refused. |
+| Headers | list | For example an API key. They are stored with the flow, so everyone who can edit this server’s flows can read them. |
+| ↳ Name | text | required |
+| ↳ Value | text | required |
+| Send | select | shown when `method` is not `GET`; options: Nothing, JSON, Form fields (name=value&name=value), Plain text |
+| What to send | textarea | shown when `bodyType` is not `none`; In JSON, write a value as {{user.name \| json}} — without quotes around it — so that quotes or line breaks in it cannot break the JSON. |
+| Follow On error when the site answers with an error (status 400 or higher) | boolean |  |
+
+**Outputs:** Next, On error
+
+**Adds variables:** `{{http.status}}`, `{{http.ok}}`, `{{http.text}}`, `{{http.body.name}}`, `{{http.type}}`
 

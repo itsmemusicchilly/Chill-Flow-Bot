@@ -26,6 +26,7 @@ function IdPicker({ field, value, onChange, focusRef }) {
   else if (field.kind === 'category') { options = channels.filter((c) => c.type === 'GuildCategory'); }
   else if (field.kind === 'role') { options = [{ id: '@everyone', name: 'everyone' }, ...roles]; prefix = '@'; }
   else if (field.kind === 'form') { options = (guildData.forms || []).map((f) => ({ id: f.key, name: f.label })); }
+  else if (field.kind === 'callable') { options = guildData.callables || []; } // the “Called by Another Flow” triggers of this server
   else if (field.kind.endsWith('-account')) { options = guildData.accounts?.[field.kind.replace('-account', '')] ?? []; } // the Twitch / TikTok accounts connected to this server
   const match = options.find((o) => o.id === value);
   return (
@@ -36,7 +37,7 @@ function IdPicker({ field, value, onChange, focusRef }) {
           onChange={(e) => onChange(e.target.value)} onFocus={track(focusRef, onChange)} spellCheck={false}
         />
         {options.length > 0 && (
-          <select aria-label={field.kind.endsWith('-account') ? `Pick ${field.kind.startsWith('tiktok') ? 'TikTok' : 'Twitch'} account` : `Pick ${field.kind}`} value="" onChange={(e) => e.target.value && onChange(e.target.value)}>
+          <select aria-label={field.kind.endsWith('-account') ? `Pick ${field.kind.startsWith('tiktok') ? 'TikTok' : 'Twitch'} account` : field.kind === 'callable' ? 'Pick flow to run' : `Pick ${field.kind}`} value="" onChange={(e) => e.target.value && onChange(e.target.value)}>
             <option value="">Pick…</option>
             {options.map((o) => <option key={o.id} value={o.id}>{prefix}{o.name}</option>)}
           </select>

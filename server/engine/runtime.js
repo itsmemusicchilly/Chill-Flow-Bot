@@ -32,6 +32,8 @@ const TICK_SLACK_MS = 250; // schedules are checked just AFTER a minute begins, 
 const MAX_CATCH_UP = 3; // minutes a stalled event loop may make up; a longer gap (the bot was off) is never replayed
 const minuteOf = (ms) => Math.floor(ms / MINUTE) * MINUTE;
 const EPHEMERAL = MessageFlags.Ephemeral;
+/** Requests the HTTP Request block may send per server per minute, whatever the operator allows (it reaches other people's websites). */
+export const HTTP_REQUESTS_PER_MINUTE_CEILING = 60;
 
 export class Runtime {
   /**
@@ -55,6 +57,13 @@ export class Runtime {
       components: new ComponentState({ db }),
       messageMemory: new MessageMemory(),
       guard: { runs: new RateLimiter(() => LIMITS.runsPer10s, 10000), actions: new RateLimiter(() => LIMITS.actionsPer10s, 10000) },
+      // the HTTP Request block: off unless the operator switched it on; the same guarded fetcher the feed watchers use
+      http: {
+        enabled: Boolean(integrations?.http?.enabled), allowedHosts: integrations?.http?.allowedHosts ?? [], fetch: fetcher,
+        limiter: new RateLimiter(() => Math.min(HTTP_REQUESTS_PER_MINUTE_CEILING, LIMITS.httpRequestsPerMinute), MINUTE),
+      },
+      // a “Called by Another Flow” trigger of this server that is switched on, by its name (the Run Flow block)
+      findCallable: (guildId, name) => this.index.get(guildId)?.callables.get(name),
     };
     this.index = new Map(); // guildId -> { flows, triggers: Map<type, {flow,node}[]>, commands: Map<name, {flow,node}>, buttons: Map<buttonId, {flow,node}> }
     this.flowsById = new Map();
@@ -78,7 +87,7 @@ export class Runtime {
   // ---- index ------------------------------------------------------------------------------------
   loadGuild(guildId) {
     for (const id of this.index.get(guildId)?.flows.keys() ?? []) this.flowsById.delete(id);
-    const entry = { flows: new Map(), triggers: new Map(), commands: new Map(), buttons: new Map() };
+    const entry = { flows: new Map(), triggers: new Map(), commands: new Map(), buttons: new Map(), callables: new Map() };
     for (const flow of this.db.listEnabledFlows(guildId)) {
       const graph = normalizeGraph(flow.graph);
       const active = { ...flow, graph };
@@ -110,6 +119,16 @@ export class Runtime {
           }
           entry.buttons.set(buttonId, { flow: active, node });
         }
+        if (node.type === 'trigger.called') {
+          // "Run Flow" finds it by name, so a name means one set of steps: the first flow (oldest) wins.
+          const name = String(node.data.name ?? '').trim();
+          const first = entry.callables.get(name);
+          if (first) {
+            this.logger.log(guildId, 'warn', `“Called by Another Flow” is named “${name}” twice; the one in “${flow.name}” is ignored (“${first.flow.name}” answers to it).`, { flowId: flow.id, flowName: flow.name, nodeId: node.id });
+            continue;
+          }
+          entry.callables.set(name, { flow: active, node });
+        }
         if (!entry.triggers.has(node.type)) entry.triggers.set(node.type, []);
         entry.triggers.get(node.type).push({ flow: active, node });
       }
@@ -126,7 +145,9 @@ export class Runtime {
   #stopRemovedRuns(guildId, entry) {
     const stopped = new Map();
     for (const ctx of this.live) {
-      if (ctx.guild.id !== guildId || entry.flows.has(ctx.flow.id) || ctx.aborted) continue;
+      // a run that is inside a flow it was sent to by Run Flow stops when that flow, or any flow it came through, is gone
+      const gone = !entry.flows.has(ctx.flow.id) || (ctx.callers ?? []).some((id) => !entry.flows.has(id));
+      if (ctx.guild.id !== guildId || !gone || ctx.aborted) continue;
       this.abortRun(ctx);
       stopped.set(ctx.flow.name, (stopped.get(ctx.flow.name) ?? 0) + 1);
     }

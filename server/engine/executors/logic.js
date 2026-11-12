@@ -1,4 +1,6 @@
+import { VAR_NAME_RE } from '../../../shared/fields.js';
 import { LIMITS } from '../../../shared/limits.js';
+import { MAX_CALL_DEPTH } from '../../../shared/nodes/connect.js';
 import { combine, evalCondition } from '../conditions.js';
 import { FlowAbort, FlowError, friendlyError } from '../errors.js';
 import { resolveRole, resolveUserId } from '../resolve.js';
@@ -96,6 +98,18 @@ export const logicExecutors = {
       }
     } finally { ctx.loop = outer; }
     return 'done';
+  },
+
+  /** Run Flow: the steps behind a “Called by Another Flow” trigger of this server, inside this run. */
+  async 'logic.call'({ ctx, d, call }) {
+    const name = String(d.name ?? '').trim();
+    if (!name) throw new FlowError('Choose the flow to run.');
+    const target = ctx.services.findCallable?.(ctx.guild.id, name); // only this server's flows, and only ones that are switched on
+    if (!target) throw new FlowError(`Nothing to run: no flow that is switched on has a “Called by Another Flow” trigger named “${name}”.`);
+    if ((ctx.callDepth ?? 0) >= MAX_CALL_DEPTH) throw new FlowError(`Flows are running each other more than ${MAX_CALL_DEPTH} deep — does “${name}” run itself?`);
+    const args = {};
+    for (const a of d.args || []) if (a && VAR_NAME_RE.test(String(a.name ?? ''))) args[a.name] = a.value ?? '';
+    if (!await call(target, args)) throw new FlowError(`“${name}” ran into a problem (see the lines above in the log).`);
   },
 
   async 'logic.cooldown'({ ctx, d, node }) {

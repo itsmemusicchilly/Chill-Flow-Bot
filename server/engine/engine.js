@@ -85,6 +85,32 @@ async function runBranch(flow, ctx, nodeId, handle) {
   }
 }
 
+/**
+ * The Run Flow block: runs the steps behind another flow's “Called by Another Flow” trigger inside THIS run, then comes back.
+ * The run keeps its user, channel, interaction and {{var.…}}; for the time of the call it belongs to the called flow (so its buttons,
+ * cooldowns and audit-log reasons are that flow's) and has the passed values as {{arg.…}}.
+ * @returns {Promise<boolean>} false when a step in the called flow failed with nothing connected to its On error output
+ */
+async function callFlow(ctx, target, args) {
+  const saved = { flow: ctx.flow, arg: ctx.data.arg, failed: ctx.failed, depth: ctx.callDepth ?? 0, logMeta: ctx.logMeta };
+  (ctx.callers ??= []).push(saved.flow.id); // the flows this run came through: switching any of them off stops it
+  ctx.flow = target.flow;
+  ctx.data.arg = args;
+  ctx.failed = false;
+  ctx.callDepth = saved.depth + 1;
+  try {
+    await runBranch(target.flow, ctx, target.node.id, 'out');
+    return !ctx.failed;
+  } finally {
+    ctx.callers.pop();
+    ctx.flow = saved.flow;
+    if (saved.arg === undefined) delete ctx.data.arg; else ctx.data.arg = saved.arg;
+    ctx.failed = saved.failed;
+    ctx.callDepth = saved.depth;
+    ctx.logMeta = saved.logMeta;
+  }
+}
+
 /** Runs one node and returns the output handle(s) to follow next ([] when the branch ends). */
 async function execNode(flow, ctx, nodeId) {
   const { byId, out } = compileFlow(flow);
@@ -113,6 +139,7 @@ async function execNode(flow, ctx, nodeId) {
       ctx, d, node, flow, runBranch: (h) => runBranch(flow, ctx, nodeId, h),
       // for a field that is filled in once per item (a leaderboard line): the text as it was written, with a few extra values to use
       render: (text, extra = {}) => renderTemplate(text, { ...buildScope(ctx), ...extra }),
+      call: (target, args) => callFlow(ctx, target, args),
     });
     if (result === undefined) return ['out'];
     return Array.isArray(result) ? result : [result];

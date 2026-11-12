@@ -99,6 +99,21 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
 
   guildRouter.get('/flows', (req, res) => res.json(db.listFlows(req.params.gid).map(summary)));
 
+  /** The “Called by Another Flow” triggers of this server, for the Run Flow block's picker. */
+  guildRouter.get('/callables', (req, res) => {
+    const seen = new Set();
+    const out = [];
+    for (const f of db.listFlows(req.params.gid)) {
+      for (const n of normalizeGraph(f.graph).nodes) {
+        const name = n.type === 'trigger.called' ? String(n.data?.name ?? '').trim() : '';
+        if (!name || seen.has(name)) continue;
+        seen.add(name);
+        out.push({ id: name, name: `${name} — in “${f.name}”${f.enabled ? '' : ' (switched off)'}` });
+      }
+    }
+    res.json(out);
+  });
+
   guildRouter.post('/flows', async (req, res) => {
     const { gid } = req.params;
     if (flowsFull(gid)) throw new HttpError(409, `A server can have at most ${LIMITS.flowsPerGuild} flows.`);

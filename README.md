@@ -29,11 +29,13 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **Subscriber / follower counters.** Run a flow each time a YouTube channel gains subscribers or a Twitch or TikTok account gains followers — or keep a
   channel named “💜 Followers: 4,321” up to date with a ready-made counter flow. Twitch and TikTok are connected from the dashboard (*Accounts*): the
   creator approves it on the platform itself (see [Counting subscribers and followers](#counting-subscribers-and-followers)).
-* **72 nodes**: 36 triggers (commands, buttons, messages sent, edited and deleted, joins/leaves/kicks/bans/timeouts, server boosts, role, channel and thread events,
-  reactions, voice, schedule, new feed item, webhook, YouTube subscribers (milestones and gains), Twitch live and followers, TikTok followers, manual, form submitted) and 36 actions/logic nodes (messages with buttons/menus/forms, changing the buttons of a sent message, pinning and bulk-deleting messages, member moderation and voice,
-  channels, threads, forum posts and ticket transcripts, roles, variables, maths and leaderboards, conditions, loops, cooldowns, waits). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
+* **75 nodes**: 37 triggers (commands, buttons, messages sent, edited and deleted, joins/leaves/kicks/bans/timeouts, server boosts, role, channel and thread events,
+  reactions, voice, schedule, new feed item, webhook, YouTube subscribers (milestones and gains), Twitch live and followers, TikTok followers, manual, form submitted, called by another flow) and 38 actions/logic nodes (messages with buttons/menus/forms, changing the buttons of a sent message, pinning and bulk-deleting messages, member moderation and voice,
+  channels, threads, forum posts and ticket transcripts, roles, variables, maths and leaderboards, conditions, loops, cooldowns, waits, running another flow, and — if the operator allows it — HTTP requests). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
 * **Remembers things**: run, per-server, per-channel and per-user variables, usable everywhere as `{{templates}}` — with maths, text and date filters built in,
   and a **Leaderboard** block for points and levels (see [Remembered variables](#remembered-variables), [Leaderboards](#leaderboards) and [Doing maths](#doing-maths)).
+* **Shared steps.** Put steps several flows need behind a **Called by Another Flow** trigger and run them from anywhere with **Run Flow** (see [Running one flow from another](#running-one-flow-from-another)).
+* **Talk to other services** with the **HTTP Request** block — switched **off** until the bot operator turns it on (see [HTTP requests](#http-requests)).
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
@@ -94,6 +96,8 @@ real dashboard and API against a fake in-memory Discord — useful for developme
 | `YOUTUBE_API_KEY` | — | Optional. A YouTube Data API v3 key, for the *YouTube Subscribers* trigger |
 | `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` | — | Optional. A free Twitch developer application, for the *Twitch Channel Live* trigger and for connecting a Twitch account (*Twitch Followers*) |
 | `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` | — | Optional. A TikTok developer app (Login Kit + Display API), for connecting a TikTok account (*TikTok Followers*). `BASE_URL` must be `https://` |
+| `ENABLE_HTTP_REQUEST` | `false` | Switches on the *HTTP Request* block, which lets flows call public https addresses. Off by default: see [HTTP requests](#http-requests) before you turn it on for other people |
+| `HTTP_REQUEST_ALLOWED_HOSTS` | any public site | Optional. The only websites the *HTTP Request* block may reach, separated by commas: `api.example.com`, or `*.example.com` for a site and everything under it |
 | `TOKEN_ENCRYPTION_KEY` | derived from `DISCORD_CLIENT_SECRET` | Optional. A long random string (16+ characters) that seals the connected accounts' tokens in the database. If it ever changes, connected accounts show “Connect again” — nothing else is lost |
 | `LIMIT_*` | unlimited | Optional caps, see [Limits](#limits) |
 
@@ -118,6 +122,7 @@ loop iterations, steps per run and as long a wait as you like. On a private bot 
 | `LIMIT_UPLOAD_BYTES` · `LIMIT_UPLOADS_PER_GUILD` · `LIMIT_STORAGE_BYTES_PER_GUILD` | size of one uploaded picture, pictures per server, total picture storage per server |
 | `LIMIT_FEEDS_PER_GUILD` | feeds and Twitch/YouTube channels one server may watch |
 | `LIMIT_WEBHOOK_BYTES` · `LIMIT_WEBHOOKS_PER_MINUTE` | one webhook call's size (default 64 KB) / calls per minute to one address |
+| `LIMIT_HTTP_REQUESTS_PER_MINUTE` | requests the *HTTP Request* block may send per server (always at most 60 a minute) |
 | `LIMIT_REQUEST_BYTES` | HTTP request body (default 50 MB; always has a ceiling, max 1 GB) |
 
 `.env.example` contains a commented **public-host preset** with sensible caps.
@@ -128,7 +133,8 @@ memory and CPU, `setTimeout`'s maximum (~24.8 days), the form wait (10 min: Disc
 login/API/public-site rate limits that protect the site itself (10 form submissions per minute per visitor, 60 per IP, 600 page views
 per IP; a form answer is at most 10 000 characters and a public request 256 KB; an uploaded picture is at most 32 MB and 64 megapixels
 and 30 uploads per minute per person; a webhook call is at most 256 KB and one address takes at most 600 calls a minute; a feed answer is
-read for at most 10 seconds and 1 MB; at most 5 new posts are announced per look).
+read for at most 10 seconds and 1 MB; at most 5 new posts are announced per look; the HTTP Request block sends at most 60 requests a minute per server, waits at most 10 seconds
+and reads at most 512 KB; a run goes at most 20 flows deep through *Run Flow*).
 
 **How it stays safe without a step cap:** a run that loops forever uses constant memory and yields to the event loop, so the
 bot keeps answering everyone else (measured: 650k steps in 4 s, worst stall 7 ms). **To stop a runaway flow, switch it Off
@@ -447,6 +453,43 @@ shows the newest number as soon as it may). The existing *YouTube Subscribers* t
 * **Looks.** Twitch at least every 1 minute (default 5), TikTok at least every 5 (default 15), YouTube at least every 15 (default 30). One request per server however many flows use it.
 * **YouTube is different on purpose.** It needs no connecting, but YouTube **rounds** public counts to three significant figures once a channel has more than 1,000 (so a big channel moves in jumps, never one by one) and a channel may hide its count.
 
+### Running one flow from another
+
+Steps that several flows need — “give points”, “write to the mod log”, “check the person is verified” — can live in one place:
+
+1. In any flow, add the trigger **Called by Another Flow** and give it a **name** (`give-points`). Connect the shared steps to it. That flow must be switched **on**.
+2. Wherever you need those steps, add **Run Flow** (*Connect*) and pick the name. Under **Values to pass** give it what it needs (`amount` = `{{option.amount}}`).
+
+```
+/daily ─▶ Run Flow “give-points” (amount = 50) ─▶ Send Message: "You now have {{var.total}} points"
+                    │
+Called by Another Flow “give-points” ─▶ Math: {{user.vars.points}} + {{arg.amount}} → total (remember per user)
+```
+
+* **It is the same run.** The called steps know who started the flow, the channel and every `{{var.…}}` the caller had, and what they store in `{{var.…}}` is there when the caller carries on —
+  that is how they hand something back. The passed values are `{{arg.<name>}}` there, and are gone again afterwards. They can answer the command or button too.
+* **Run Flow waits** until the called steps are done. If one of them fails with nothing on its own **On error** output, *Run Flow* follows **its** On error output.
+* The trigger can be in the same flow or in another one of the **same server** — never another server's. If two triggers have the same name, the older flow answers and the log says so.
+* Buttons the called steps send belong to the flow they are in, so they keep working. Switching off the calling flow **or** the called flow stops a run that is in the middle.
+* A flow may run itself, up to **20 deep** — past that the block follows On error, so a mistake cannot go on forever.
+
+### HTTP requests
+
+The **HTTP Request** block (*Connect*) asks a website or an API for something, or sends something to it: `GET`, `POST`, `PUT`, `PATCH` or `DELETE`, with your own headers and JSON, form fields or text.
+Later nodes get `{{http.status}}`, `{{http.ok}}`, `{{http.text}}` and — when the answer is JSON — `{{http.body.<field>}}` (`{{http.body.user.name}}` for nested ones).
+
+**It is off by default.** The bot operator switches it on with `ENABLE_HTTP_REQUEST=true`; until then the block shows a 🔒 in the palette and a flow that uses it follows **On error**.
+An operator who hosts the bot for other people can also limit it to certain websites with `HTTP_REQUEST_ALLOWED_HOSTS`.
+
+* **In JSON, write values as `{{user.name | json}}`** — without quotes around them: `{"name": {{user.name | json}}}`. The filter adds the quotes and escapes what is inside, so a name with a `"` in it
+  cannot break the JSON or sneak in fields of its own. JSON that is broken once the variables are filled in is not sent.
+* **An error status** (400 and up) follows **On error** unless you untick that; the answer is still readable there (`{{http.status}}`, `{{http.body.message}}`).
+* **What a site answers is only ever text**: a `{{…}}` in it is shown as written, and it is cut to size (512 KB read, 4,000 characters of text, long JSON trimmed).
+* **Headers are stored with the flow**, so an API key you put there can be read by everyone who can edit this server's flows, and is part of an exported flow. `Host`, `Content-Length` and other
+  connection headers cannot be set; at most 20 headers.
+* **Only public https addresses**, through the same guarded fetcher as the feeds (see [Security model](#security-model)): no `http://`, no private or internal addresses, no way to reach the machine the bot runs on.
+  At most 60 requests a minute per server and 10 seconds per request.
+
 ### Templates
 
 `{{path}}` works in any text field. Add filters with `|`: `{{user.name | upper}}`, `{{option.reason | default:none}}`.
@@ -466,6 +509,8 @@ shows the newest number as soon as it may). The existing *YouTube Subscribers* t
 | `user.vars.<name>`, `channel.vars.<name>`, `guild.vars.<name>` | remembered per-user / per-channel / per-server variables (`channel` is where the run happened) |
 | `loop.index .item`, `error.message`, `cooldown.remaining`, `now.iso .date .time .timestamp` | misc |
 | `leaderboard.text .rank .value .count .total .top.*` | after *Leaderboard* (see [Leaderboards](#leaderboards)) |
+| `arg.<name>` | in the steps behind *Called by Another Flow*: the values the *Run Flow* block passed |
+| `http.status .ok .text .body.<field> .type` | after *HTTP Request* |
 | `thread.id .mention .name`, `purge.count`, `message.before` | after *Create Thread*, after *Delete Messages (bulk)*, and in a *Message Edited* flow |
 | `executor.*`, `reason`, `timeout.*` | moderator details for kick/ban/timeout triggers |
 | `feed.title .link .author .summary .published .image .id .name` | *New Feed Item*: the new post (`title` is blank for Mastodon and Bluesky posts) |
@@ -682,12 +727,17 @@ This is a multi-tenant service: many servers share one bot process, so isolation
   user-supplied regexes run under a hard timeout (a catastrophic pattern cannot freeze the bot).
 * **Limits**: none by default — see [Limits](#limits) for the caps you can turn on (recommended when hosting for others).
   The login and dashboard-API rate limits are always on.
-* **Outbound requests** (feeds, YouTube, Twitch) go through **one guarded fetcher** that flows can never call directly — there is still deliberately **no HTTP-request node**.
+* **Outbound requests** (feeds, YouTube, Twitch — and the *HTTP Request* block, when the operator has switched it on) go through **one guarded fetcher**; nothing else in a flow can reach the network.
   Only `https` on the standard port, no user names or passwords in the address, no raw IP addresses or local names. The name is resolved by the fetcher itself and
   the connection is refused if *any* answer is a private, loopback, link-local (`169.254.169.254`), shared, multicast or reserved address — IPv4 and IPv6, including mapped and
   NAT64/6to4/Teredo forms — checked on **every** connection, so a name that changes its answer later (DNS rebinding) is caught. Redirects are followed by hand (3 at most), each
   hop judged again; 10 s per request; the answer is cut off at 1 MB counted after decompression. Feeds are read by a small parser that never expands entities or DTDs, so
   “billion laughs” and XXE files are inert. Feed text is plain text, feed links must be http(s) and pictures https.
+* **The HTTP Request block** is the one place where a flow author chooses the address, so it is **off unless `ENABLE_HTTP_REQUEST` is set** and stays inside the same fetcher: it cannot reach private, loopback or
+  metadata addresses, cannot set connection headers or put a line break in a header, is counted per server (60 a minute at most), and a request that carries a header or a body is never redirected to
+  another website. Its answer is reshaped into bounded plain data and is never read as a template. What it cannot protect is what the flow author sends on purpose: with it on, people who can edit a
+  server's flows can make the bot call any public API with their own keys — set `HTTP_REQUEST_ALLOWED_HOSTS` if you host for strangers.
+* **Run Flow** only finds triggers of the same server, shares one run (so every limit counts once), and stops at 20 flows deep.
 * **Webhooks** (the only other unauthenticated way in): a 256-bit random address per trigger (its own table, never in the flow, never exported or copied), compared only by lookup;
   its own small body limit, JSON/form/text only, rate limits per address and per IP (with a stricter one for wrong guesses), the payload is reshaped to plain data (depth, key count
   and string length capped, `__proto__` dropped) and treated as text, never as a template.
@@ -796,6 +846,9 @@ Not yet automated — please run through this once on a test server:
       *Create Private Threads* / *Send Messages in Threads* / *Manage Threads*.
 - [ ] Moderation extras: edit a message → *Message Edited* gives the old and the new text (with the Message Content intent), and pasting a link (the preview appears) does not run it. *Pin Message* pins and unpins.
       *Delete Messages (bulk)* removes the last N, only one member's, keeps pinned ones, and leaves 15-day-old messages. *Voice: Move or Disconnect* moves, disconnects and server-mutes a member in voice.
+- [ ] Run Flow: a command flow runs a *Called by Another Flow* trigger in another flow with a value passed; the reply uses a `{{var.…}}` the called steps stored. Switch the called flow off → the block follows On error.
+- [ ] HTTP Request (set `ENABLE_HTTP_REQUEST=true` first, needs the real internet): `GET https://api.github.com/zen` answers with text; a JSON API fills `{{http.body.…}}`; `https://localhost/` and an `http://` address
+      are refused; with the variable unset the block shows 🔒 and a flow using it follows On error.
 - [ ] Use one Button ID in two flows: the log warns that the newer flow is ignored for it.
 - [ ] Member Joined (with the Members intent) greets and gives a role; Kicked vs Left is told apart (with *View Audit Log*).
 - [ ] Reaction Added with message + emoji filter gives a role.
@@ -818,7 +871,7 @@ Not yet automated — please run through this once on a test server:
 
 ## Ideas not done yet
 
-Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, an outbound HTTP/webhook node, watching X/Instagram/Facebook posts directly (needs each account's own consent), instant Twitch follower alerts (Twitch can push them, but that needs a public address and a subscription to keep alive; the bot checks every few minutes instead), exact YouTube subscriber counts (needs the channel owner's Google login), autocomplete options, sub-commands, embed preview, flow version history,
+Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, watching X/Instagram/Facebook posts directly (needs each account's own consent), instant Twitch follower alerts (Twitch can push them, but that needs a public address and a subscription to keep alive; the bot checks every few minutes instead), exact YouTube subscriber counts (needs the channel owner's Google login), autocomplete options, sub-commands, embed preview, flow version history,
 sharding.
 
 ---

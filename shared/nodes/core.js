@@ -23,6 +23,7 @@ export const CATEGORIES = {
   role: { label: 'Roles', color: '#ec4899', blurb: 'Manage roles' },
   data: { label: 'Variables', color: '#a855f7', blurb: 'Remember things' },
   logic: { label: 'Logic', color: '#f97316', blurb: 'Branch, loop, wait' },
+  connect: { label: 'Connect', color: '#0ea5e9', blurb: 'Other flows & websites' },
 };
 // Names must exist in discord.js `PermissionFlagsBits` (checked by a test).
 export const CHANNEL_PERMISSIONS = [
