@@ -1,6 +1,7 @@
 import { FlowError } from '../errors.js';
 import { evaluate } from '../expression.js';
 import { cleanId, SNOWFLAKE } from '../resolve.js';
+import { LEADERBOARD_LINE, LEADERBOARD_MAX } from '../../../shared/nodes/variables.js';
 
 const toNumber = (v, fallback) => {
   if (v === undefined || v === null || v === '') { if (fallback !== undefined) return fallback; throw new FlowError('A number is needed here but the value is empty.'); }
@@ -38,6 +39,18 @@ const MATH = {
   add: (a, b) => a + b, sub: (a, b) => a - b, mul: (a, b) => a * b,
   div: (a, b) => a / divisor(b), mod: (a, b) => a % divisor(b), pow: (a, b) => a ** b, min: Math.min, max: Math.max,
 };
+
+/** Display names for a leaderboard. People the bot has not loaded are asked for in one request; whoever left the server stays unnamed. */
+async function displayNames(guild, ids) {
+  const names = new Map();
+  const missing = ids.filter((id) => !guild.members.cache.has(id));
+  const fetched = missing.length ? await guild.members.fetch({ user: missing }).catch(() => null) : null;
+  for (const id of ids) {
+    const member = guild.members.cache.get(id) ?? fetched?.get?.(id);
+    if (member) names.set(id, member.displayName ?? member.user?.username ?? '');
+  }
+  return names;
+}
 
 export const dataExecutors = {
   async 'data.variable.set'({ ctx, d }) {
@@ -91,6 +104,26 @@ export const dataExecutors = {
       const { scope, id } = scopeTarget(ctx, { scope: d.remember, targetId: d.targetId, targetChannelId: d.targetChannelId });
       ctx.services.db.setVar(ctx.guild.id, scope, id, d.saveAs, result);
     }
+  },
+
+  /**
+   * Ranks the members who hold a number in a per-user variable. The line format is filled in once per place from the text as it was typed
+   * (`node.data.format`), because `d.format` was already rendered when {{entry.*}} did not exist yet.
+   */
+  async 'data.leaderboard'({ ctx, d, node, render }) {
+    const limit = Math.min(LEADERBOARD_MAX, Math.max(1, Math.trunc(toNumber(d.limit, 10))));
+    const who = cleanId(d.targetId) || ctx.user?.id || '';
+    const board = ctx.services.db.rankVars(ctx.guild.id, 'user', d.name, { limit, descending: d.order !== 'asc', id: SNOWFLAKE.test(who) ? who : '' });
+    const names = await displayNames(ctx.guild, board.entries.map((e) => e.id));
+    const entries = board.entries.map((e) => ({ rank: e.rank, id: e.id, mention: `<@${e.id}>`, name: names.get(e.id) ?? 'Unknown member', value: e.value }));
+    const format = String(node.data.format ?? '').trim() || LEADERBOARD_LINE;
+    const lines = entries.map((entry) => render(format, { entry }));
+    ctx.data.leaderboard = {
+      text: lines.length ? lines.join('\n') : String(d.empty ?? ''),
+      count: entries.length, total: board.total,
+      rank: board.rank ?? '', value: board.value ?? '',
+      top: entries[0] ?? { rank: '', id: '', mention: '', name: '', value: '' },
+    };
   },
 
   async 'data.variable.get'({ ctx, d }) {

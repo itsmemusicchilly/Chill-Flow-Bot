@@ -32,6 +32,35 @@ def('data.variable.get', {
   ],
   outputs: ACTION_OUTS, summary: (d) => `${d.scope}.${d.name || '?'} → ${d.saveAs || '?'}`,
 });
+// A leaderboard ranks everyone who holds a number in one per-user variable. Each line is written once and filled in per member, so its
+// {{entry.*}} values are not ordinary variables: the executor reads the line as it was typed (see `render` in engine.js).
+export const LEADERBOARD_LINE = '**{{entry.rank}}.** {{entry.mention}} — {{entry.value | commas}}';
+export const LEADERBOARD_MAX = 25;
+def('data.leaderboard', {
+  category: 'data', label: 'Leaderboard', icon: '🏆',
+  description: 'Rank members by a per-user variable — points, coins, XP. The top places are ready to post as {{leaderboard.text}}, and {{leaderboard.rank}} says where one member stands.',
+  fields: [
+    text('name', 'Per-user variable', { required: true, placeholder: 'points', help: 'The name you used in Set Variable or Math with “Per user”. Only numbers are ranked.', ...VAR_NAME }),
+    num('limit', 'How many places', { default: 10, min: 1, max: LEADERBOARD_MAX }),
+    select('order', 'Order', [['desc', 'Highest first'], ['asc', 'Lowest first']]),
+    text('format', 'Each line', {
+      default: LEADERBOARD_LINE,
+      help: 'Written once, filled in for every place: {{entry.rank}}, {{entry.mention}}, {{entry.name}}, {{entry.id}} and {{entry.value}}. Filters work, for example {{entry.value | commas}}.',
+    }),
+    text('empty', 'If nobody has a value yet', { default: 'Nobody is on the board yet.' }),
+    idField('targetId', 'Whose place to look up', 'user', {
+      placeholder: 'blank = the user who triggered this',
+      help: 'Their place and value are {{leaderboard.rank}} and {{leaderboard.value}} — both blank when they have none.',
+    }),
+  ],
+  outputs: ACTION_OUTS,
+  provides: () => [
+    ['leaderboard.text', 'The top places, one per line'], ['leaderboard.count', 'How many places are listed'], ['leaderboard.total', 'How many members are ranked in all'],
+    ['leaderboard.rank', 'The member’s place (blank if they have none)'], ['leaderboard.value', 'The member’s value (blank if they have none)'],
+    ['leaderboard.top.id', 'ID of the member in first place'], ['leaderboard.top.mention', 'Mention of the member in first place'], ['leaderboard.top.value', 'Value of the member in first place'],
+  ],
+  summary: (d) => `top ${d.limit || 10} by ${d.name || '?'}`,
+});
 // Maths: Set Variable *changes a remembered number*; Math *calculates a new value from any values* (other variables, the member
 // count, an option…) and hands it on as {{var.<name>}}, optionally remembering it as well.
 const MATH_OPS = [['add', '+  Add'], ['sub', '−  Subtract'], ['mul', '×  Multiply'], ['div', '÷  Divide'], ['mod', 'Remainder after dividing'], ['pow', 'To the power of'], ['min', 'The smaller of the two'], ['max', 'The larger of the two']];

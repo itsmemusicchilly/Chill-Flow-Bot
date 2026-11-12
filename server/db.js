@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { isCapped, LIMITS } from '../shared/limits.js';
 import { uid } from '../shared/util.js';
 import { FlowError } from './engine/errors.js';
+import { rankRows } from './db/rank.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS flows (
@@ -318,6 +319,15 @@ export class Database {
   listVars(guildId) {
     return this.#stmt('SELECT scope, scope_id, name, value FROM vars WHERE guild_id = ? ORDER BY scope, scope_id, name LIMIT 1000')
       .all(guildId).map((r) => ({ scope: r.scope, scopeId: r.scope_id, name: r.name, value: JSON.parse(r.value) }));
+  }
+
+  /**
+   * A leaderboard: everyone (every user, or every channel) who holds a number in the variable `name`, best first.
+   * Returns the top `limit` places, how many are ranked in all, and the place and value of `id` (null when they have none).
+   */
+  rankVars(guildId, scope, name, options = {}) {
+    const rows = this.#stmt('SELECT scope_id AS id, value FROM vars WHERE guild_id=? AND scope=? AND name=?').all(guildId, scope, name);
+    return rankRows(rows.map((r) => ({ id: r.id, value: JSON.parse(r.value) })), options);
   }
 
   // ---- pages (website builder) — every query is scoped by guild_id -------------------------------

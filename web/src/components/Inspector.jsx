@@ -75,7 +75,10 @@ export default function Inspector({ node, nodes, edges, issues, onChange, onDupl
               </button>
             ))}
           </div>
-          <p className="tiny muted">Filters: <code>{'{{name | upper}}'}</code> <code>{'{{x | default:none}}'}</code></p>
+          <p className="tiny muted">
+            Filters: <code>{'{{name | upper}}'}</code> <code>{'{{x | default:none}}'}</code> <code>{'{{n | add:1 | commas}}'}</code> <code>{'{{text | truncate:100}}'}</code>{' '}
+            <code>{'{{text | replace:a,b}}'}</code> <code>{'{{list | random}}'}</code> <code>{'{{date | date:R}}'}</code>
+          </p>
         </details>
       )}
 

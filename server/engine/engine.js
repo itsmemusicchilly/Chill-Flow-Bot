@@ -6,7 +6,7 @@ import { FlowAbort, friendlyError } from './errors.js';
 import { executors } from './executors/index.js';
 import { takeAction } from './resolve.js';
 import { nowInfo } from './serialize.js';
-import { renderDeep } from './template.js';
+import { renderDeep, renderTemplate } from './template.js';
 import { YIELD_EVERY, yieldToEventLoop } from './yield.js';
 
 const compiled = new WeakMap();
@@ -109,7 +109,11 @@ async function execNode(flow, ctx, nodeId) {
   try {
     const d = renderDeep(node.data, buildScope(ctx));
     if (node.type.startsWith('action.')) takeAction(ctx);
-    const result = await exec({ ctx, d, node, flow, runBranch: (h) => runBranch(flow, ctx, nodeId, h) });
+    const result = await exec({
+      ctx, d, node, flow, runBranch: (h) => runBranch(flow, ctx, nodeId, h),
+      // for a field that is filled in once per item (a leaderboard line): the text as it was written, with a few extra values to use
+      render: (text, extra = {}) => renderTemplate(text, { ...buildScope(ctx), ...extra }),
+    });
     if (result === undefined) return ['out'];
     return Array.isArray(result) ? result : [result];
   } catch (err) {

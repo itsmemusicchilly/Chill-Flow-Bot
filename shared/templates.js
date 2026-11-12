@@ -160,6 +160,35 @@ export const TEMPLATES = [
     }),
   },
   {
+    id: 'levels',
+    name: 'Levels and leaderboard',
+    description: 'Members earn 15 XP for chatting (at most once a minute) and are congratulated when they reach a new level; /rank shows their own place and /leaderboard the top 10. Earning XP needs the Message Content intent — the two commands work without it.',
+    build: () => ({
+      nodes: [
+        n('t1', 'trigger.message.received', 0, 0, { mode: 'any' }),
+        n('k1', 'logic.cooldown', 340, 0, { seconds: 60, scope: 'user', key: 'xp' }),
+        n('x1', 'data.math', 680, 0, { mode: 'two', a: '{{user.vars.xp}}', op: 'add', b: '15', saveAs: 'xp', remember: 'user' }),
+        n('l1', 'data.math', 1020, 0, { mode: 'formula', formula: 'floor(sqrt({{var.xp}} / 100))', saveAs: 'level' }), // level 1 at 100 XP, 2 at 400, 3 at 900 …
+        n('c1', 'logic.condition', 1360, 0, { match: 'all', conditions: [{ left: '{{var.level}}', op: 'gt', right: '{{user.vars.level | default:0}}', roleId: '', memberId: '' }] }),
+        n('v1', 'data.variable.set', 1700, 0, { scope: 'user', name: 'level', operation: 'set', value: '{{var.level}}', valueType: 'number' }),
+        n('m1', 'action.message.send', 2040, 0, { target: 'current_channel', content: '🎉 {{user.mention}} reached **level {{var.level}}**!' }),
+        n('t2', 'trigger.command', 0, 340, { name: 'rank', description: 'Show your level and your place on the leaderboard' }),
+        n('b1', 'data.leaderboard', 340, 320, { name: 'xp', limit: 1 }),
+        n('m2', 'action.message.send', 680, 320, {
+          target: 'reply', useEmbed: true, embedTitle: '{{user.displayName}}', embedColor: '#f59e0b',
+          embedDescription: 'Level **{{user.vars.level | default:0}}** · **{{user.vars.xp | default:0 | commas}}** XP\nPlace **#{{leaderboard.rank | default:—}}** of {{leaderboard.total}}',
+        }),
+        n('t3', 'trigger.command', 0, 660, { name: 'leaderboard', description: 'Show the ten members with the most XP' }),
+        n('b2', 'data.leaderboard', 340, 640, { name: 'xp', limit: 10, format: '**{{entry.rank}}.** {{entry.mention}} — {{entry.value | commas}} XP' }),
+        n('m3', 'action.message.send', 680, 640, { target: 'reply', useEmbed: true, embedTitle: '🏆 Leaderboard', embedColor: '#f59e0b', embedDescription: '{{leaderboard.text}}' }),
+      ],
+      edges: [
+        e('t1', 'k1'), e('k1', 'x1', 'ok'), e('x1', 'l1'), e('l1', 'c1'), e('c1', 'v1', 'true'), e('v1', 'm1'),
+        e('t2', 'b1'), e('b1', 'm2'), e('t3', 'b2'), e('b2', 'm3'),
+      ],
+    }),
+  },
+  {
     id: 'youtube-upload',
     name: 'YouTube upload announcer',
     description: 'Posts a link in a channel whenever a YouTube channel uploads a video (Discord shows the video player). Paste the YouTube channel ID (starts with UC…) in the trigger and pick the channel in the last node. Videos that are already up are not announced.',

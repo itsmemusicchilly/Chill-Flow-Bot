@@ -29,11 +29,11 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **Subscriber / follower counters.** Run a flow each time a YouTube channel gains subscribers or a Twitch or TikTok account gains followers — or keep a
   channel named “💜 Followers: 4,321” up to date with a ready-made counter flow. Twitch and TikTok are connected from the dashboard (*Accounts*): the
   creator approves it on the platform itself (see [Counting subscribers and followers](#counting-subscribers-and-followers)).
-* **64 nodes**: 34 triggers (commands, buttons, messages, joins/leaves/kicks/bans/timeouts, server boosts, role and channel events,
-  reactions, voice, schedule, new feed item, webhook, YouTube subscribers (milestones and gains), Twitch live and followers, TikTok followers, manual, form submitted) and 30 actions/logic nodes (messages with buttons/menus/forms, changing the buttons of a sent message, member moderation,
-  channels and ticket transcripts, roles, variables and maths, conditions, loops, cooldowns, waits). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
-* **Remembers things**: run, per-server, per-channel and per-user variables, usable everywhere as `{{templates}}` — with maths built in
-  (see [Remembered variables](#remembered-variables) and [Doing maths](#doing-maths)).
+* **65 nodes**: 34 triggers (commands, buttons, messages, joins/leaves/kicks/bans/timeouts, server boosts, role and channel events,
+  reactions, voice, schedule, new feed item, webhook, YouTube subscribers (milestones and gains), Twitch live and followers, TikTok followers, manual, form submitted) and 31 actions/logic nodes (messages with buttons/menus/forms, changing the buttons of a sent message, member moderation,
+  channels and ticket transcripts, roles, variables, maths and leaderboards, conditions, loops, cooldowns, waits). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
+* **Remembers things**: run, per-server, per-channel and per-user variables, usable everywhere as `{{templates}}` — with maths, text and date filters built in,
+  and a **Leaderboard** block for points and levels (see [Remembered variables](#remembered-variables), [Leaderboards](#leaderboards) and [Doing maths](#doing-maths)).
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
 * Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
 
@@ -443,6 +443,7 @@ shows the newest number as soon as it may). The existing *YouTube Subscribers* t
 | `var.<name>` | run variable (or something saved by *Save … as variable*) |
 | `user.vars.<name>`, `channel.vars.<name>`, `guild.vars.<name>` | remembered per-user / per-channel / per-server variables (`channel` is where the run happened) |
 | `loop.index .item`, `error.message`, `cooldown.remaining`, `now.iso .date .time .timestamp` | misc |
+| `leaderboard.text .rank .value .count .total .top.*` | after *Leaderboard* (see [Leaderboards](#leaderboards)) |
 | `executor.*`, `reason`, `timeout.*` | moderator details for kick/ban/timeout triggers |
 | `feed.title .link .author .summary .published .image .id .name` | *New Feed Item*: the new post (`title` is blank for Mastodon and Bluesky posts) |
 | `webhook.text .body.<field> .query.<name> .method .contentType` | *Webhook Received*: what was sent |
@@ -450,8 +451,26 @@ shows the newest number as soon as it may). The existing *YouTube Subscribers* t
 | `twitch.user .login .title .game .viewers .url .thumbnail .started .id` | *Twitch Channel Live* |
 | `youtube.gained .change`, `twitch.followers .gained .change .previous .name .login .url .latest`, `tiktok.followers .gained .change .previous .name` | the count triggers (see [Counting subscribers and followers](#counting-subscribers-and-followers)) |
 
-Filters: `default:x`, `upper`, `lower`, `trim`, `length`, `json`, plus the maths filters below. Filters chain left to right.
-Substituted text is never evaluated again, so member-supplied text cannot inject templates.
+Filters: `default:x`, `upper`, `lower`, `trim`, `length`, `json`, the text, list and date filters in the next table, and the maths filters below.
+Filters chain left to right. Substituted text is never evaluated again, so member-supplied text cannot inject templates.
+
+| Filter | What it does | Example |
+| --- | --- | --- |
+| `replace:this,that` | swaps every `this` for `that` (exactly as written; leave `that` out to remove it) | `{{channel.name \| replace:-," "}}` |
+| `truncate:N` | cuts text to `N` characters and ends it with `…` (100 if you give no number) — handy for Discord's length limits | `{{option.reason \| truncate:200}}` |
+| `capitalize` | makes the first letter a capital | `{{user.name \| capitalize}}` |
+| `split` / `split:;` | turns text into a list, at commas (or at what you name) | `{{option.choices \| split \| length}}` |
+| `join` / `join:" · "` | turns a list into text | `{{member.roleIds \| join:" "}}` |
+| `first`, `last`, `at:N` | one item of a list (`at:1` is the first, `at:-1` the last) | `{{option.choices \| at:2}}` |
+| `random` | one item of a list, picked at random | `{{option.choices \| random}}` |
+| `date` / `date:R` | a date as a Discord timestamp, which every reader sees in their own time zone | `{{member.joinedAt \| date:R}}` → “3 months ago” |
+
+* A **list** is a list you stored (*Set Variable → Append to list*), a JSON list, or plain text with one item per line or comma — the same reading as the *Loop* block.
+* **Quotes** keep commas and spaces: `replace:", "," · "`. A `|` cannot be part of what you write after the colon.
+* **`date`** reads an ISO date (`{{member.joinedAt}}`, `{{now.iso}}`, `{{feed.published}}`…) or a number of seconds or milliseconds, so maths works first:
+  `Ends {{now.timestamp | add:3600 | date:R}}` shows “Ends in an hour” and counts down by itself. Styles are Discord's: `t` `T` (time), `d` `D` (date), `f` `F` (date and time — `f` is the
+  default) and `R` (relative); `date:unix` gives the plain number of seconds and `date:iso` the ISO date. Anything that is not a date is left as it was.
+* The number after `truncate:` and `at:` can be a variable (`at:loop.index`), like the maths filters.
 
 ### Remembered variables
 
@@ -468,6 +487,24 @@ Substituted text is never evaluated again, so member-supplied text cannot inject
 * **Get Variable** can read another channel's or member's value by filling the same field.
 * A channel's variables are **forgotten when the channel is deleted**. The **Remembered variables** dialog in the editor lists, edits and deletes all of them; the
   variable limits (`LIMIT_VARS_PER_GUILD`, `LIMIT_VAR_VALUE_BYTES`) count every scope together.
+
+### Leaderboards
+
+The **Leaderboard** block (*Variables*) ranks members by a **per-user variable** — points, coins, XP — and hands the result to the next nodes:
+
+| Variable | Is |
+| --- | --- |
+| `{{leaderboard.text}}` | the top places, one per line, ready for a message or an embed description |
+| `{{leaderboard.rank}}`, `{{leaderboard.value}}` | where one member stands and their value — whoever started the flow, or the member you fill in. Both are blank when they have no value |
+| `{{leaderboard.count}}`, `{{leaderboard.total}}` | how many places are listed / how many members are ranked in all |
+| `{{leaderboard.top.mention}}`, `.top.id`, `.top.name`, `.top.value` | the member in first place |
+
+* **Each line** is written once and filled in for every place with `{{entry.rank}}`, `{{entry.mention}}`, `{{entry.name}}`, `{{entry.id}}` and `{{entry.value}}`; filters work
+  (`{{entry.value | commas}}`). The default is `**1.** @mia — 1,500`.
+* Up to **25 places**, highest or lowest first. **Only numbers are ranked** (a number stored as text counts); equal values always come out in the same order.
+* `{{entry.mention}}` shows the right name even for someone who left; `{{entry.name}}` says *Unknown member* for them. Put the board in an **embed** if you do not want the people on it pinged.
+* The **Levels and leaderboard** template is a complete example: 15 XP for chatting (at most once a minute, needs the Message Content intent), a message when someone reaches a new level,
+  and `/rank` and `/leaderboard`.
 
 ### Doing maths
 
@@ -753,7 +790,7 @@ Not yet automated — please run through this once on a test server:
 
 ## Ideas not done yet
 
-Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, an outbound HTTP/webhook node, watching X/Instagram/Facebook posts directly (needs each account's own consent), instant Twitch follower alerts (Twitch can push them, but that needs a public address and a subscription to keep alive; the bot checks every few minutes instead), exact YouTube subscriber counts (needs the channel owner's Google login), autocomplete options, sub-commands, embed preview, undo/redo, flow version history,
+Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, an outbound HTTP/webhook node, watching X/Instagram/Facebook posts directly (needs each account's own consent), instant Twitch follower alerts (Twitch can push them, but that needs a public address and a subscription to keep alive; the bot checks every few minutes instead), exact YouTube subscriber counts (needs the channel owner's Google login), autocomplete options, sub-commands, embed preview, flow version history,
 sharding.
 
 ---

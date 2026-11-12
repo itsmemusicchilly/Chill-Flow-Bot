@@ -841,6 +841,23 @@ tell nodes apart; it is never sent to Discord.
 
 **Outputs:** Next, On error
 
+### 🏆 Leaderboard
+
+`data.leaderboard` — Rank members by a per-user variable — points, coins, XP. The top places are ready to post as {{leaderboard.text}}, and {{leaderboard.rank}} says where one member stands.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Per-user variable | text | required; The name you used in Set Variable or Math with “Per user”. Only numbers are ranked. |
+| How many places | number | range 1–25 |
+| Order | select | options: Highest first, Lowest first |
+| Each line | text | Written once, filled in for every place: {{entry.rank}}, {{entry.mention}}, {{entry.name}}, {{entry.id}} and {{entry.value}}. Filters work, for example {{entry.value \| commas}}. |
+| If nobody has a value yet | text |  |
+| Whose place to look up | user | Their place and value are {{leaderboard.rank}} and {{leaderboard.value}} — both blank when they have none. |
+
+**Outputs:** Next, On error
+
+**Adds variables:** `{{leaderboard.text}}`, `{{leaderboard.count}}`, `{{leaderboard.total}}`, `{{leaderboard.rank}}`, `{{leaderboard.value}}`, `{{leaderboard.top.id}}`, `{{leaderboard.top.mention}}`, `{{leaderboard.top.value}}`
+
 ### 🧮 Math
 
 `data.math` — Calculate a number from any values — variables, the member count, an option… — and use it in the next nodes as {{var.<name>}}. Tick “Also remember it” to keep it as a server, channel or per-user variable. To just change a remembered number, Set Variable is quicker.

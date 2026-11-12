@@ -7,6 +7,7 @@ import { uid } from '../../shared/util.js';
 import { FlowError } from '../engine/errors.js';
 import { SlugTakenError } from './errors.js';
 import { docKey } from './query.js';
+import { rankRows } from './rank.js';
 
 const VAR_NAME = /^[A-Za-z_][\w-]{0,31}$/;
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex');
@@ -278,6 +279,12 @@ export class DocumentDatabase {
   async listVars(guildId) {
     const rows = await this.store.find('vars', { eq: { guildId }, order: [asc('scope'), asc('scopeId'), asc('name')], limit: 1000 });
     return rows.map((row) => ({ scope: row.scope, scopeId: row.scopeId, name: row.name, value: row.value }));
+  }
+
+  /** A leaderboard: see `rankVars` in server/db.js. */
+  async rankVars(guildId, scope, name, options = {}) {
+    const rows = await this.store.find('vars', { eq: { guildId, scope, name } });
+    return rankRows(rows.map((row) => ({ id: row.scopeId, value: row.value })), options);
   }
 
   // ---- pages ----------------------------------------------------------------------------------

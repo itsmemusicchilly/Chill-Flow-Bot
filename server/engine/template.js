@@ -3,6 +3,8 @@
 const TOKEN = /\{\{\s*([^{}]+?)\s*\}\}/g;
 const BLOCKED = new Set(['__proto__', 'constructor', 'prototype']);
 const hasOwn = Object.prototype.hasOwnProperty;
+/** A lookup that only finds what the table itself holds — never `constructor`, `toString` or `__proto__`. */
+const own = (table, key) => (hasOwn.call(table, key) ? table[key] : undefined);
 
 export function getPath(obj, path) {
   const parts = String(path).replace(/\[(\d+)\]/g, '.$1').split('.').map((p) => p.trim()).filter(Boolean);
@@ -77,14 +79,100 @@ function applyMath(value, name, arg, scope) {
 }
 const MATH_FILTERS = new Set([...Object.keys(BINARY), ...Object.keys(UNARY), 'round', 'fixed', 'commas']);
 
+// ---- text and lists: {{option.reason | truncate:100}}, {{var.winners | random}}, {{member.joinedAt | date:R}} -----------------
+/** What comes after the colon, split at commas: `replace:cat,dog`. Quotes keep commas and spaces: `replace:", "," · "`. */
+function parseArgs(arg) {
+  const out = [];
+  let i = 0;
+  while (i < arg.length) {
+    while (arg[i] === ' ') i += 1;
+    const quote = arg[i] === '"' || arg[i] === "'" ? arg[i] : '';
+    const close = quote ? arg.indexOf(quote, i + 1) : -1;
+    if (close !== -1) {
+      out.push(arg.slice(i + 1, close));
+      i = arg.indexOf(',', close + 1);
+      if (i === -1) break;
+      i += 1;
+    } else {
+      const end = arg.indexOf(',', i);
+      out.push(arg.slice(i, end === -1 ? arg.length : end).trim());
+      if (end === -1) break;
+      i = end + 1;
+    }
+  }
+  return out;
+}
+
+/** A value as a list: a list stays one, text is split like the Loop block's list (a JSON array, or one item per line or comma). */
+export function toList(v) {
+  if (Array.isArray(v)) return v;
+  if (v === undefined || v === null || v === '') return [];
+  if (typeof v !== 'string') return [v];
+  const t = v.trim();
+  if (t.startsWith('[')) {
+    try { const arr = JSON.parse(t); if (Array.isArray(arr)) return arr; } catch { /* not JSON: split it as text */ }
+  }
+  return t.split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
+}
+
+/** A whole number for `truncate:N` / `at:N`: written out, or the path of a variable (`at:loop.index`). */
+const wholeArg = (arg, scope) => { const n = argument(arg, scope); return Number.isFinite(n) ? Math.trunc(n) : Number.NaN; };
+
+/** A moment as Unix seconds: a date, an ISO date (`member.joinedAt`), or a number of seconds or milliseconds. NaN when it is none of those. */
+function toSeconds(v) {
+  if (v instanceof Date) return Math.floor(v.getTime() / 1000);
+  if (typeof v === 'number' || (typeof v === 'string' && NUMBER.test(v.trim()))) {
+    const n = Number(v);
+    return Math.floor(Math.abs(n) >= 1e11 ? n / 1000 : n); // 13 digits is milliseconds
+  }
+  if (typeof v !== 'string' || !v.trim()) return Number.NaN;
+  return Math.floor(Date.parse(v.trim()) / 1000);
+}
+// Discord shows <t:seconds:style> in each reader's own time zone and language.
+const DATE_STYLES = { t: 't', T: 'T', d: 'd', D: 'D', f: 'f', F: 'F', R: 'R', relative: 'R', time: 't', short: 'f', long: 'F' };
+
+const TEXT_FILTERS = {
+  capitalize: (v) => { const s = stringify(v); return s.charAt(0).toUpperCase() + s.slice(1); },
+  replace: (v, arg) => { const [from = '', to = ''] = parseArgs(arg); return from === '' ? v : stringify(v).split(from).join(to); },
+  truncate: (v, arg, scope) => {
+    const max = arg === '' ? 100 : wholeArg(arg, scope);
+    const chars = [...stringify(v)]; // by character, so an emoji is never cut in half
+    if (!(max >= 1) || chars.length <= max) return v;
+    return `${chars.slice(0, max - 1).join('').trimEnd()}…`;
+  },
+  split: (v, arg) => {
+    if (Array.isArray(v)) return v;
+    const [sep = ','] = parseArgs(arg);
+    return stringify(v).split(sep === '' ? ',' : sep).map((x) => x.trim()).filter(Boolean);
+  },
+  join: (v, arg) => { const [sep = ', '] = arg === '' ? [] : parseArgs(arg); return toList(v).map(stringify).join(sep); },
+  first: (v) => toList(v)[0],
+  last: (v) => toList(v).at(-1),
+  at: (v, arg, scope) => { const n = wholeArg(arg, scope); return Number.isNaN(n) || n === 0 ? undefined : toList(v).at(n > 0 ? n - 1 : n); }, // 1 = the first, -1 = the last
+  random: (v) => { const items = toList(v); return items[Math.floor(Math.random() * items.length)]; },
+  date: (v, arg) => {
+    const seconds = toSeconds(v);
+    if (!Number.isFinite(seconds)) return v;
+    if (arg === 'unix') return seconds;
+    if (arg === 'iso') return new Date(seconds * 1000).toISOString();
+    return `<t:${seconds}:${own(DATE_STYLES, arg) ?? 'f'}>`;
+  },
+};
+
 function applyFilter(value, filter, scope) {
   const i = filter.indexOf(':');
   const name = (i === -1 ? filter : filter.slice(0, i)).trim();
   const arg = i === -1 ? '' : filter.slice(i + 1).trim();
   if (name === 'default') return value === undefined || value === null || value === '' ? arg : value;
   if (MATH_FILTERS.has(name)) return applyMath(value, name, arg, scope);
-  return FILTERS[name] ? FILTERS[name](value) : value;
+  const textFilter = own(TEXT_FILTERS, name);
+  if (textFilter) return textFilter(value, arg, scope);
+  const plain = own(FILTERS, name);
+  return plain ? plain(value) : value; // an unknown filter (or `__proto__`) changes nothing
 }
+
+/** Every filter name, for the editor's hints and the docs. */
+export const FILTER_NAMES = ['default', ...Object.keys(FILTERS), ...Object.keys(TEXT_FILTERS), ...MATH_FILTERS];
 
 export function renderTemplate(str, scope) {
   if (typeof str !== 'string' || !str.includes('{{')) return str;
