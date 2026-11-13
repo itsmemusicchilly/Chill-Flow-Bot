@@ -157,6 +157,17 @@ describe('the exchange (with a pretend network)', () => {
     await assert.rejects(safeFetch('https://example.com/a', { fetchImpl: script(reply(302, null)) }), /without saying where/);
   });
 
+  it('a caller limited to some websites is not led to another one by a redirect', async () => {
+    const allowHost = (host) => host === 'api.example.com' || host.endsWith('.example.org');
+    const elsewhere = script(reply(302, null, { location: 'https://evil.example/data' }), reply(200, 'leaked'));
+    await assert.rejects(safeFetch('https://api.example.com/go', { fetchImpl: elsewhere, allowHost }), (e) => e.code === 'EREDIRECT' && /redirected to evil\.example, which is not one of the websites that may be reached/.test(e.message));
+    assert.equal(elsewhere.seen.length, 1, 'the other website was never contacted');
+    const allowed = script(reply(302, null, { location: 'https://cdn.example.org/file' }), reply(302, null, { location: '/final' }), reply(200, 'ok'));
+    assert.equal((await safeFetch('https://api.example.com/go', { fetchImpl: allowed, allowHost })).text, 'ok', 'a redirect to an allowed website, or within one, is followed');
+    const anywhere = script(reply(302, null, { location: 'https://evil.example/data' }), reply(200, 'fine'));
+    assert.equal((await safeFetch('https://api.example.com/go', { fetchImpl: anywhere })).text, 'fine', 'without a list every public website may be reached, as before');
+  });
+
   it('never hands a login on to another website: a token, a cookie or a posted secret stops at the first redirect that leaves the site', async () => {
     const away = () => reply(307, null, { location: 'https://other.example/steal' });
     const sameSite = () => reply(307, null, { location: 'https://api.example.com/v2/next' });

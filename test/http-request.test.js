@@ -83,7 +83,7 @@ describe('HTTP Request: asking', () => {
   it('sends a GET through the guarded fetcher, with a size and a time limit, and reads a JSON answer', async () => {
     answer = () => ({ status: 200, text: '{"name":"Ada","stats":{"wins":3},"tags":["a","b"]}', headers: new Headers({ 'content-type': 'application/json; charset=utf-8' }) });
     assert.equal(await run({}, '{{http.status}} {{http.ok}} {{http.body.name}} {{http.body.stats.wins}} {{http.body.tags | join:+}} {{http.type}}'), '200 true Ada 3 a+b application/json');
-    assert.deepEqual(calls, [{ url: 'https://api.example.com/v1/things', method: 'GET', headers: {}, body: undefined, maxBytes: HTTP_MAX_BYTES, timeoutMs: 10_000 }]);
+    assert.deepEqual(calls, [{ url: 'https://api.example.com/v1/things', method: 'GET', headers: {}, body: undefined, maxBytes: HTTP_MAX_BYTES, timeoutMs: 10_000 }], 'no list of websites: nothing more is passed');
   });
 
   it('fills variables into the address, the headers and what it sends', async () => {
@@ -147,6 +147,15 @@ describe('HTTP Request: what it refuses', () => {
     await agent.close();
   });
 
+  it('with a list of websites, a redirect that leaves the list is refused by the real fetcher', async () => {
+    setup({ enabled: true, allowedHosts: ['api.example.com'] });
+    const hops = [{ status: 302, headers: new Headers({ location: 'https://elsewhere.example/secret' }), body: null }, { status: 200, headers: new Headers(), body: null }];
+    let asked = 0;
+    runtime.services.http.fetch = (url, options) => safeFetch(url, { ...options, fetchImpl: async () => { asked += 1; return hops.shift(); } });
+    assert.equal(await run({ url: 'https://api.example.com/redirect' }), 'failed: The site redirected to elsewhere.example, which is not one of the websites that may be reached, so it was not followed.');
+    assert.equal(asked, 1, 'the other website was never asked');
+  });
+
   it('a fetcher problem becomes the node’s error, in plain words', async () => {
     answer = () => { throw new SafeFetchError('The site took too long to answer.', 'ETIMEOUT'); };
     assert.equal(await run({}), 'failed: The site took too long to answer.');
@@ -178,6 +187,8 @@ describe('HTTP Request: what it refuses', () => {
     assert.match(await run({ url: 'https://evil.example.com/x' }), /^failed: Requests to evil.example.com are not allowed on this bot/);
     assert.match(await run({ url: 'https://notexample.org/x' }), /^failed: Requests to notexample.org are not allowed/);
     assert.equal(calls.length, 3);
+    assert.equal(typeof calls[0].allowHost, 'function', 'the fetcher is told the list too, so a redirect cannot lead off it');
+    assert.deepEqual([calls[0].allowHost('api.example.com'), calls[0].allowHost('evil.example.com')], [true, false]);
     assert.equal(hostAllowed('anything.example', []), true);
     assert.equal(hostAllowed('API.EXAMPLE.COM', ['api.example.com']), true);
     assert.equal(hostAllowed('xapi.example.com', ['api.example.com']), false);

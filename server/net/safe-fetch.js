@@ -164,11 +164,12 @@ const friendly = (err) => {
 const CREDENTIAL_HEADERS = /^(authorization|cookie|proxy-authorization|x-api-key)$/i;
 
 /**
- * GET (or POST) an https address safely.
+ * GET (or POST) an https address safely. `allowHost(hostname)` (optional) is asked before every redirect is followed: the caller checks the
+ * first address itself, and this keeps a redirect from leading somewhere it would not have been allowed to go directly.
  * @returns {Promise<{status: number, url: string, headers: Headers, body: Buffer, text: string}>} any status the site answers with (the caller decides what a 304 or 404 means)
  * @throws {SafeFetchError} for anything that is not allowed, too big, too slow or unreachable
  */
-export async function safeFetch(address, { method = 'GET', headers = {}, body, maxBytes = DEFAULTS.maxBytes, timeoutMs = DEFAULTS.timeoutMs, maxRedirects = DEFAULTS.maxRedirects, agent = defaultAgent(), fetchImpl = undiciFetch, userAgent = DEFAULTS.userAgent } = {}) {
+export async function safeFetch(address, { method = 'GET', headers = {}, body, maxBytes = DEFAULTS.maxBytes, timeoutMs = DEFAULTS.timeoutMs, maxRedirects = DEFAULTS.maxRedirects, agent = defaultAgent(), fetchImpl = undiciFetch, userAgent = DEFAULTS.userAgent, allowHost = null } = {}) {
   let url = parseSafeUrl(address);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new DOMException('The site took too long to answer.', 'TimeoutError')), timeoutMs);
@@ -186,6 +187,10 @@ export async function safeFetch(address, { method = 'GET', headers = {}, body, m
         let next;
         try { next = parseSafeUrl(new URL(where, url).href); } catch (err) {
           throw new SafeFetchError(`The address redirects somewhere that is not allowed: ${err.message}`, 'EREDIRECT');
+        }
+        // A caller that may only reach certain websites (`allowHost`) must not be led to another one by a redirect.
+        if (allowHost && !allowHost(next.hostname)) {
+          throw new SafeFetchError(`The site redirected to ${next.hostname}, which is not one of the websites that may be reached, so it was not followed.`, 'EREDIRECT');
         }
         // A request that carries a login or a secret (a token, a cookie, a form body with a client secret) is never handed on to another website.
         if (next.origin !== url.origin && (body !== undefined || Object.keys(headers).some((h) => CREDENTIAL_HEADERS.test(h)))) {

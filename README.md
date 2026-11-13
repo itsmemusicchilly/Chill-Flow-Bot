@@ -532,7 +532,7 @@ The **HTTP Request** block (*Connect*) asks a website or an API for something, o
 Later nodes get `{{http.status}}`, `{{http.ok}}`, `{{http.text}}` and — when the answer is JSON — `{{http.body.<field>}}` (`{{http.body.user.name}}` for nested ones).
 
 **It is off by default.** The bot operator switches it on with `ENABLE_HTTP_REQUEST=true`; until then the block shows a 🔒 in the palette and a flow that uses it follows **On error**.
-An operator who hosts the bot for other people can also limit it to certain websites with `HTTP_REQUEST_ALLOWED_HOSTS`.
+An operator who hosts the bot for other people can also limit it to certain websites with `HTTP_REQUEST_ALLOWED_HOSTS`; a redirect is then only followed to a website that is on the list too.
 
 * **In JSON, write values as `{{user.name | json}}`** — without quotes around them: `{"name": {{user.name | json}}}`. The filter adds the quotes and escapes what is inside, so a name with a `"` in it
   cannot break the JSON or sneak in fields of its own. JSON that is broken once the variables are filled in is not sent.

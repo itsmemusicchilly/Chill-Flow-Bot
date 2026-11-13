@@ -60,7 +60,9 @@ export const httpExecutors = {
 
     let res;
     try {
-      res = await http.fetch(url.href, { method, headers, body, maxBytes: HTTP_MAX_BYTES, timeoutMs: HTTP_TIMEOUT_MS });
+      // with a list of allowed websites, a redirect is only followed to a website that is on it too
+      const allowHost = http.allowedHosts?.length ? (host) => hostAllowed(host, http.allowedHosts) : undefined;
+      res = await http.fetch(url.href, { method, headers, body, maxBytes: HTTP_MAX_BYTES, timeoutMs: HTTP_TIMEOUT_MS, ...(allowHost ? { allowHost } : {}) });
     } catch (err) {
       if (err instanceof SafeFetchError) throw new FlowError(err.message);
       throw new FlowError(`The site could not be reached (${String(err?.message ?? err).slice(0, 80)}).`);

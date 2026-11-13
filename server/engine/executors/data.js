@@ -44,7 +44,8 @@ const MATH = {
 async function displayNames(guild, ids) {
   const names = new Map();
   const missing = ids.filter((id) => !guild.members.cache.has(id));
-  const fetched = missing.length ? await guild.members.fetch({ user: missing }).catch(() => null) : null;
+  // a few seconds at most: a board without some names is better than a command that hangs
+  const fetched = missing.length ? await guild.members.fetch({ user: missing, time: 5000 }).catch(() => null) : null;
   for (const id of ids) {
     const member = guild.members.cache.get(id) ?? fetched?.get?.(id);
     if (member) names.set(id, member.displayName ?? member.user?.username ?? '');
