@@ -3,11 +3,12 @@ import { availableVariables, CATEGORIES, NODE_TYPES, TITLE_KEY, TITLE_MAX } from
 import { useEditor } from '../context.js';
 import { FieldList } from './FieldEditor.jsx';
 import FeedPreview from './FeedPreview.jsx';
+import MessagePreview from './MessagePreview.jsx';
 import SchedulePreview from './SchedulePreview.jsx';
 import WebhookPanel from './WebhookPanel.jsx';
 
 /** Live previews under some nodes' settings (`preview` in the catalog). */
-const PREVIEWS = { schedule: SchedulePreview, feed: FeedPreview, webhook: WebhookPanel };
+const PREVIEWS = { schedule: SchedulePreview, feed: FeedPreview, webhook: WebhookPanel, message: MessagePreview };
 
 function insertAtCaret(target, text) {
   const { el, apply } = target;

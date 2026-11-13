@@ -4,7 +4,7 @@ import { ApplicationCommandOptionType, MessageFlags } from 'discord.js';
 import { commandKey, menuKey, parseChoices, subOf, suggestChoices } from '../../shared/commands.js';
 import { getOutputs, isTriggerType, NODE_TYPES } from '../../shared/catalog.js';
 import { cronMatches, scheduleOf, zonedParts } from '../../shared/cron.js';
-import { LIMITS } from '../../shared/limits.js';
+import { KEEP, LIMITS } from '../../shared/limits.js';
 import { normalizeGraph, validateFlow } from '../../shared/validate.js';
 import { integrationFlags } from '../../shared/platforms.js';
 import { feedAdapter } from '../feeds/adapter.js';
@@ -34,6 +34,10 @@ const TICK_SLACK_MS = 250; // schedules are checked just AFTER a minute begins, 
 const MAX_CATCH_UP = 3; // minutes a stalled event loop may make up; a longer gap (the bot was off) is never replayed
 const minuteOf = (ms) => Math.floor(ms / MINUTE) * MINUTE;
 const EPHEMERAL = MessageFlags.Ephemeral;
+/** Failed runs written to the database per server per minute: a flow that fails on every message must not turn into a write on every message. */
+export const SAVED_ERRORS_PER_MINUTE = 30;
+/** “Flow Failed” runs started per server per minute. */
+export const FAILURE_RUNS_PER_MINUTE = 6;
 /** Requests the HTTP Request block may send per server per minute, whatever the operator allows (it reaches other people's websites). */
 export const HTTP_REQUESTS_PER_MINUTE_CEILING = 60;
 
@@ -84,6 +88,8 @@ export class Runtime {
       adapters: [feedAdapter, youtubeAdapter, youtubeGainedAdapter, createTwitchAdapter(), twitchFollowersAdapter, tiktokFollowersAdapter],
     });
     this.deferAfterMs = DEFER_AFTER_MS;
+    this.failureWrites = new RateLimiter(SAVED_ERRORS_PER_MINUTE, MINUTE);
+    this.failureRuns = new RateLimiter(FAILURE_RUNS_PER_MINUTE, MINUTE);
   }
 
   attachClient(client) { this.client = client; }
@@ -226,7 +232,8 @@ export class Runtime {
       services: this.services,
       data: templateData,
       vars: base.vars ?? {},
-      loop: null, error: null, steps: 0, failed: false, aborted: false, abortController: new AbortController(),
+      loop: null, error: null, lastError: null, steps: 0, failed: false, aborted: false, abortController: new AbortController(),
+      fromFailure: Boolean(base.fromFailure), // a run started by “Flow Failed”: if it fails too, it does not start another one
       ack: newAck(),
       deferEphemeral: Boolean(base.deferEphemeral),
       deferTimer: null,
@@ -273,13 +280,39 @@ export class Runtime {
         this.logger.log(gid, 'info', `■ ${flow.name} was stopped.`, ctx.logMeta);
       } else {
         ctx.failed = true;
-        this.logger.log(gid, 'error', `${flow.name}: ${friendlyError(err)}`, ctx.logMeta);
+        const message = friendlyError(err);
+        ctx.lastError ??= { message, flowId: flow.id, flowName: flow.name, nodeId: '', nodeLabel: '' };
+        this.logger.log(gid, 'error', `${flow.name}: ${message}`, ctx.logMeta);
       }
     } finally {
       clearTimeout(ctx.deferTimer);
       await finalize(ctx, { failed: ctx.failed });
+      if (ctx.failed && !ctx.aborted) this.#recordFailure(flow, ctx);
       this.logger.log(gid, 'debug', `■ ${flow.name} finished in ${Date.now() - started} ms`, ctx.logMeta);
     }
+  }
+
+  /**
+   * A run failed: a step ran into an error with nothing on its On error output. It is written down so it can still be read after a restart
+   * (the live log is memory only), and every “Flow Failed” trigger of the server runs — except for a run that such a trigger started.
+   */
+  #recordFailure(flow, ctx) {
+    const gid = ctx.guild.id;
+    const e = ctx.lastError ?? { message: 'The run failed.', flowId: flow.id, flowName: flow.name, nodeId: '', nodeLabel: '' };
+    const message = String(e.message).slice(0, 500);
+    if (this.failureWrites.take(gid)) {
+      try {
+        this.db.addFlowError({ guildId: gid, flowId: e.flowId, flowName: e.flowName, nodeId: e.nodeId, nodeLabel: e.nodeLabel, message, at: Date.now() }, KEEP.savedErrors);
+      } catch (err) {
+        this.logger.log(gid, 'warn', `The failed run could not be saved: ${friendlyError(err)}`);
+      }
+    }
+    if (ctx.fromFailure || !this.hasTrigger(gid, 'trigger.flow.failed') || !this.failureRuns.take(gid)) return;
+    this.fire('trigger.flow.failed', {
+      guild: ctx.guild, channel: ctx.channel, user: ctx.user, member: ctx.member, fromFailure: true,
+      data: { failure: { flow: e.flowName, flowId: e.flowId, node: e.nodeLabel, message, time: new Date().toISOString() } },
+      info: { flowId: e.flowId }, label: `“${e.flowName}” failed`,
+    }).catch((err) => this.logger.log(gid, 'warn', `“Flow Failed” could not run: ${friendlyError(err)}`));
   }
 
   /** Fire every active trigger of `type` in `guild`; resolves when those runs finish. `info` feeds the filters. */

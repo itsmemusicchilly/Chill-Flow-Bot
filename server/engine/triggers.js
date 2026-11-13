@@ -42,6 +42,8 @@ export function matches(type, d, info = {}) {
     case 'trigger.reaction.added':
     case 'trigger.reaction.removed':
       return sameId(d.messageId, info.messageId) && matchEmoji(d.emoji, info.emoji) ? {} : false;
+    case 'trigger.flow.failed': // optionally only for one flow
+      return sameId(d.flow, info.flowId) ? {} : false;
     case 'trigger.form.submitted':
       return d.form && d.form === info.formKey ? {} : false;
     case 'trigger.member.roleAdded':

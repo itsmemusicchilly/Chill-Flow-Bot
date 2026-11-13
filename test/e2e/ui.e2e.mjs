@@ -912,6 +912,62 @@ try {
   ok(await setVar.getByPlaceholder('blank = the channel where this happened').isVisible(), 'choosing it shows an optional Channel field (blank = where the flow runs)');
   await shot('40-channel-variable');
 
+  // =================================================================================================
+  // The message preview, earlier versions of a flow, failed runs that are kept, and the Connect group
+  // =================================================================================================
+  await page.locator('.fnode', { hasText: 'Send Message' }).first().click();
+  const sendInsp = page.getByRole('complementary', { name: 'Node settings' });
+  const msgPreview = sendInsp.locator('.message-preview');
+  await msgPreview.waitFor();
+  ok((await msgPreview.locator('.mp-e-title').textContent()) === '📌 Info' && (await msgPreview.locator('.mp-e-desc').textContent()).startsWith('Edit this text'), 'Send Message shows how its embed will look, under the settings');
+  await sendInsp.getByLabel('Message text').fill('Hello **world**, {{user.mention}} <img src=x onerror=alert(1)>');
+  await page.waitForTimeout(200);
+  ok((await msgPreview.locator('.mp-content strong').textContent()) === 'world' && (await msgPreview.locator('.mp-content .mp-var').textContent()) === '{{user.mention}}', 'the preview follows the text: bold is shown, a variable stays as written');
+  ok((await msgPreview.locator('.mp-content img').count()) === 0 && (await msgPreview.locator('.mp-content').textContent()).includes('<img src=x onerror=alert(1)>'), 'markup typed into a message is shown as text in the preview, never run');
+  await shot('43-message-preview');
+
+  const stepsBefore = await page.locator('.fnode').count();
+  await page.getByRole('button', { name: /Save changes/ }).click();
+  await savedDraft();
+  await page.getByRole('button', { name: 'History' }).click();
+  const versions = page.getByRole('dialog', { name: 'Earlier versions' });
+  await versions.getByRole('button', { name: 'Restore' }).first().waitFor();
+  ok((await versions.locator('tbody tr').count()) === 1 && (await versions.locator('tbody tr td').nth(3).textContent()) === '7', 'saving a changed flow keeps what it looked like before: one earlier version, with its 7 steps');
+  await shot('44-history');
+  await versions.getByRole('button', { name: 'Restore' }).click();
+  await versions.waitFor({ state: 'detached' });
+  await page.waitForTimeout(300);
+  ok((await page.locator('.fnode').count()) === 7 && (await page.getByRole('button', { name: /Save changes/ }).isEnabled()), 'Restore puts the earlier version on the canvas as an unsaved change');
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await page.waitForTimeout(300);
+  ok((await page.locator('.fnode').count()) === stepsBefore && (await page.getByRole('button', { name: 'Saved', exact: true }).count()) === 1, 'Undo brings back what was there, and nothing is left to save');
+
+  // a run that fails is kept: the Manual trigger has no channel picked, so “post in the same channel” has nowhere to post
+  await page.locator('.switch').click();
+  await page.locator('.switch input:checked').waitFor({ state: 'attached' }); // the real checkbox is hidden behind the drawn switch
+  if ((await page.getByRole('region', { name: 'Logs' }).count()) === 0) await page.getByRole('button', { name: 'Show logs' }).click();
+  const logsPanel = page.getByRole('region', { name: 'Logs' });
+  await page.locator('.run-btn').click();
+  await logsPanel.getByRole('tab', { name: /Saved errors/ }).click();
+  await logsPanel.locator('.saved-errors .log.error').first().waitFor({ timeout: 5000 });
+  ok(/Panel that comes back.*Send Message.*current channel/.test(await logsPanel.locator('.saved-errors').textContent()), 'a run that fails is listed under Saved errors with its flow, its step and why');
+  ok(/1/.test(await logsPanel.getByRole('tab', { name: /Saved errors/ }).textContent()), 'the tab says how many there are');
+  await shot('45-saved-errors');
+  await logsPanel.getByRole('button', { name: 'Delete saved' }).click();
+  await logsPanel.getByText(/No failed runs/).waitFor();
+  ok(true, 'the saved errors can be deleted');
+  await logsPanel.getByRole('tab', { name: 'Live' }).click();
+
+  await page.getByRole('tab', { name: 'Nodes' }).click();
+  const connectGroup = page.locator('.palette section[aria-label="Connect"]');
+  ok((await connectGroup.locator('.palette-item').count()) === 2 && (await connectGroup.locator('.palette-item', { hasText: 'HTTP Request' }).locator('.pi-lock').count()) === 1, 'the Connect group has Run Flow and HTTP Request — the latter locked until the operator switches it on');
+  await connectGroup.locator('.palette-item', { hasText: 'Run Flow' }).click();
+  await page.locator('select[aria-label="Pick flow to run"]').count();
+  ok((await page.getByRole('complementary', { name: 'Node settings' }).getByText('Values to pass').count()) === 1, 'Run Flow asks which flow to run and what to pass to it');
+  for (const name of ['Right-Click Command', 'Called by Another Flow', 'Flow Failed', 'Thread Created', 'Message Edited', 'Leaderboard', 'Create Thread', 'Delete Messages (bulk)']) {
+    ok((await page.locator('.palette-item', { hasText: name }).count()) >= 1, `the palette offers “${name}”`);
+  }
+
   await page.setViewportSize({ width: 820, height: 700 });
   await page.waitForTimeout(300);
   await shot('11-narrow');

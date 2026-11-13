@@ -115,7 +115,8 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
   }, [gid]);
 
   const accountChoices = useMemo(() => Object.fromEntries((accounts ?? []).map((g) => [g.provider, g.accounts.map((a) => ({ id: a.id, name: a.name }))])), [accounts]);
-  const guildData = useMemo(() => ({ channels, roles, forms: pagesApi.forms, accounts: accountChoices, callables }), [channels, roles, pagesApi.forms, accountChoices, callables]);
+  const flowChoices = useMemo(() => (flows ?? []).map((f) => ({ id: f.id, name: f.name })), [flows]);
+  const guildData = useMemo(() => ({ channels, roles, forms: pagesApi.forms, accounts: accountChoices, callables, flows: flowChoices }), [channels, roles, pagesApi.forms, accountChoices, callables, flowChoices]);
 
   const openFlow = (id) => { setNavOpen(false); if (id !== flowId && confirmLeave()) navigate(gid, id); };
 
@@ -252,7 +253,7 @@ export default function Editor({ me, guild, flowId, pageId, navigate, onLogout }
               <button className="btn primary big" onClick={() => setDialog('new')}>Create a flow</button>
             </div>
           )}
-          {showLogs && <LogsPanel logs={logs} onClear={() => setLogs([])} onClose={() => setShowLogs(false)} />}
+          {showLogs && <LogsPanel gid={gid} logs={logs} onClear={() => setLogs([])} onClose={() => setShowLogs(false)} onOpenFlow={(id) => { if (flows.some((f) => f.id === id)) openFlow(id); else toast('That flow was deleted.', 'info'); }} />}
         </div>
       </div>
 

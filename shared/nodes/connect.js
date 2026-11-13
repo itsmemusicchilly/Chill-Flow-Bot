@@ -32,6 +32,19 @@ def('logic.call', {
   summary: (d) => d.name || '?',
 });
 
+// ---- when a run fails -----------------------------------------------------------------------------
+trigger('trigger.flow.failed', {
+  label: 'Flow Failed', icon: '🚨',
+  description: 'Runs when a run of one of this server’s flows fails: a step ran into an error and nothing was connected to its On error output. Use it to tell your staff. {{failure.*}} says which flow and step, and why; {{user.*}} and {{channel.*}} are who and where it happened, when there was someone. A failure in a flow that this trigger started does not run it again.',
+  fields: [idField('flow', 'Only for this flow (optional)', 'flow', { placeholder: 'blank = every flow' })],
+  provides: () => [
+    ...GUILD, ...USER, ...CHANNEL,
+    ['failure.flow', 'Name of the flow that failed'], ['failure.message', 'What went wrong'], ['failure.node', 'The step it failed on (blank if unknown)'],
+    ['failure.flowId', 'ID of the flow that failed'], ['failure.time', 'When it failed (ISO date)'],
+  ],
+  summary: (d) => (d.flow ? 'one flow' : 'any flow'),
+});
+
 // ---- asking a website ---------------------------------------------------------------------------
 export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 export const HTTP_MAX_HEADERS = 20;

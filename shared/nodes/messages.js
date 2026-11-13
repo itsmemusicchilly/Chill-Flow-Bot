@@ -63,6 +63,7 @@ def('action.message.send', {
     bool('allowEveryone', 'Allow role, @everyone and @here pings', { help: 'Off by default so member-supplied text can never mass-ping. Individual users can always be mentioned.' }),
     text('outputVar', 'Save message ID as variable', { placeholder: 'msg', pattern: 'var' }),
   ],
+  preview: 'message', previewAfter: 'menuOptions', // the editor shows how the message will look, right under the parts that make it up
   outputs: (d) => [
     OUT,
     ...(d.buttons || []).filter((b) => b.style !== 'Link' && !buttonKey(b)).map((b) => ({ id: `btn_${b.id}`, label: b.label || 'Button', kind: 'button' })),
@@ -117,6 +118,7 @@ def('action.message.edit', {
     }),
     embedsList({ showIf: when('embedsMode', 'replace') }),
   ],
+  preview: 'message', previewAfter: 'embeds',
   outputs: ACTION_OUTS,
   summary: (d) => {
     const text = { replace: 'replace text', remove: 'remove text' }[d.contentMode];

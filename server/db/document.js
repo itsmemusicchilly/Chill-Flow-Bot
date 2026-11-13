@@ -2,7 +2,7 @@
 // MongoDB, Firestore and Cloudflare D1 each supply a store with get/put/delete/find.
 // One bot process talks to the store (a second copy would also fight over the Discord token).
 import crypto from 'node:crypto';
-import { isCapped, LIMITS } from '../../shared/limits.js';
+import { isCapped, KEEP, LIMITS } from '../../shared/limits.js';
 import { uid } from '../../shared/util.js';
 import { FlowError } from '../engine/errors.js';
 import { SlugTakenError } from './errors.js';
@@ -62,6 +62,55 @@ export class DocumentDatabase {
   }
 
   async deleteFlow(guildId, id) { return this.store.delete('flows', id, { guildId }); }
+
+  // ---- older versions of a flow (see server/db.js) ----------------------------------------------
+  async addFlowVersion({ guildId, flowId, name, graph, savedAt = Date.now(), savedBy = null }, keep = KEEP.flowVersions) {
+    const id = uid(10);
+    // `order` breaks a tie between two versions saved in the same millisecond, the way SQLite's row order does
+    const [newest] = await this.store.find('flow_versions', { eq: { guildId, flowId }, order: [desc('order')], limit: 1 });
+    await this.store.put('flow_versions', id, { id, guildId, flowId, name, graph, nodes: graph?.nodes?.length ?? 0, savedAt, savedBy, order: (newest?.order ?? 0) + 1 });
+    const rows = await this.store.find('flow_versions', { eq: { guildId, flowId }, order: [desc('savedAt'), desc('order')] });
+    for (const row of rows.slice(keep)) await this.store.delete('flow_versions', row.id, { guildId });
+    return id;
+  }
+
+  async listFlowVersions(guildId, flowId) {
+    const rows = await this.store.find('flow_versions', { eq: { guildId, flowId }, order: [desc('savedAt'), desc('order')] });
+    return rows.map((row) => ({ id: row.id, name: row.name, nodes: row.nodes, savedAt: row.savedAt, savedBy: row.savedBy ?? null }));
+  }
+
+  async getFlowVersion(guildId, flowId, id) {
+    const row = await this.store.get('flow_versions', String(id), { guildId });
+    if (!row || row.flowId !== flowId) return null;
+    return { id: row.id, name: row.name, graph: row.graph, nodes: row.nodes, savedAt: row.savedAt, savedBy: row.savedBy ?? null };
+  }
+
+  async deleteFlowVersions(guildId, flowId) {
+    const rows = await this.store.find('flow_versions', { eq: { guildId, flowId } });
+    for (const row of rows) await this.store.delete('flow_versions', row.id, { guildId });
+    return rows.length;
+  }
+
+  // ---- runs that failed (see server/db.js) ------------------------------------------------------
+  async addFlowError({ guildId, flowId, flowName, nodeId = '', nodeLabel = '', message, at = Date.now() }, keep = KEEP.savedErrors) {
+    const id = uid(10);
+    const [newest] = await this.store.find('flow_errors', { eq: { guildId }, order: [desc('order')], limit: 1 });
+    await this.store.put('flow_errors', id, { id, guildId, flowId, flowName, nodeId, nodeLabel, message, at, order: (newest?.order ?? 0) + 1 });
+    const rows = await this.store.find('flow_errors', { eq: { guildId }, order: [desc('at'), desc('order')] });
+    for (const row of rows.slice(keep)) await this.store.delete('flow_errors', row.id, { guildId });
+    return id;
+  }
+
+  async listFlowErrors(guildId, limit = KEEP.savedErrors) {
+    const rows = await this.store.find('flow_errors', { eq: { guildId }, order: [desc('at'), desc('order')], limit: Math.max(1, limit) });
+    return rows.map((row) => ({ id: row.id, flowId: row.flowId, flowName: row.flowName, nodeId: row.nodeId, nodeLabel: row.nodeLabel, message: row.message, at: row.at }));
+  }
+
+  async clearFlowErrors(guildId) {
+    const rows = await this.store.find('flow_errors', { eq: { guildId } });
+    for (const row of rows) await this.store.delete('flow_errors', row.id, { guildId });
+    return rows.length;
+  }
 
   // ---- webhook addresses ----------------------------------------------------------------------
   async webhookFor(guildId, flowId, nodeId) {

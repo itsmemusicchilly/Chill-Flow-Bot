@@ -29,18 +29,20 @@ channel, remember a variable…), press **Save** — it is live. No code.
 * **Subscriber / follower counters.** Run a flow each time a YouTube channel gains subscribers or a Twitch or TikTok account gains followers — or keep a
   channel named “💜 Followers: 4,321” up to date with a ready-made counter flow. Twitch and TikTok are connected from the dashboard (*Accounts*): the
   creator approves it on the platform itself (see [Counting subscribers and followers](#counting-subscribers-and-followers)).
-* **76 nodes**: 38 triggers (slash commands with sub-commands and suggestions, right-click commands, buttons, messages sent, edited and deleted, joins/leaves/kicks/bans/timeouts, server boosts, role, channel and thread events,
-  reactions, voice, schedule, new feed item, webhook, YouTube subscribers (milestones and gains), Twitch live and followers, TikTok followers, manual, form submitted, called by another flow) and 38 actions/logic nodes (messages with buttons/menus/forms, changing the buttons of a sent message, pinning and bulk-deleting messages, member moderation and voice,
+* **77 nodes**: 39 triggers (slash commands with sub-commands and suggestions, right-click commands, buttons, messages sent, edited and deleted, joins/leaves/kicks/bans/timeouts, server boosts, role, channel and thread events,
+  reactions, voice, schedule, new feed item, webhook, YouTube subscribers (milestones and gains), Twitch live and followers, TikTok followers, manual, form submitted, called by another flow, flow failed) and 38 actions/logic nodes (messages with buttons/menus/forms, changing the buttons of a sent message, pinning and bulk-deleting messages, member moderation and voice,
   channels, threads, forum posts and ticket transcripts, roles, variables, maths and leaderboards, conditions, loops, cooldowns, waits, running another flow, and — if the operator allows it — HTTP requests). Full lists: [docs/NODES.md](docs/NODES.md) · [docs/BLOCKS.md](docs/BLOCKS.md).
 * **Remembers things**: run, per-server, per-channel and per-user variables, usable everywhere as `{{templates}}` — with maths, text and date filters built in,
   and a **Leaderboard** block for points and levels (see [Remembered variables](#remembered-variables), [Leaderboards](#leaderboards) and [Doing maths](#doing-maths)).
 * **Shared steps.** Put steps several flows need behind a **Called by Another Flow** trigger and run them from anywhere with **Run Flow** (see [Running one flow from another](#running-one-flow-from-another)).
 * **Talk to other services** with the **HTTP Request** block — switched **off** until the bot operator turns it on (see [HTTP requests](#http-requests)).
 * **No limits by default** — any number of flows, nodes, variables, loop iterations and runs (see [Limits](#limits)).
-* Live per-server **logs** with the executing node flashing on the canvas, import/export as JSON, starter templates.
+* Live per-server **logs** with the executing node flashing on the canvas, **failed runs kept across restarts** and a *Flow Failed* trigger to alert your staff
+  (see [When a flow fails](#when-a-flow-fails)), a **preview** of every message next to its settings, undo/redo and **earlier versions** of each flow to go back to
+  (see [Earlier versions](#earlier-versions)), import/export as JSON, 20 starter templates.
 
-> **Status:** the engine, API, security rules and editor are covered by automated tests (866 unit/integration tests plus a
-> 201-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
+> **Status:** the engine, API, security rules and editor are covered by automated tests (about 1,300 unit/integration tests plus a
+> 245-check browser run against a fake Discord). It has **not** yet been run against the real Discord gateway — see the
 > [smoke-test checklist](#smoke-test-against-real-discord) before you rely on it. The alert triggers (feeds, YouTube, Twitch, webhooks) were tested against a pretend network and fake accounts,
 > not the real platforms; the same checklist covers them.
 
@@ -134,7 +136,7 @@ login/API/public-site rate limits that protect the site itself (10 form submissi
 per IP; a form answer is at most 10 000 characters and a public request 256 KB; an uploaded picture is at most 32 MB and 64 megapixels
 and 30 uploads per minute per person; a webhook call is at most 256 KB and one address takes at most 600 calls a minute; a feed answer is
 read for at most 10 seconds and 1 MB; at most 5 new posts are announced per look; the HTTP Request block sends at most 60 requests a minute per server, waits at most 10 seconds
-and reads at most 512 KB; a run goes at most 20 flows deep through *Run Flow*).
+and reads at most 512 KB; a run goes at most 20 flows deep through *Run Flow*; the newest 30 earlier versions are kept per flow and the newest 100 failed runs per server).
 
 **How it stays safe without a step cap:** a run that loops forever uses constant memory and yields to the event loop, so the
 bot keeps answering everyone else (measured: 650k steps in 4 s, worst stall 7 ms). **To stop a runaway flow, switch it Off
@@ -214,6 +216,34 @@ in the node and fill **Button ID** (for example `open_ticket`), then add a **But
   says which).
 * Panels are posted by a **Manual** trigger (press ▶ Run once). Start from the **Ticket panel** or **Button role panel**
   template. In the ticket template a cooldown stops double-clicks from opening two tickets.
+
+### Earlier versions
+
+Every time you **save a changed flow**, what it looked like before is kept. Press **History** (next to Undo / Redo) to see the earlier versions — when each was saved, by whom, and how many steps it had —
+and **Restore** one.
+
+* Restoring only puts that version **on the canvas, as an unsaved change**. Look at it, then press **Save changes** to make it live — or **Undo** to go straight back to what you had. Nothing changes for
+  your server until you save.
+* Saving a restored version keeps the one it replaces, so going back is never a one-way street.
+* The newest **30** versions of each flow are kept. Switching a flow on or off, or saving without changing anything, does not add one. Deleting a flow deletes its versions; a duplicate starts without any.
+* Undo / Redo (Ctrl+Z / Ctrl+Shift+Z) is for the changes since you opened the flow; History is for what was saved, and survives closing the browser.
+
+### Message preview
+
+*Send Message* and *Edit Message* show a **preview** under the parts that make up the message: the text, every embed (author, title, description, fields, pictures, footer, colour), the buttons and the
+select menu, drawn the way Discord lays them out. Bold, italic, underline, strike-through, `code` and `[links](https://…)` are shown; `{{variables}}` stay as written, because only the run knows their
+values. Pictures you uploaded and https links are shown; a picture given as a variable is a labelled box. In *Edit Message* the preview shows only what you replace.
+
+### When a flow fails
+
+A run **fails** when a step runs into an error and nothing is connected to its **On error** output (an error your flow deals with itself is not a failure, and neither is a run you stop by switching the flow off).
+
+* **Saved errors.** The Logs panel has two tabs. *Live* is what is happening now and is gone when the bot restarts. **Saved errors** are the failed runs: the time, the flow (click it to open the flow),
+  the step and the reason. They are kept in the database — the newest 100 per server — so you can still see on Monday what broke on Saturday night. **Delete saved** clears them.
+* **Tell your staff.** The **Flow Failed** trigger runs a flow whenever a run of this server fails (or only for one flow you pick). It gets `{{failure.flow}}`, `{{failure.node}}`, `{{failure.message}}`,
+  `{{failure.time}}`, and `{{user.*}}` / `{{channel.*}}` for who started the failed run and where, when there was someone. The **Error alerts** template posts all of that in a channel you pick.
+* A failure inside a flow that *Flow Failed* started does not start it again, and it starts at most 6 times a minute per server, so one broken flow cannot flood a channel.
+* When *Run Flow* fails because a step in the called flow did, the saved error names that step and that flow.
 
 ### Embeds, and editing a message that was already sent
 
@@ -535,6 +565,7 @@ An operator who hosts the bot for other people can also limit it to certain webs
 | `target.id .name .displayName .mention .avatar .isBot` | *Right-Click Command*: the member it was used on (for a message: its author) |
 | `arg.<name>` | in the steps behind *Called by Another Flow*: the values the *Run Flow* block passed |
 | `http.status .ok .text .body.<field> .type` | after *HTTP Request* |
+| `failure.flow .node .message .time .flowId` | *Flow Failed*: the run that failed |
 | `thread.id .mention .name`, `purge.count`, `message.before` | after *Create Thread*, after *Delete Messages (bulk)*, and in a *Message Edited* flow |
 | `executor.*`, `reason`, `timeout.*` | moderator details for kick/ban/timeout triggers |
 | `feed.title .link .author .summary .published .image .id .name` | *New Feed Item*: the new post (`title` is blank for Mastodon and Bluesky posts) |
@@ -732,7 +763,7 @@ This is a multi-tenant service: many servers share one bot process, so isolation
   and load images only from this site or over `https`).
 * **Execution isolation**: executors only resolve channels, roles and members through the flow's own server and re-check
   ownership, so pasting a foreign id does nothing. DMs go only to members of that server. Variables are per server
-  (server, channel or user *within* a server; there is deliberately no global scope). Logs are per server and never persisted.
+  (server, channel or user *within* a server; there is deliberately no global scope). The live log is per server and memory only; of a failed run only the flow, the step and the reason are kept (the newest 100 per server), and only that server's admins can read or delete them.
 * **Public pages** (the only unauthenticated surface): rendered from structured data with everything escaped and URLs validated
   (`javascript:`/`data:`/credential-carrying links refused), served with a no-script CSP, `X-Frame-Options: DENY` and
   `Referrer-Policy: same-origin`; unpublished, unknown and other-server pages are indistinguishable 404s; “check, then insert” for
@@ -788,7 +819,7 @@ Full walkthroughs per platform (systemd, Docker, Caddy, panels…): [docs/SETUP.
 ## Development
 
 ```bash
-npm test          # ~1,000 unit + API + event + OAuth + backup + ... tests (fake Discord objects, in-memory SQLite, a fake clock, a pretend network and pretend Twitch / TikTok / YouTube)
+npm test          # ~1,300 unit + API + event + OAuth + backup + ... tests (fake Discord objects, in-memory SQLite, a fake clock, a pretend network and pretend Twitch / TikTok / YouTube)
 npm run lint      # real mistakes only (unused or undefined names, duplicate keys…), not style
 npm run build     # production web bundle → dist/
 npm run e2e       # browser check against the demo server (CHROMIUM_PATH=/path/to/chrome if needed)
@@ -798,7 +829,7 @@ npm run check-storage   # try the MongoDB / Firebase / Cloudflare D1 database fr
 ```
 
 ```
-shared/   catalog.js (the registry of every node; the definitions live in nodes/: triggers, messages, members, channels, roles, variables, logic) · blocks.js (page blocks) · forms.js · render-page.js · page-meta.js (link previews) · validate.js · templates — used by the editor AND server
+shared/   catalog.js (the registry of every node; the definitions live in nodes/: triggers, messages, members, channels, roles, variables, logic, connect) · commands.js (sub-commands, choice lists) · blocks.js (page blocks) · forms.js · render-page.js · page-meta.js (link previews) · validate.js · templates — used by the editor AND server
 server/   app/api/auth/public (the /s pages) · hooks (the /hooks webhook addresses) · uploads + images (the /i pictures) · db (node:sqlite, or MongoDB / Firebase / Cloudflare D1) · engine/ (runner, templates, executors, responder, watchers) · net/ (the guarded fetcher) · feeds/ (feed parser, YouTube, Twitch, TikTok, the shared count logic) · accounts (connected Twitch / TikTok accounts, sealed tokens) + connect (the approval round trip) · bot/ (events, commands)
 web/      React + @xyflow/react editor
 test/     node:test suites · e2e/ (Playwright) · helpers/fakes.js
@@ -874,6 +905,11 @@ Not yet automated — please run through this once on a test server:
       **Typed, with suggestions** suggests while you type, including entries of the server variable it names (add one with a flow and type again).
 - [ ] Right-click commands: one on a member and one on a message appear under Apps (desktop right-click, phone long-press), run with the right `{{target.*}}` / `{{message.*}}`, and a *Pin Message* with a blank ID
       pins the right-clicked message.
+- [ ] History: change and save a flow twice → **History** lists two earlier versions; **Restore** shows the older one on the canvas as unsaved, **Undo** brings the current one back, and saving the restored
+      one makes it live. Restart the bot → the versions are still there.
+- [ ] Failed runs: break a flow on purpose (a *Give Role* with a deleted role) and run it → it appears under **Logs → Saved errors** and is still there after a restart; the *Error alerts* template posts
+      it in the channel you picked, once, even though the alert flow itself could fail.
+- [ ] Message preview: the preview under *Send Message* matches what Discord shows for the same message (two embeds, an author icon, fields, buttons).
 - [ ] Run Flow: a command flow runs a *Called by Another Flow* trigger in another flow with a value passed; the reply uses a `{{var.…}}` the called steps stored. Switch the called flow off → the block follows On error.
 - [ ] HTTP Request (set `ENABLE_HTTP_REQUEST=true` first, needs the real internet): `GET https://api.github.com/zen` answers with text; a JSON API fills `{{http.body.…}}`; `https://localhost/` and an `http://` address
       are refused; with the variable unset the block shows 🔒 and a flow using it follows On error.
@@ -899,7 +935,7 @@ Not yet automated — please run through this once on a test server:
 
 ## Ideas not done yet
 
-Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, watching X/Instagram/Facebook posts directly (needs each account's own consent), instant Twitch follower alerts (Twitch can push them, but that needs a public address and a subscription to keep alive; the bot checks every few minutes instead), exact YouTube subscriber counts (needs the channel owner's Google login), sub-command groups, embed preview, flow version history,
+Page columns/nesting, picture cropping and alt-text suggestions, custom domains, page analytics, email/webhook notifications for forms, watching X/Instagram/Facebook posts directly (needs each account's own consent), instant Twitch follower alerts (Twitch can push them, but that needs a public address and a subscription to keep alive; the bot checks every few minutes instead), exact YouTube subscriber counts (needs the channel owner's Google login), sub-command groups, a side-by-side comparison of two versions of a flow,
 sharding.
 
 ---

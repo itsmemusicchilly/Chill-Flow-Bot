@@ -476,6 +476,16 @@ tell nodes apart; it is never sent to Discord.
 
 **Adds variables:** `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{member.nickname}}`, `{{member.joinedAt}}`, `{{member.roleIds}}`, `{{member.permissions}}`, `{{member.boostingSince}}`, `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{arg.<name>}}`
 
+### 🚨 Flow Failed
+
+`trigger.flow.failed` — Runs when a run of one of this server’s flows fails: a step ran into an error and nothing was connected to its On error output. Use it to tell your staff. {{failure.*}} says which flow and step, and why; {{user.*}} and {{channel.*}} are who and where it happened, when there was someone. A failure in a flow that this trigger started does not run it again.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| Only for this flow (optional) | flow |  |
+
+**Adds variables:** `{{guild.id}}`, `{{guild.name}}`, `{{guild.icon}}`, `{{guild.memberCount}}`, `{{guild.boostCount}}`, `{{guild.boostTier}}`, `{{user.id}}`, `{{user.name}}`, `{{user.displayName}}`, `{{user.mention}}`, `{{user.tag}}`, `{{user.avatar}}`, `{{user.isBot}}`, `{{channel.id}}`, `{{channel.name}}`, `{{channel.mention}}`, `{{channel.type}}`, `{{channel.parentId}}`, `{{failure.flow}}`, `{{failure.message}}`, `{{failure.node}}`, `{{failure.flowId}}`, `{{failure.time}}`
+
 ## Messages
 
 ### 💬 Send Message

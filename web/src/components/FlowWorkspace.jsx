@@ -15,6 +15,7 @@ import { api } from '../api.js';
 import { EditorContext, useToast } from '../context.js';
 import FlowNode from './FlowNode.jsx';
 import Inspector from './Inspector.jsx';
+import VersionsDialog from './VersionsDialog.jsx';
 
 const nodeTypes = Object.fromEntries(Object.keys(NODE_TYPES).map((t) => [t, FlowNode]));
 
@@ -58,6 +59,7 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [steps, setSteps] = useState({ undo: 0, redo: 0 });
+  const [showVersions, setShowVersions] = useState(false);
   const graphRef = useRef(graph);
   const nameRef = useRef(name);
   const historyRef = useRef({ past: [], future: [] });
@@ -142,6 +144,17 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
     historyRef.current = step.history;
     if (step.changed) showSnap(step.current);
     syncSteps();
+  };
+  /** An earlier version, put on the canvas as an unsaved change: one Undo step back to what was there, and live only once it is saved. */
+  const restoreVersion = (version) => {
+    checkpoint();
+    showSnap({
+      name: version.name,
+      nodes: version.graph.nodes.map((n) => ({ id: n.id, type: n.type, position: n.position, data: upgradeNodeData(n.type, n.data) })),
+      edges: version.graph.edges.map(({ id, source, sourceHandle, target }) => ({ id, source, sourceHandle: sourceHandle || 'out', target })),
+    });
+    setShowVersions(false);
+    toast('That version is on the canvas. Press “Save changes” to make it live, or Undo to go back.', 'info');
   };
   const edit = useRef({});
   edit.current = { checkpoint, undo, redo, commitDrag, commitName };
@@ -354,6 +367,7 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
             <span className="spacer" />
             <button className="btn ghost small" disabled={!steps.undo} onClick={undo} title="Undo (Ctrl+Z)">Undo</button>
             <button className="btn ghost small" disabled={!steps.redo} onClick={redo} title="Redo (Ctrl+Shift+Z)">Redo</button>
+            <button className="btn ghost small" onClick={() => setShowVersions(true)} title="Earlier versions of this flow">History</button>
             <button className="btn ghost small" onClick={exportFlow}>Export</button>
             <button className="btn primary" disabled={saving || !dirty} onClick={save} title="Ctrl+S">
               {saving ? 'Saving…' : dirty ? 'Save changes' : 'Saved'}
@@ -380,6 +394,7 @@ export default function FlowWorkspace({ gid, flow, meta, accounts, guildData, fl
             )}
           </div>
         </div>
+        {showVersions && <VersionsDialog gid={gid} flowId={flow.id} onRestore={restoreVersion} onClose={() => setShowVersions(false)} />}
         {selected && (
           <Inspector
             node={selected} nodes={graph.nodes} edges={graph.edges} issues={issuesByNode[selected.id] || []}

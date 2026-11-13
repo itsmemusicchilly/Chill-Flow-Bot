@@ -57,3 +57,9 @@ export function limitsToJSON() {
 }
 
 export const isCapped = (v) => Number.isFinite(v);
+
+/**
+ * How much history is kept — fixed, because it only ever grows: the older versions of each flow (one is added every time a changed flow
+ * is saved) and the failed runs of each server.
+ */
+export const KEEP = { flowVersions: 30, savedErrors: 100 };

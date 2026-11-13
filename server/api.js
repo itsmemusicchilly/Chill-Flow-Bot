@@ -1,5 +1,5 @@
 import express from 'express';
-import { isCapped, LIMITS, limitsToJSON } from '../shared/limits.js';
+import { isCapped, KEEP, LIMITS, limitsToJSON } from '../shared/limits.js';
 import { BLOCK_ID_RE, formsOf, hasPageStructureErrors, hasUnpublishedChanges, normalizePage, validatePage } from '../shared/blocks.js';
 import { PAGE_TEMPLATES } from '../shared/page-templates.js';
 import { TEMPLATES } from '../shared/templates.js';
@@ -136,6 +136,9 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
     if ('name' in req.body) patch.name = checkedName(req.body.name);
     if ('enabled' in req.body) patch.enabled = Boolean(req.body.enabled);
     if ('graph' in req.body) patch.graph = checkedGraph(req.body.graph, req.params.gid);
+    // What the flow looked like until now is kept, so a save can be taken back later. Switching it on or off is not a new version.
+    const changed = ('name' in patch && patch.name !== cur.name) || ('graph' in patch && JSON.stringify(patch.graph) !== JSON.stringify(cur.graph));
+    if (changed) db.addFlowVersion({ guildId: req.params.gid, flowId: cur.id, name: cur.name, graph: cur.graph, savedAt: cur.updatedAt, savedBy: cur.updatedBy }, KEEP.flowVersions);
     const flow = db.updateFlow(req.params.gid, cur.id, patch, actor(req));
     if (patch.graph) db.pruneWebhooks(req.params.gid, cur.id, new Set(flow.graph.nodes.filter((n) => n.type === 'trigger.webhook').map((n) => n.id))); // a removed trigger's address stops working
     res.json({ flow: full(flow), sync: await apply(req.params.gid) });
@@ -145,6 +148,7 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
     const cur = getFlow(req);
     db.deleteFlow(req.params.gid, cur.id);
     db.deleteWebhooksForFlow(req.params.gid, cur.id);
+    db.deleteFlowVersions(req.params.gid, cur.id);
     res.json({ ok: true, sync: await apply(req.params.gid) });
   });
 
@@ -154,6 +158,20 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
     if (flowsFull(gid)) throw new HttpError(409, `A server can have at most ${LIMITS.flowsPerGuild} flows.`);
     const copy = db.createFlow({ guildId: gid, name: `${cur.name} (copy)`.slice(0, 60), graph: cur.graph, enabled: false, updatedBy: actor(req) });
     res.status(201).json({ flow: full(copy) });
+  });
+
+  // ---- older versions: what the flow looked like before each save that changed it -------------
+  guildRouter.get('/flows/:fid/versions', (req, res) => {
+    const cur = getFlow(req);
+    res.json({ versions: db.listFlowVersions(req.params.gid, cur.id), keep: KEEP.flowVersions });
+  });
+
+  /** One older version with its graph. The editor shows it as an unsaved change: nothing is live until the person saves. */
+  guildRouter.get('/flows/:fid/versions/:vid', (req, res) => {
+    const cur = getFlow(req);
+    const v = db.getFlowVersion(req.params.gid, cur.id, String(req.params.vid)); // by server AND flow: another flow's version id is a 404
+    if (!v) throw new HttpError(404, 'That version is not kept any more.');
+    res.json({ version: { id: v.id, name: v.name, savedAt: v.savedAt, savedBy: v.savedBy, graph: normalizeGraph(v.graph) } });
   });
 
   guildRouter.post('/flows/:fid/run', async (req, res) => {
@@ -356,6 +374,10 @@ export function createApi({ config, db, runtime, bot, sync, logger, auth, upload
     }
     res.json({ ok: true, accounts: accounts.list(gid) });
   });
+
+  // ---- failed runs, kept across restarts (the live log below is memory only) -----------------
+  guildRouter.get('/errors', (req, res) => res.json({ errors: db.listFlowErrors(req.params.gid, KEEP.savedErrors), keep: KEEP.savedErrors }));
+  guildRouter.delete('/errors', (req, res) => res.json({ ok: true, removed: db.clearFlowErrors(req.params.gid) }));
 
   // ---- logs ---------------------------------------------------------------------------------
   guildRouter.get('/logs', (req, res) => res.json(logger.recent(req.params.gid, 200)));

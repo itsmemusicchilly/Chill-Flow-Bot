@@ -330,6 +330,21 @@ export const TEMPLATES = [
     }),
   },
   {
+    id: 'error-alerts',
+    name: 'Error alerts',
+    description: 'Tells your staff when a run of any flow fails: which flow, which step, and why. Pick the channel in the Send Message node.',
+    build: () => ({
+      nodes: [
+        n('t1', 'trigger.flow.failed', 0, 60),
+        n('m1', 'action.message.send', 340, 40, {
+          target: 'channel', useEmbed: true, embedTitle: '🚨 A flow failed', embedColor: '#ed4245', embedTimestamp: true,
+          embedDescription: '**{{failure.flow}}** ran into a problem.\n\n**Step:** {{failure.node | default:unknown}}\n**Why:** {{failure.message | truncate:1500}}\n**Started by:** {{user.mention | default:nobody (an event or a schedule)}}',
+        }),
+      ],
+      edges: [e('t1', 'm1')],
+    }),
+  },
+  {
     id: 'mod-log',
     name: 'Ban log',
     description: 'Posts an embed in a log channel whenever someone is banned.',

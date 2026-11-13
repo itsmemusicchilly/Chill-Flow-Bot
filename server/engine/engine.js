@@ -1,6 +1,6 @@
 // Walks a flow graph. Each node is rendered (templates), executed, and then its chosen output handle(s)
 // are followed. A failing node follows its "error" output if connected, otherwise ends that branch.
-import { NODE_TYPES } from '../../shared/catalog.js';
+import { NODE_TYPES, nodeTitle } from '../../shared/catalog.js';
 import { isCapped, LIMITS } from '../../shared/limits.js';
 import { FlowAbort, friendlyError } from './errors.js';
 import { executors } from './executors/index.js';
@@ -149,9 +149,16 @@ async function execNode(flow, ctx, nodeId) {
     ctx.services.logger.log(gid, 'error', `${def.label}: ${message}`, ctx.logMeta);
     if (out.has(`${nodeId}|error`)) {
       ctx.error = { message, node: node.id };
+      ctx.lastError = null; // dealt with by the flow itself
       return ['error'];
     }
     ctx.failed = true;
+    // What the run failed on, for the saved errors and the Flow Failed trigger. When Run Flow fails because a step inside the called flow did,
+    // that step is the one worth naming.
+    if (!(node.type === 'logic.call' && ctx.lastError)) {
+      const title = nodeTitle(node.data);
+      ctx.lastError = { message, flowId: flow.id, flowName: flow.name, nodeId: node.id, nodeLabel: title ? `${title} (${def.label})` : def.label };
+    }
     return [];
   }
 }

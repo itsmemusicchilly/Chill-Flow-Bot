@@ -26,7 +26,8 @@ function IdPicker({ field, value, onChange, focusRef }) {
   else if (field.kind === 'category') { options = channels.filter((c) => c.type === 'GuildCategory'); }
   else if (field.kind === 'role') { options = [{ id: '@everyone', name: 'everyone' }, ...roles]; prefix = '@'; }
   else if (field.kind === 'form') { options = (guildData.forms || []).map((f) => ({ id: f.key, name: f.label })); }
-  else if (field.kind === 'callable') { options = guildData.callables || []; } // the “Called by Another Flow” triggers of this server
+  else if (field.kind === 'callable') { options = guildData.callables || []; }
+  else if (field.kind === 'flow') { options = guildData.flows || []; } // this server's flows (the Flow Failed trigger can watch one) // the “Called by Another Flow” triggers of this server
   else if (field.kind.endsWith('-account')) { options = guildData.accounts?.[field.kind.replace('-account', '')] ?? []; } // the Twitch / TikTok accounts connected to this server
   const match = options.find((o) => o.id === value);
   return (

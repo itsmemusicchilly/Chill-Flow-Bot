@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { isCapped, LIMITS } from '../shared/limits.js';
+import { isCapped, KEEP, LIMITS } from '../shared/limits.js';
 import { uid } from '../shared/util.js';
 import { FlowError } from './engine/errors.js';
 import { rankRows } from './db/rank.js';
@@ -66,6 +66,16 @@ CREATE TABLE IF NOT EXISTS linked_accounts (
 CREATE TABLE IF NOT EXISTS connect_pending (
   state_hash TEXT PRIMARY KEY, guild_id TEXT NOT NULL, user_id TEXT NOT NULL, provider TEXT NOT NULL, expires_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS flow_versions (
+  id TEXT PRIMARY KEY, guild_id TEXT NOT NULL, flow_id TEXT NOT NULL, name TEXT NOT NULL, graph TEXT NOT NULL, nodes INTEGER NOT NULL,
+  saved_at INTEGER NOT NULL, saved_by TEXT
+);
+CREATE INDEX IF NOT EXISTS flow_versions_flow ON flow_versions(guild_id, flow_id, saved_at);
+CREATE TABLE IF NOT EXISTS flow_errors (
+  id TEXT PRIMARY KEY, guild_id TEXT NOT NULL, flow_id TEXT NOT NULL, flow_name TEXT NOT NULL, node_id TEXT NOT NULL DEFAULT '',
+  node_label TEXT NOT NULL DEFAULT '', message TEXT NOT NULL, at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS flow_errors_guild ON flow_errors(guild_id, at);
 CREATE TABLE IF NOT EXISTS watch_state (
   guild_id TEXT NOT NULL, flow_id TEXT NOT NULL, node_id TEXT NOT NULL, data TEXT NOT NULL, updated_at INTEGER NOT NULL,
   PRIMARY KEY (guild_id, flow_id, node_id)
@@ -177,6 +187,46 @@ export class Database {
   deleteFlow(guildId, id) {
     return this.#stmt('DELETE FROM flows WHERE id = ? AND guild_id = ?').run(id, guildId).changes > 0;
   }
+
+  // ---- older versions of a flow: what it looked like before each save that changed it (the newest few are kept) ----------------
+  addFlowVersion({ guildId, flowId, name, graph, savedAt = Date.now(), savedBy = null }, keep = KEEP.flowVersions) {
+    const id = uid(10);
+    this.#stmt('INSERT INTO flow_versions (id, guild_id, flow_id, name, graph, nodes, saved_at, saved_by) VALUES (?,?,?,?,?,?,?,?)')
+      .run(id, guildId, flowId, name, JSON.stringify(graph), graph?.nodes?.length ?? 0, savedAt, savedBy ? JSON.stringify(savedBy) : null);
+    this.#stmt(`DELETE FROM flow_versions WHERE guild_id=? AND flow_id=? AND id NOT IN (
+      SELECT id FROM flow_versions WHERE guild_id=? AND flow_id=? ORDER BY saved_at DESC, rowid DESC LIMIT ?)`).run(guildId, flowId, guildId, flowId, keep);
+    return id;
+  }
+
+  /** Newest first, without the graphs. */
+  listFlowVersions(guildId, flowId) {
+    return this.#stmt('SELECT id, name, nodes, saved_at, saved_by FROM flow_versions WHERE guild_id=? AND flow_id=? ORDER BY saved_at DESC, rowid DESC').all(guildId, flowId)
+      .map((r) => ({ id: r.id, name: r.name, nodes: r.nodes, savedAt: r.saved_at, savedBy: r.saved_by ? JSON.parse(r.saved_by) : null }));
+  }
+
+  getFlowVersion(guildId, flowId, id) {
+    const r = this.#stmt('SELECT * FROM flow_versions WHERE id=? AND guild_id=? AND flow_id=?').get(String(id), guildId, flowId);
+    return r ? { id: r.id, name: r.name, graph: JSON.parse(r.graph), nodes: r.nodes, savedAt: r.saved_at, savedBy: r.saved_by ? JSON.parse(r.saved_by) : null } : null;
+  }
+
+  deleteFlowVersions(guildId, flowId) { return this.#stmt('DELETE FROM flow_versions WHERE guild_id=? AND flow_id=?').run(guildId, flowId).changes; }
+
+  // ---- runs that failed, kept so they can still be read after a restart (the newest few per server) ---------------------------
+  addFlowError({ guildId, flowId, flowName, nodeId = '', nodeLabel = '', message, at = Date.now() }, keep = KEEP.savedErrors) {
+    const id = uid(10);
+    this.#stmt('INSERT INTO flow_errors (id, guild_id, flow_id, flow_name, node_id, node_label, message, at) VALUES (?,?,?,?,?,?,?,?)')
+      .run(id, guildId, flowId, flowName, nodeId, nodeLabel, message, at);
+    this.#stmt('DELETE FROM flow_errors WHERE guild_id=? AND id NOT IN (SELECT id FROM flow_errors WHERE guild_id=? ORDER BY at DESC, rowid DESC LIMIT ?)').run(guildId, guildId, keep);
+    return id;
+  }
+
+  /** Newest first. */
+  listFlowErrors(guildId, limit = KEEP.savedErrors) {
+    return this.#stmt('SELECT * FROM flow_errors WHERE guild_id=? ORDER BY at DESC, rowid DESC LIMIT ?').all(guildId, Math.max(1, limit))
+      .map((r) => ({ id: r.id, flowId: r.flow_id, flowName: r.flow_name, nodeId: r.node_id, nodeLabel: r.node_label, message: r.message, at: r.at }));
+  }
+
+  clearFlowErrors(guildId) { return this.#stmt('DELETE FROM flow_errors WHERE guild_id=?').run(guildId).changes; }
 
   // ---- webhook addresses: one secret token per "Webhook Received" trigger, scoped to its server and flow ---------------------
   webhookFor(guildId, flowId, nodeId) {
